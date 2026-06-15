@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Set the root directory for the project
+export @PROJECT_NAME@_ROOT=@CMAKE_INSTALL_PREFIX@
+
+# Add include directory to ROOT_INCLUDE_PATH if not already present
+if [[ ":$ROOT_INCLUDE_PATH:" != *":@CMAKE_INSTALL_PREFIX@/include:"* ]]; then
+    export ROOT_INCLUDE_PATH="${ROOT_INCLUDE_PATH:+$ROOT_INCLUDE_PATH:}@CMAKE_INSTALL_PREFIX@/include"
+fi
+
+# Add bin directory to PATH if not already present
+if [[ ":$PATH:" != *":@CMAKE_INSTALL_PREFIX@/bin:"* ]]; then
+    export PATH="${PATH:+$PATH:}@CMAKE_INSTALL_PREFIX@/bin"
+fi
+
+# Add lib directory to LD_LIBRARY_PATH if not already present
+if [[ ":$LD_LIBRARY_PATH:" != *":@CMAKE_INSTALL_PREFIX@/lib:"* ]]; then
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}@CMAKE_INSTALL_PREFIX@/lib"
+fi
