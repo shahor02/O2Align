@@ -36,6 +36,9 @@ build/
 build_o2/
 xbuild/
 
+# install directory
+install/
+
 # common editor backups
 *.swp
 *~
