@@ -9,8 +9,8 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#ifndef O2_ITS3_ALIGNMENT_DOF_H
-#define O2_ITS3_ALIGNMENT_DOF_H
+#ifndef O2_ALIGN_ALIGNMENT_DOF_H
+#define O2_ALIGN_ALIGNMENT_DOF_H
 
 #include <algorithm>
 #include <cstdint>

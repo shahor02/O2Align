@@ -9,14 +9,19 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#ifndef O2_ITS3_ALIGNMENT_LABEL_H
-#define O2_ITS3_ALIGNMENT_LABEL_H
+#ifndef O2_ALIGN_LABEL_H
+#define O2_ALIGN_LABEL_H
 
 #include <cstdint>
 #include <string>
 #include <format>
 
-class GlobalLabel
+namespace o2
+{
+namespace alignrs
+{
+
+class Label
 {
   // Millepede label is any positive integer [1....)
   // Layout: DOF(5) | CALIB(1) | ID(22) | SENS(1) | DET(2) = 31 usable bits (MSB reserved, GBL uses signed int)
@@ -48,7 +53,7 @@ class GlobalLabel
   static constexpr T DET_MAX = (T(1) << DET_BITS) - T(1);
   static constexpr T DET_MASK = DET_MAX << DET_SHIFT;
 
-  GlobalLabel(T det, T id, bool sens, bool calib = false)
+  Label(T det, T id, bool sens, bool calib = false)
     : mID((((id + 1) & ID_MAX) << ID_SHIFT) |
           ((det & DET_MAX) << DET_SHIFT) |
           ((T(sens) & SENS_MAX) << SENS_SHIFT) |
@@ -61,9 +66,9 @@ class GlobalLabel
   constexpr int rawGBL(T dof) const noexcept { return static_cast<int>(raw(dof)); }
 
   /// return a copy of this label with the CALIB bit set (for calibration DOFs on same volume)
-  GlobalLabel asCalib() const noexcept
+  Label asCalib() const noexcept
   {
-    GlobalLabel c{*this};
+    Label c{*this};
     c.mID |= (T(1) << CALIB_SHIFT);
     return c;
   }
@@ -78,10 +83,12 @@ class GlobalLabel
     return std::format("Det:{} Id:{} Sens:{} Calib:{}", det(), id(), sens(), calib());
   }
 
-  constexpr auto operator<=>(const GlobalLabel&) const noexcept = default;
+  constexpr auto operator<=>(const Label&) const noexcept = default;
 
  private:
   T mID{0};
+
+  ClassDefNV(Label,1);
 };
 
 #endif
