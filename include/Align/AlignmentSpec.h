@@ -9,8 +9,8 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#ifndef O2_ITS3_ALIGNMENT_H
-#define O2_ITS3_ALIGNMENT_H
+#ifndef O2_ALIGN_SPEC_H
+#define O2_ALIGN_SPEC_H
 
 #include "ReconstructionDataFormats/GlobalTrackID.h"
 #include "Framework/DataProcessorSpec.h"
