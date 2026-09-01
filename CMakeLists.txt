@@ -28,17 +28,14 @@ set(O2_ALIGN_PUBLIC_LIBRARIES
     GBL::GBL)
 
 add_library(O2Align
-            src/AlignmentHierarchy.cxx
-            src/AlignmentDOF.cxx
-            src/AlignmentMath.cxx
-            src/MisalignmentUtils.cxx
-            src/AlignmentSensors.cxx
-            src/AlignmentParams.cxx
-            src/AlignmentTypes.cxx
+            src/DOFSet.cxx
+            src/Volume.cxx
+            src/Constraint.cxx
+            src/Param.cxx
             src/AlignmentSpec.cxx)
-add_library(O2::Align ALIAS O2Align)
+#add_library(O2::Align ALIAS O2Align)
 
-set_property(TARGET O2Align PROPERTY EXPORT_NAME Align)
+set_property(TARGET O2Align PROPERTY EXPORT_NAME O2Align)
 set_property(TARGET O2Align PROPERTY OUTPUT_NAME O2Align)
 
 target_include_directories(O2Align
@@ -57,9 +54,11 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 add_root_dictionary(O2Align
-                    HEADERS include/Align/AlignmentParams.h
-                            include/Align/AlignmentTypes.h
-                    LINKDEF src/AlignLinkDef.h)
+                    HEADERS include/Align/Params.h
+                            include/Align/DOFSet.h
+                            include/Align/Volume.h
+                            include/Align/Constraint.h
+			    LINKDEF src/AlignLinkDef.h)
 
 add_executable(O2exe-alignment-workflow src/alignment-workflow.cxx)
 set_property(TARGET O2exe-alignment-workflow

@@ -64,10 +64,9 @@ class DOFSet
     return n;
   }
 
-  void setGlobalsPointers(float* pars, float* errs, int* labs) {
+  void setGlobalsPointers(float* pars, float* errs) {
     gParVals = pars;
     gParErrs = errs;
-    gParLabs = labs;
   }
 
   void setFirstEntry(int i) { mFirstEntry = i; }
@@ -75,17 +74,14 @@ class DOFSet
 
   float getParVal(int par) const { return getParVals()[par]; }
   float getParErr(int par) const { return getParErrs()[par]; }
-  int getParLab(int par) const { return getParLabs()[par]; }
 
   void setParVal(int par, double v = 0) { getParVals()[par] = v; }
   void setParErr(int par, double e = 0) { getParErrs()[par] = e; }
-  void setParLab(int par, int lab) { getParLabs()[par] = lab; }
 
 protected:  
   DOFSet(int n) : mFree(n, true) {}
   float* getParVals() { return gParVals + mFirstEntry; }
   float* getParErrs() { return gParErrs + mFirstEntry; }
-  int* getParLabs() { return gParLabs + mFirstEntry; }
   void validateDerivativeOutput(const DOFSet& dofSet, Eigen::Ref<Eigen::MatrixXd> out);
 
   std::vector<bool> mFree;         // status of each DOF
@@ -93,9 +89,8 @@ protected:
 
   static float* gParVals = nullptr; // start of global parameters array
   static float* gParErrs = nullptr; // start of global parameters errors array
-  static int * gParLabs = nullptr; // start of global labels array
   
-  ClassDef(DOFSet);
+  ClassDef(DOFSet,1);
 };
 
 // Rigid body set (rotations and offset)
@@ -128,7 +123,6 @@ class RigidBodyDOFSet final : public DOFSet
 };
 
   
-} // namespace alignrs
-} // namespace o2
+} // namespace o2::alignrs
 
 #endif

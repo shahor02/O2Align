@@ -43,4 +43,4 @@ void RigidBodyDOFSet::fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<E
   out(1, RZ) = -ctx.trkY * vP;
 }
   
-}  // namespace o2::align1
+}  // namespace o2::alignrs
