@@ -33,6 +33,7 @@ add_library(O2Align
             src/Constraint.cxx
             src/Params.cxx
             src/SensorITS.cxx
+            src/MisalignmentUtils.cxx # tmp?
             src/AlignmentTypes.cxx
             src/AlignmentSpec.cxx)
 #add_library(O2::Align ALIAS O2Align)

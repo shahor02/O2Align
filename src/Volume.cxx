@@ -19,6 +19,7 @@
 #include <nlohmann/json.hpp>
 
 #include "Align/Volume.h"
+#include "Align/Constraint.h"
 #include "ITSBase/GeometryTGeo.h"
 #include "Framework/Logger.h"
 #include "MathUtils/Utils.h"
@@ -31,7 +32,7 @@ Volume::Volume(const char* symName, uint32_t label, uint32_t det, bool sens) : m
   init();
 }
 
-Volume::Volume(const char* symName, GlobalLabel label) : mSymName(symName), mLabel(label)
+Volume::Volume(const char* symName, Label label) : mSymName(symName), mLabel(label)
 {
   init();
 }

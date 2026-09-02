@@ -23,6 +23,7 @@
 #include "Framework/Logger.h"
 #include "CommonConstants/MathConstants.h"
 #include "ITS3Base/SpecsV2.h"
+#include "Align/DOFSet.h"
 
 namespace o2::alignrs
 {
@@ -97,7 +98,7 @@ MisalignmentShift evaluateLegendreShift(const SensorMisalignment& sensor, const 
   const double gloX = frame.x * std::cos(frame.alpha);
   const double gloY = frame.x * std::sin(frame.alpha);
   const double gloZ = frame.z;
-  auto [u, v] = computeUV(gloX, gloY, gloZ, frame.sensorID, o2::its3::constants::radii[frame.layerID]);
+  auto [u, v] = LegendreDOFSet::computeUV(gloX, gloY, gloZ, frame.sensorID, o2::its3::constants::radii[frame.layerID]);
   const double h = sensor.legendre(u, v);
 
   // this is the shift due to back-projection of the track on the ideal surface
@@ -118,13 +119,13 @@ MisalignmentShift evaluateLegendreShift(const SensorMisalignment& sensor, const 
       integral += w[i] * sensor.legendre(up, v);
     }
     integral *= half;
-    shift.dy += 0.5 * getSensorPhiWidth(frame.sensorID, o2::its3::constants::radii[frame.layerID]) * integral;
+    shift.dy += 0.5 * LegendreDOFSet::getSensorPhiWidth(frame.sensorID, o2::its3::constants::radii[frame.layerID]) * integral;
   }
 
   const double newGloY = gloY + (shift.dy * std::cos(frame.alpha));
   const double newGloX = gloX - (shift.dy * std::sin(frame.alpha));
   const double newGloZ = gloZ + shift.dz;
-  auto [uNew, vNew] = computeUV(newGloX, newGloY, newGloZ, frame.sensorID, o2::its3::constants::radii[frame.layerID]);
+  auto [uNew, vNew] = LegendreDOFSet::computeUV(newGloX, newGloY, newGloZ, frame.sensorID, o2::its3::constants::radii[frame.layerID]);
   shift.accepted = std::abs(uNew) <= 1. && std::abs(vNew) <= 1.;
   return shift;
 }
@@ -168,4 +169,4 @@ MisalignmentShift evaluateInextensionalShift(const SensorMisalignment& sensor, c
   return shift;
 }
 
-} // namespace o2::alignment
+} // namespace o2::alignrs

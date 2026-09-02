@@ -15,9 +15,11 @@
 #pragma link off all functions;
 
 #pragma link C++ class o2::alignrs::DOFSet + ;
+#pragma link C++ class o2::alignrs::RigidBodyDOFSet + ;
+#pragma link C++ class o2::alignrs::LegendreDOFSet + ;
+#pragma link C++ class o2::alignrs::InextensionalDOFSet + ;
 #pragma link C++ class o2::alignrs::Volume + ;
 #pragma link C++ class o2::alignrs::Constraint + ;
-#pragma link C++ class o2::alignrs::Params + ;
 
 #pragma link C++ class o2::alignrs::Measurement + ;
 #pragma link C++ class o2::alignrs::FrameInfoExt + ;
@@ -25,8 +27,9 @@
 #pragma link C++ class o2::alignrs::Track + ;
 #pragma link C++ class o2::alignrs::TrackSlopes + ;
 
+#pragma link C++ class o2::alignrs::Params + ;
 #pragma link C++ class o2::conf::ConfigurableParamHelper < o2::alignrs::Params > + ;
 
-#pragma link C++ class std::vector < o2::track::TrackParametrization < double>> + ;
+//#pragma link C++ class std::vector < o2::track::TrackParametrization < double>> + ;
 
 #endif

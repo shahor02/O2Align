@@ -51,7 +51,7 @@
 #include "Align/MisalignmentUtils.h"
 #include "Align/SensorITS.h"
 
-namespace o2::alignment
+namespace o2::alignrs
 {
 using namespace o2::framework;
 using DetID = o2::detectors::DetID;
@@ -66,7 +66,7 @@ namespace
 {
 DerivativeContext makeDerivativeContext(const FrameInfoExt& frame, const TrackD& trk)
 {
-  const auto slopes = computeTrackSlopes(trk.getSnp(), trk.getTgl());
+  const auto slopes = TrackSlopes::computeTrackSlopes(trk.getSnp(), trk.getTgl());
   const bool isITS3 = o2::its3::constants::detID::isDetITS3(frame.sens);
   return {.sensorID = isITS3 ? o2::its3::constants::detID::getSensorID(frame.sens) : -1,
           .layerID = isITS3 ? o2::its3::constants::detID::getDetID2Layer(frame.sens) : -1,
@@ -98,7 +98,7 @@ class AlignmentSpec final : public Task
   AlignmentSpec(AlignmentSpec&&) = delete;
   AlignmentSpec& operator=(const AlignmentSpec&) = delete;
   AlignmentSpec& operator=(AlignmentSpec&&) = delete;
-  AlignmentSpec(std::shared_ptr<DataRequest> dr, std::shared_ptr<o2::base::GRPGeomRequest> gr, GTrackID::mask_t src, bool useMC, bool withPV, bool withITS, o2::alignment::OutputEnum out)
+  AlignmentSpec(std::shared_ptr<DataRequest> dr, std::shared_ptr<o2::base::GRPGeomRequest> gr, GTrackID::mask_t src, bool useMC, bool withPV, bool withITS, o2::alignrs::OutputEnum out)
     : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrc(src), mUseMC(useMC), mWithPV(withPV), mIsITS3(!withITS), mOutOpt(out)
   {
   }
@@ -133,7 +133,7 @@ class AlignmentSpec final : public Task
   // ITS3 acceptance so false is to discard track
   bool applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk);
 
-  o2::alignment::OutputEnum mOutOpt;
+  o2::alignrs::OutputEnum mOutOpt;
   std::unique_ptr<o2::utils::TreeStreamRedirector> mDBGOut;
   std::vector<dataformats::VertexBase> mPVs;
   std::vector<int> mT2PV;
@@ -145,13 +145,13 @@ class AlignmentSpec final : public Task
   std::vector<FrameInfoExt> mITSTrackingInfo;
   std::shared_ptr<DataRequest> mDataRequest;
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
-  std::unique_ptr<AlignableVolume> mHierarchy;   // tree-hiearchy
-  AlignableVolume::SensorMapping mChip2Hiearchy; // global label mapping to leaves in the tree
+  std::unique_ptr<Volume> mHierarchy;   // tree-hiearchy
+  Volume::SensorMapping mChip2Hiearchy; // global label mapping to leaves in the tree
   bool mUseMC{false};
   bool mWithPV{false};
   GTrackID::mask_t mTracksSrc;
   int mNThreads{1};
-  const AlignmentParams* mParams{nullptr};
+  const Params* mParams{nullptr};
   MisalignmentModel mMisalignment;
   std::array<Eigen::Matrix<double, 6, 1>, 6> mRigidBodyParams; // (dx,dy,dz,rx,ry,rz) in LOC per sensorID
 };
@@ -171,9 +171,9 @@ void AlignmentSpec::init(InitContext& ic)
 
 void AlignmentSpec::run(ProcessingContext& pc)
 {
-  if (mOutOpt[o2::alignment::OutputOpt::MilleRes]) {
+  if (mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
     updateTimeDependentParams(pc);
-    writeMillepedeResults(mHierarchy.get(), mParams->milleResFile, mParams->milleResOutJson, mParams->misAlgJson);
+    Volume::writeMillepedeResults(mHierarchy.get(), mParams->milleResFile, mParams->milleResOutJson, mParams->misAlgJson); // RSTODO loop over possible top volumes (detectors)
   } else {
     o2::globaltracking::RecoContainer recoData;
     mRecoData = &recoData;
@@ -318,7 +318,7 @@ void AlignmentSpec::process()
         }
 
         if (frame.lr >= 0) {
-          GlobalLabel lbl(0, frame.sens, true);
+          Label lbl(0, frame.sens, true);
           if (mChip2Hiearchy.find(lbl) == mChip2Hiearchy.end()) {
             LOGP(fatal, "Cannot find global label: {}", lbl.asString());
           }
@@ -394,7 +394,7 @@ void AlignmentSpec::process()
           point.addGlobals(gLabels, gDer);
         }
 
-        if (mOutOpt[o2::alignment::OutputOpt::VerboseGBL]) {
+        if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
           static Eigen::IOFormat fmt(4, 0, ", ", "\n", "[", "]");
           LOGP(info, "WORKING-POINT {}", ip);
           LOGP(info, "Track: {}", wTrk.asString());
@@ -417,7 +417,7 @@ void AlignmentSpec::process()
           double chi2 = NAN, lostWeight = NAN;
           int ndf = 0;
           if (auto ierr = traj.fit(chi2, ndf, lostWeight); !ierr) {
-            if (mOutOpt[o2::alignment::OutputOpt::VerboseGBL]) {
+            if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
               LOGP(info, "GBL FIT chi2 {} ndf {}", chi2, ndf);
               traj.printTrajectory(5);
             }
@@ -432,7 +432,7 @@ void AlignmentSpec::process()
               chi2Sum += chi2;
               lostWeightSum += lostWeight;
               ndfSum += ndf;
-              if (mOutOpt[o2::alignment::OutputOpt::MilleData]) {
+              if (mOutOpt[o2::alignrs::OutputOpt::MilleData]) {
                 gblTrajSlot.push_back(traj);
               }
               FitInfo fit;
@@ -465,7 +465,7 @@ void AlignmentSpec::process()
   }
   LOGP(info, "\t\tGBL LostWeight = {}", lostWeightSum);
   LOGP(info, "Streaming results to output");
-  if (mOutOpt[o2::alignment::OutputOpt::MilleData]) {
+  if (mOutOpt[o2::alignrs::OutputOpt::MilleData]) {
     gbl::MilleBinary mille(mParams->milleBinFile, true);
     for (auto& slot : gblTrajSlots) {
       for (auto& traj : slot) {
@@ -473,7 +473,7 @@ void AlignmentSpec::process()
       }
     }
   }
-  if (mOutOpt[o2::alignment::OutputOpt::Debug]) {
+  if (mOutOpt[o2::alignrs::OutputOpt::Debug]) {
     for (auto& slot : resTrackSlots) {
       for (auto& res : slot) {
         (*mDBGOut) << "res"
@@ -491,7 +491,7 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
     initOnce = true;
     auto geom = o2::its::GeometryTGeo::Instance();
     o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
-    mParams = &AlignmentParams::Instance();
+    mParams = &Params::Instance();
     mParams->printKeyValues(true, true);
 
     buildHierarchy();
@@ -532,11 +532,11 @@ void AlignmentSpec::buildHierarchy()
   }
 
   if (!mParams->dofConfigJson.empty()) {
-    applyDOFConfig(mHierarchy.get(), mParams->dofConfigJson);
+    Volume::applyDOFConfig(mHierarchy.get(), mParams->dofConfigJson); // RSTODO loop over detectors
   }
 
   mHierarchy->finalise();
-  if (mOutOpt[o2::alignment::OutputOpt::MilleSteer]) {
+  if (mOutOpt[o2::alignrs::OutputOpt::MilleSteer]) {
     std::ofstream tree(mParams->milleTreeFile);
     mHierarchy->writeTree(tree);
     std::ofstream cons(mParams->milleConFile);
@@ -854,7 +854,7 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
       return false;
     }
 
-    const auto shift = evaluateLegendreShift(mMisalignment[sensorID], misFrame, computeTrackSlopes(mcAtCl.getSnp(), mcAtCl.getTgl()));
+    const auto shift = evaluateLegendreShift(mMisalignment[sensorID], misFrame, TrackSlopes::computeTrackSlopes(mcAtCl.getSnp(), mcAtCl.getTgl()));
     if (!shift.accepted) {
       return false;
     }
@@ -868,7 +868,7 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
   //   dres/da_parent = dres/da_TRK * J_L2T_tile * J_L2P_tile
   // The tile is a pseudo-volume; Millepede fits at the halfBarrel (parent) level.
   if (mParams->doMisalignmentRB) {
-    GlobalLabel lbl(0, frame.sens, true);
+    Label lbl(0, frame.sens, true);
     if (mChip2Hiearchy.find(lbl) == mChip2Hiearchy.end()) {
       return true; // sensor not in hierarchy, skip
     }
@@ -898,12 +898,12 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
   // displacement field u(phi,z) = (u_phi, u_z, u_r)
   //   dy = -u_phi + y' * u_r,  dz = -u_z + z' * u_r
   if (mParams->doMisalignmentInex) {
-    const auto shift = evaluateInextensionalShift(mMisalignment[sensorID], misFrame, computeTrackSlopes(wTrk.getSnp(), wTrk.getTgl()));
+    const auto shift = evaluateInextensionalShift(mMisalignment[sensorID], misFrame, TrackSlopes::computeTrackSlopes(wTrk.getSnp(), wTrk.getTgl()));
     res[0] += shift.dy;
     res[1] += shift.dz;
   }
 
-  if (mOutOpt[o2::alignment::OutputOpt::MisRes]) {
+  if (mOutOpt[o2::alignrs::OutputOpt::MisRes]) {
     (*mDBGOut) << "mis"
                << "dy=" << res[0]
                << "dz=" << res[1]
@@ -940,11 +940,11 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
   }
 }
 
-DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withPV, bool withITS, o2::alignment::OutputEnum out)
+DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withPV, bool withITS, o2::alignrs::OutputEnum out)
 {
   auto dataRequest = std::make_shared<DataRequest>();
   std::shared_ptr<o2::base::GRPGeomRequest> ggRequest{nullptr};
-  if (!out[o2::alignment::OutputOpt::MilleRes]) {
+  if (!out[o2::alignrs::OutputOpt::MilleRes]) {
     dataRequest->requestTracks(srcTracks, useMC);
     if (!withITS) {
       dataRequest->requestIT3Clusters(useMC);
@@ -985,4 +985,4 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
     .algorithm = AlgorithmSpec{adaptFromTask<AlignmentSpec>(dataRequest, ggRequest, srcTracks, useMC, withPV, withITS, out)},
     .options = opts};
 }
-} // namespace o2::alignment
+} // namespace o2::alignrs

@@ -16,9 +16,7 @@
 #include <string>
 #include <format>
 
-namespace o2
-{
-namespace alignrs
+namespace o2::alignrs
 {
 
 class Label
@@ -90,5 +88,7 @@ class Label
 
   ClassDefNV(Label,1);
 };
+
+} // namespace o2::alignrs
 
 #endif

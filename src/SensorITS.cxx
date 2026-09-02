@@ -17,7 +17,7 @@
 #include "Align/SensorITS.h"
 #include "ITSBase/GeometryTGeo.h"
 
-namespace o2::alignment
+namespace o2::alignrs
 {
 
 Volume::Ptr buildHierarchyITS(Volume::SensorMapping& sensorMap)
@@ -198,25 +198,6 @@ void SensorIT3::computeJacobianL2T(const double* posLoc, Matrix66& jac) const
   jac.bottomRightCorner<3, 3>() = rotL2T;
 }
 
-double SensorIT3::getSensorPhiWidth(int sensorID, double radius)
-{
-  const bool isTop = sensorID % 2 == 0;
-  const double phiBorder1 = o2::math_utils::to02Pid(((isTop ? 0. : 1.) * TMath::Pi()) + std::asin(o2::its3::constants::equatorialGap / 2. / radius));
-  const double phiBorder2 = o2::math_utils::to02Pid(((isTop ? 1. : 2.) * TMath::Pi()) - std::asin(o2::its3::constants::equatorialGap / 2. / radius));
-  const double width = phiBorder2 - phiBorder1;
-  return (width < 0.) ? width + TMath::TwoPi() : width;
-}
-
-std::pair<double, double> SensorIT3::computeUV(double gloX, double gloY, double gloZ, int sensorID, double radius)
-{
-  const bool isTop = sensorID % 2 == 0;
-  const double phi = o2::math_utils::to02Pid(std::atan2(gloY, gloX));
-  const double phiBorder1 = o2::math_utils::to02Pid(((isTop ? 0. : 1.) * TMath::Pi()) + std::asin(o2::its3::constants::equatorialGap / 2. / radius));
-  const double phiBorder2 = o2::math_utils::to02Pid(((isTop ? 1. : 2.) * TMath::Pi()) - std::asin(o2::its3::constants::equatorialGap / 2. / radius));
-  const double u = (((phi - phiBorder1) * 2.) / (phiBorder2 - phiBorder1)) - 1.;
-  const double v = ((2. * gloZ + o2::its3::constants::segment::lengthSensitive) / o2::its3::constants::segment::lengthSensitive) - 1.;
-  return {u, v};
-}
 
 
 } // namespace o2::alignrs

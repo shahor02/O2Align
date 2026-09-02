@@ -22,6 +22,7 @@ Volume::Ptr buildHierarchyIT3(Volume::SensorMapping& sensorMap);
 
 class SensorITS final : public Volume
 {
+  using Volume::Volume;
   void defineMatrixL2G() final;
   void defineMatrixT2L() final;
   void computeJacobianL2T(const double* pos, Matrix66& jac) const final;
@@ -33,11 +34,6 @@ class SensorIT3 final : public Volume
   void defineMatrixL2G() final;
   void defineMatrixT2L() final;
   void computeJacobianL2T(const double* pos, Matrix66& jac) const final;
-
-  static double getSensorPhiWidth(int sensorID, double radius);
-  static std::pair<double, double> computeUV(double gloX, double gloY, double gloZ, int sensorID, double radius);
-
-
 };
 
 } // namespace o2::alignrs
