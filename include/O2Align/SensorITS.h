@@ -12,7 +12,7 @@
 #ifndef O2_ALIGN_SENSORITS_H
 #define O2_ALIGN_SENSORITS_H
 
-#include "Align/Volume.h"
+#include "O2Align/Volume.h"
 
 namespace o2::alignrs
 {

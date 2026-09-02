@@ -18,7 +18,7 @@
 #include <TGeoPhysicalNode.h>
 #include <nlohmann/json.hpp>
 
-#include "Align/AlignmentHierarchy.h"
+#include "O2Align/AlignmentHierarchy.h"
 #include "ITSBase/GeometryTGeo.h"
 #include "Framework/Logger.h"
 #include "MathUtils/Utils.h"

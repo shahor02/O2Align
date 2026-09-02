@@ -18,8 +18,8 @@
 #include <TGeoPhysicalNode.h>
 #include <nlohmann/json.hpp>
 
-#include "Align/Volume.h"
-#include "Align/Constraint.h"
+#include "O2Align/Volume.h"
+#include "O2Align/Constraint.h"
 #include "ITSBase/GeometryTGeo.h"
 #include "Framework/Logger.h"
 #include "MathUtils/Utils.h"

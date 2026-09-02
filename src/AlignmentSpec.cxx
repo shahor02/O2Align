@@ -43,13 +43,13 @@
 #include "ITStracking/MathUtils.h"
 #include "ITStracking/IOUtils.h"
 #include "ITS3Reconstruction/IOUtils.h"
-#include "Align/TrackFit.h"
-#include "Align/AlignmentSpec.h"
-#include "Align/Params.h"
-#include "Align/AlignmentTypes.h"
-#include "Align/Volume.h"
-#include "Align/MisalignmentUtils.h"
-#include "Align/SensorITS.h"
+#include "O2Align/TrackFit.h"
+#include "O2Align/AlignmentSpec.h"
+#include "O2Align/Params.h"
+#include "O2Align/AlignmentTypes.h"
+#include "O2Align/Volume.h"
+#include "O2Align/MisalignmentUtils.h"
+#include "O2Align/SensorITS.h"
 
 namespace o2::alignrs
 {

@@ -25,8 +25,8 @@
 #include <TGeoMatrix.h>
 #include <TGeoPhysicalNode.h>
 
-#include "Align/AlignmentLabel.h"
-#include "Align/DOFSet.h"
+#include "O2Align/AlignmentLabel.h"
+#include "O2Align/DOFSet.h"
 
 namespace o2::alignrs
 {

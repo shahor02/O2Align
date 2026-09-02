@@ -12,7 +12,7 @@
 #include <string>
 #include <format>
 
-#include "Align/AlignmentTypes.h"
+#include "O2Align/AlignmentTypes.h"
 ClassImp(o2::alignment::Point);
 ClassImp(o2::alignment::FrameInfoExt);
 ClassImp(o2::alignment::FitInfo);

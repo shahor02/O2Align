@@ -53,10 +53,10 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
   const auto useMC = !cfg.options().get<bool>("disable-mc");
   const auto withPV = !cfg.options().get<bool>("without-pv");
   const auto withITS = cfg.options().get<bool>("with-its");
-  const o2::alignment::OutputEnum output(cfg.options().get<std::string>("output"));
+  const o2::alignrs::OutputEnum output(cfg.options().get<std::string>("output"));
 
   WorkflowSpec specs;
-  if (!output[o2::alignment::OutputOpt::MilleRes]) {
+  if (!output[o2::alignrs::OutputOpt::MilleRes]) {
     o2::globaltracking::InputHelper::addInputSpecs(cfg, specs, srcCls, srcTrc, srcTrc, useMC);
     if (withPV && !useMC) {
       o2::globaltracking::InputHelper::addInputSpecsPVertex(cfg, specs, useMC);
@@ -65,7 +65,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
     specs.emplace_back(o2::globaltracking::getNoInpDummyOutSpec(0));
   }
 
-  specs.emplace_back(o2::alignment::getAlignmentSpec(srcTrc, srcCls, useMC, withPV, withITS, output));
+  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, srcCls, useMC, withPV, withITS, output));
 
   o2::raw::HBFUtilsInitializer hbfIni(cfg, specs);
   return std::move(specs);

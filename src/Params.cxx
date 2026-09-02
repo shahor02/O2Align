@@ -9,5 +9,5 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#include "Align/Params.h"
+#include "O2Align/Params.h"
 O2ParamImpl(o2::alignrs::Params);

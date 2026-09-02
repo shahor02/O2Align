@@ -12,7 +12,7 @@
 #ifndef O2_ITS3_ALIGNMENT_SENSORS_H
 #define O2_ITS3_ALIGNMENT_SENSORS_H
 
-#include "Align/AlignmentHierarchy.h"
+#include "O2Align/AlignmentHierarchy.h"
 
 namespace o2::alignment
 {

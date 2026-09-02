@@ -14,7 +14,7 @@
 #include <sstream>
 #include <cmath>
 
-#include "Align/Constraint.h"
+#include "O2Align/Constraint.h"
 #include "Framework/Logger.h"
 #include "MathUtils/Utils.h"
 

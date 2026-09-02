@@ -14,7 +14,7 @@
 
 #include "Framework/Logger.h"
 #include "ITSMFTBase/SegmentationAlpide.h"
-#include "Align/AlignmentSensors.h"
+#include "O2Align/AlignmentSensors.h"
 #include "ITSBase/GeometryTGeo.h"
 
 namespace o2::alignment

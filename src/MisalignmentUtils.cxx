@@ -9,7 +9,7 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#include "Align/MisalignmentUtils.h"
+#include "O2Align/MisalignmentUtils.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,7 +23,7 @@
 #include "Framework/Logger.h"
 #include "CommonConstants/MathConstants.h"
 #include "ITS3Base/SpecsV2.h"
-#include "Align/DOFSet.h"
+#include "O2Align/DOFSet.h"
 
 namespace o2::alignrs
 {

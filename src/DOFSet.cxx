@@ -9,8 +9,8 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#include "Align/DOFSet.h"
-#include "Align/AlignmentTypes.h" // RSTODO this is just for legendrePols, get rid of it
+#include "O2Align/DOFSet.h"
+#include "O2Align/AlignmentTypes.h" // RSTODO this is just for legendrePols, get rid of it
 #include "ITS3Base/SpecsV2.h" // RSTODO try to get rid of this dependence
 #include "CommonConstants/MathConstants.h"
 #include <format>

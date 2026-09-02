@@ -57,12 +57,12 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 add_root_dictionary(O2Align
-                    HEADERS include/Align/Params.h
-                            include/Align/DOFSet.h
-                            include/Align/Volume.h
-                            include/Align/Constraint.h
-                            include/Align/AlignmentTypes.h
-			    LINKDEF src/AlignLinkDef.h)
+                    HEADERS include/O2Align/Params.h
+                            include/O2Align/DOFSet.h
+                            include/O2Align/Volume.h
+                            include/O2Align/Constraint.h
+                            include/O2Align/AlignmentTypes.h
+			    LINKDEF src/O2AlignLinkDef.h)
 
 add_executable(O2exe-alignment-workflow src/alignment-workflow.cxx)
 set_property(TARGET O2exe-alignment-workflow
@@ -84,7 +84,7 @@ install(TARGETS O2Align
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(TARGETS O2exe-alignment-workflow
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(DIRECTORY include/Align DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY include/O2Align DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/init.sh.in

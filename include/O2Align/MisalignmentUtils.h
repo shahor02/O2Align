@@ -18,7 +18,7 @@
 #include <string>
 #include <utility>
 
-#include "Align/AlignmentTypes.h"
+#include "O2Align/AlignmentTypes.h"
 #include "MathUtils/LegendrePols.h"
 
 namespace o2::alignrs

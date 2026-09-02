@@ -12,7 +12,7 @@
 #include <string>
 #include <format>
 
-#include "Align/AlignmentTypes.h"
+#include "O2Align/AlignmentTypes.h"
 
 namespace o2::alignrs
 {

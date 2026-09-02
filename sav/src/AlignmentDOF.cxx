@@ -9,13 +9,13 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#include "Align/AlignmentDOF.h"
+#include "O2Align/AlignmentDOF.h"
 
 #include <array>
 #include <cmath>
 #include <stdexcept>
 
-#include "Align/AlignmentMath.h"
+#include "O2Align/AlignmentMath.h"
 #include "ITS3Base/SpecsV2.h"
 #include "CommonConstants/MathConstants.h"
 
