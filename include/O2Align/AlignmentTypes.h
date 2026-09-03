@@ -50,6 +50,7 @@ struct FitInfo final {
 };
 
 struct Track {
+  o2::dataformats::VtxTrackIndex gid; // global track ID
   o2::its::TrackITS its;           // original ITS track
   o2::track::TrackParCovD track;   // track at innermost update point, refitted from outwards seed
   FitInfo kfFit;                   // kf fit information

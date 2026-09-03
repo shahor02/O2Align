@@ -60,6 +60,7 @@ using PVertex = o2::dataformats::PrimaryVertex;
 using V2TRef = o2::dataformats::VtxTrackRef;
 using VTIndex = o2::dataformats::VtxTrackIndex;
 using GTrackID = o2::dataformats::GlobalTrackID;
+using GlobalIDSet = o2::dataformats::RecoContainer::GlobalIDSet;
 using TrackD = o2::track::TrackParCovD;
 
 namespace
@@ -233,40 +234,81 @@ void AlignmentSpec::process() // collisions
     mNThreads = 1;
   }
   LOGP(info, "Starting fits with {} threads", mNThreads);
-
+  std::vector<gbl::GblTrajectory> gblTraj;
+  std::vector<Track> resTracks;
 
   const auto primVertices = mRecoData->getPrimaryVertices();
   const auto primVer2TRefs = mRecoData->getPrimaryVertexMatchedTrackRefs();
   const auto primVerGIs = mRecoData->getPrimaryVertexMatchedTracks();
-  // process vertices with contributor tracks
   std::unordered_map<GTrackID, bool> ambigTable;
+  // process vertices with contributor tracks
   const int nvRefs = primVer2TRefs.size();
+
+  auto timeStart = std::chrono::high_resolution_clock::now();
+  int cFailedRefit{0}, cFailedProp{0}, cSelected{0}, cGBLFit{0}, cGBLFitFail{0}, cGBLChi2Rej{0}, cGBLConstruct{0};
+  double chi2Sum{0}, lostWeightSum{0};
+  int ndfSum{0};
+
   int nVtx = 0, nVtxAcc = 0, nTrc = 0, nTrcAcc = 0;
   for (int ivref = 0; ivref < nvRefs; ivref++) {
     const o2::dataformats::PrimaryVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;
-    const auto& trackRef = primVer2TRefs[ivref];
-    const auto& trackGIs = primVerGIs[ivref];
-    bool useVertexConstrain = false;
-    if (vtx && mParams->usePVConstraintMinTrackes > 0 &&vtx->getNContributors() >= mParams->usePVConstraintMinTrackes) {
-      useVertexConstrain = true;
+    bool useVertexConstraint = false;
+    if (vtx && mParams->usePVConstraintMinTrackes > 0 && vtx->getNContributors() >= mParams->usePVConstraintMinTrackes) {
+      useVertexConstraint = true;
       mStat.data[ProcStat::kInput][ProcStat::kVertices]++;
     }
     if (mParams->verbose > 1) {
       LOGP(info, "processing vtref {} of {} with {} tracks, {}", ivref, nvRefs, trackRef.getEntries(), vtx ? vtx->asString() : std::string{});
     }
     nVtx++;
-
-  }  
-
+    for (int src : mTrackSources) {      
+      int start = trackRef.getFirstEntryOfSource(src), end = start + trackRef.getEntriesOfSource(src);
+      for (int ti = start; ti < end; ti++) {
+        const auto trackIndex = primVerGIs[ti];
+        if (trackIndex.isAmbiguous()) {
+          auto& ambSeen = ambigTable[trackIndex]; // ambiguous track does not use PV constraint, no need to account it again
+          if (ambSeen) { // processed
+            continue;
+          }
+          ambSeen = true;
+        }
+        const auto& trPar = mRecoData->getTrackParam(trackIndex);
+        if (fieldON && trPar.getPt() < mParams->minPt) {
+          continue;
+        }
+        mStat.data[ProcStat::kInput][ProcStat::kTracks]++;
+        // account preliminary
+        resTracks.emplace_back().gid = trackIndex;
+      }
+    }
+    // fit the tracks, prepare for GLB
+#ifdef WITH_OPENMP
+#pragma omp parallel num_threads(mNThreads)
+#endif
+    for (size_t itr = 0; itr < (int)resTracks.size(); itr++) {
+      auto &track = resTracks[itr];
+      auto contributorsGID = mRecoData->getSingleDetectorRefs(track.gid);
+      if ( GTrackIincludesDet(DetID::ITS) && !processITSPart(track, contributorsGID) ) {
+        track.gid.clear(); // mark as failed
+        continue;
+      }
+      if ( GTrackIincludesDet(DetID::TPC) && !processTPCPart(track, contributorsGID) ) { // do we want to abandont the track if TPC fails? or just continue with ITS?
+        track.gid.clear(); // mark as failed
+        continue;
+      }
+      if ( GTrackIincludesDet(DetID::TRD) && !processTRDPart(track, contributorsGID) ) { // do we want to abandont the track if TRD fails? or just continue with ITS?
+        track.gid.clear(); // mark as failed
+        continue;
+      }
+      if ( GTrackIincludesDet(DetID::TOF) && !processTOFPart(track, contributorsGID) ) { // do we want to abandont the track if TOF fails? or just continue with ITS?
+        track.gid.clear(); // mark as failed
+        continue;
+      }
+    }
+  }
 
   // Data
-  std::vector<std::vector<gbl::GblTrajectory>> gblTrajSlots(mNThreads);
-  std::vector<std::vector<Track>> resTrackSlots(mNThreads);
 
-  auto timeStart = std::chrono::high_resolution_clock::now();
-  int cFailedRefit{0}, cFailedProp{0}, cSelected{0}, cGBLFit{0}, cGBLFitFail{0}, cGBLChi2Rej{0}, cGBLConstruct{0};
-  double chi2Sum{0}, lostWeightSum{0};
-  int ndfSum{0};
 #ifdef WITH_OPENMP
 #pragma omp parallel num_threads(mNThreads) \
   reduction(+ : cFailedRefit)               \
@@ -678,6 +720,14 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
     return false;
   }
 
+  return true;
+}
+
+bool AlignmentSpec::processITSPart(Track& resTrack, const GlobalIDSet& contributorsGID)
+{
+  if (!prepareITSTrack(trkID.getIndex(), itsTrack, resTrack)) {
+    return false;
+  }
   return true;
 }
 
