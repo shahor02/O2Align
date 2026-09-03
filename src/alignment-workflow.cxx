@@ -33,7 +33,6 @@ void customize(std::vector<ConfigParamSpec>& workflowOptions)
     {"track-sources", VariantType::String, std::string{GID::ALL}, {"comma-separated list of track sources to use"}},
     {"cluster-sources", VariantType::String, "ITS", {"comma-separated list of cluster sources to use"}},
     {"with-its", VariantType::Bool, false, {"ITS alignment mode"}},
-    {"without-pv", VariantType::Bool, false, {"Do not use in track refit the PV as an additional constraint"}},
     {"output", VariantType::String, "", {"output steering"}},
     {"disable-root-input", VariantType::Bool, false, {"disable root-files input reader"}},
     {"configKeyValues", VariantType::String, "", {"Semicolon separated key=value strings ..."}}};
@@ -51,21 +50,18 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
   const GID::mask_t srcTrc = allowedSourcesTrc & GID::getSourcesMask(cfg.options().get<std::string>("track-sources"));
   const GID::mask_t srcCls = allowedSourcesClus & GID::getSourcesMask(cfg.options().get<std::string>("cluster-sources"));
   const auto useMC = !cfg.options().get<bool>("disable-mc");
-  const auto withPV = !cfg.options().get<bool>("without-pv");
   const auto withITS = cfg.options().get<bool>("with-its");
   const o2::alignrs::OutputEnum output(cfg.options().get<std::string>("output"));
 
   WorkflowSpec specs;
   if (!output[o2::alignrs::OutputOpt::MilleRes]) {
     o2::globaltracking::InputHelper::addInputSpecs(cfg, specs, srcCls, srcTrc, srcTrc, useMC);
-    if (withPV && !useMC) {
-      o2::globaltracking::InputHelper::addInputSpecsPVertex(cfg, specs, useMC);
-    }
+    o2::globaltracking::InputHelper::addInputSpecsPVertex(cfg, specs, useMC);
   } else {
     specs.emplace_back(o2::globaltracking::getNoInpDummyOutSpec(0));
   }
 
-  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, srcCls, useMC, withPV, withITS, output));
+  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, srcCls, useMC, withITS, output));
 
   o2::raw::HBFUtilsInitializer hbfIni(cfg, specs);
   return std::move(specs);

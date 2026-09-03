@@ -29,7 +29,7 @@ enum class OutputOpt : uint8_t {
 };
 using OutputEnum = utils::EnumFlags<OutputOpt>;
 
-o2::framework::DataProcessorSpec getAlignmentSpec(o2::dataformats::GlobalTrackID::mask_t srcTracks, o2::dataformats::GlobalTrackID::mask_t srcClus, bool useMC, bool withPV, bool withITS3, o2::alignrs::OutputEnum out);
+o2::framework::DataProcessorSpec getAlignmentSpec(o2::dataformats::GlobalTrackID::mask_t srcTracks, o2::dataformats::GlobalTrackID::mask_t srcClus, bool useMC, bool withITS3, o2::alignrs::OutputEnum out);
 } // namespace o2::alignrs
 
 #endif

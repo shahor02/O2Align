@@ -93,13 +93,31 @@ Matrix36 getRigidBodyBaseDerivatives(const DerivativeContext& ctx)
 class AlignmentSpec final : public Task
 {
  public:
+
+  struct ProcStat {
+    enum {
+      kInput,
+      kAccepted,
+      kNStatCl
+    };
+    enum {
+      kVertices,
+      kTracks,
+      kTracksWithVertex,
+      kCosmic,
+      kMaxStat
+    };
+    std::array<std::array<size_t, kMaxStat>, kNStatCl> data{};
+    void print() const;
+  };
+
   ~AlignmentSpec() final = default;
   AlignmentSpec(const AlignmentSpec&) = delete;
   AlignmentSpec(AlignmentSpec&&) = delete;
   AlignmentSpec& operator=(const AlignmentSpec&) = delete;
   AlignmentSpec& operator=(AlignmentSpec&&) = delete;
-  AlignmentSpec(std::shared_ptr<DataRequest> dr, std::shared_ptr<o2::base::GRPGeomRequest> gr, GTrackID::mask_t src, bool useMC, bool withPV, bool withITS, o2::alignrs::OutputEnum out)
-    : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrc(src), mUseMC(useMC), mWithPV(withPV), mIsITS3(!withITS), mOutOpt(out)
+  AlignmentSpec(std::shared_ptr<DataRequest> dr, std::shared_ptr<o2::base::GRPGeomRequest> gr, GTrackID::mask_t src, bool useMC, bool withITS, o2::alignrs::OutputEnum out)
+    : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrcMask(src), mUseMC(useMC), mIsITS3(!withITS), mOutOpt(out)
   {
   }
 
@@ -123,7 +141,7 @@ class AlignmentSpec final : public Task
   bool prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack, Track& resTrack);
 
   // prepare ITS measuremnt points
-  void prepareMeasurments(std::span<const itsmft::CompClusterExt> clusters, std::span<const unsigned char> pattIt);
+  void prepareITSPoints();
 
   // build track to vertex association
   void buildT2V();
@@ -135,8 +153,8 @@ class AlignmentSpec final : public Task
 
   o2::alignrs::OutputEnum mOutOpt;
   std::unique_ptr<o2::utils::TreeStreamRedirector> mDBGOut;
-  std::vector<dataformats::VertexBase> mPVs;
-  std::vector<int> mT2PV;
+  std::vector<dataformats::VertexBase> mPVMC;
+  std::vector<int> mT2PVMC;
   bool mIsITS3{true};
   const o2::itsmft::TopologyDictionary* mITSDict{nullptr};
   const o2::its3::TopologyDictionary* mIT3Dict{nullptr};
@@ -147,9 +165,11 @@ class AlignmentSpec final : public Task
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
   std::unique_ptr<Volume> mHierarchy;   // tree-hiearchy
   Volume::SensorMapping mChip2Hiearchy; // global label mapping to leaves in the tree
+  ProcStat mStat{}; // processing statistics
   bool mUseMC{false};
-  bool mWithPV{false};
-  GTrackID::mask_t mTracksSrc;
+  bool mUsePVConstraint{false}; // use PV as additional constraint in a given track refit  //RSTODO: this should be a per-track decision, not global, should not be datamember
+  GTrackID::mask_t mTracksSrcMask;
+  std::vector<int> mTrackSources;
   int mNThreads{1};
   const Params* mParams{nullptr};
   MisalignmentModel mMisalignment;
@@ -166,6 +186,11 @@ void AlignmentSpec::init(InitContext& ic)
   }
   if (mUseMC) {
     mcReader = std::make_unique<steer::MCKinematicsReader>("collisioncontext.root");
+  }
+   for (int src = GTrackID::NSources; src--;) {
+    if (mTracksSrcMask[src]) {
+      mTrackSources.push_back(src);
+    }
   }
 }
 
@@ -184,13 +209,11 @@ void AlignmentSpec::run(ProcessingContext& pc)
   mRecoData = nullptr;
 }
 
-void AlignmentSpec::process()
+void AlignmentSpec::process() // collisions
 {
-  if (!mITSDict && !mIT3Dict) {
-    LOGP(fatal, "ITS data is not loaded");
-  }
   auto prop = o2::base::PropagatorD::Instance();
   const auto bz = prop->getNominalBz();
+  const bool fieldON = std::abs(bz) > 0.1;
   const auto itsTracks = mRecoData->getITSTracks();
   const auto itsClRefs = mRecoData->getITSTracksClusterRefs();
   const auto clusITS = mRecoData->getITSClusters();
@@ -199,10 +222,10 @@ void AlignmentSpec::process()
   if (mUseMC) {
     mcLbls = mRecoData->getITSTracksMCLabels();
   }
-  prepareMeasurments(clusITS, patterns);
+  prepareITSPoints();
 
-  if (mWithPV) {
-    buildT2V();
+  if (mParams->usePVConstraintMinTrackes > 0) {
+    buildT2V(); // RSTODO for data
   }
 
   if (mNThreads > 1 && !(mParams->misAlgJson.empty())) {
@@ -210,6 +233,31 @@ void AlignmentSpec::process()
     mNThreads = 1;
   }
   LOGP(info, "Starting fits with {} threads", mNThreads);
+
+
+  const auto primVertices = mRecoData->getPrimaryVertices();
+  const auto primVer2TRefs = mRecoData->getPrimaryVertexMatchedTrackRefs();
+  const auto primVerGIs = mRecoData->getPrimaryVertexMatchedTracks();
+  // process vertices with contributor tracks
+  std::unordered_map<GTrackID, bool> ambigTable;
+  const int nvRefs = primVer2TRefs.size();
+  int nVtx = 0, nVtxAcc = 0, nTrc = 0, nTrcAcc = 0;
+  for (int ivref = 0; ivref < nvRefs; ivref++) {
+    const o2::dataformats::PrimaryVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;
+    const auto& trackRef = primVer2TRefs[ivref];
+    const auto& trackGIs = primVerGIs[ivref];
+    bool useVertexConstrain = false;
+    if (vtx && mParams->usePVConstraintMinTrackes > 0 &&vtx->getNContributors() >= mParams->usePVConstraintMinTrackes) {
+      useVertexConstrain = true;
+      mStat.data[ProcStat::kInput][ProcStat::kVertices]++;
+    }
+    if (mParams->verbose > 1) {
+      LOGP(info, "processing vtref {} of {} with {} tracks, {}", ivref, nvRefs, trackRef.getEntries(), vtx ? vtx->asString() : std::string{});
+    }
+    nVtx++;
+
+  }  
+
 
   // Data
   std::vector<std::vector<gbl::GblTrajectory>> gblTrajSlots(mNThreads);
@@ -672,12 +720,12 @@ bool AlignmentSpec::prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack,
   };
 
   FrameInfoExt pvInfo;
-  if (mWithPV) { // add PV as constraint
-    const int iPV = mT2PV[iTrk];
+  if (mUsePVConstraint) { // add PV as constraint RSTODO: this should be a per-track decision, not global, should not be datamember
+    const int iPV = mT2PVMC[iTrk];
     if (iPV < 0) {
       return false;
     }
-    const auto& pv = mPVs[iPV];
+    const auto& pv = mPVMC[iPV];
     auto tmp = convertTrack<double>(itsTrack.getParamIn());
     if (!prop->propagateToDCA(pv, tmp, bz)) {
       return false;
@@ -730,8 +778,10 @@ bool AlignmentSpec::prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack,
   return true;
 }
 
-void AlignmentSpec::prepareMeasurments(std::span<const itsmft::CompClusterExt> clusters, std::span<const unsigned char> patterns)
+void AlignmentSpec::prepareITSPoints()
 {
+  const auto clusters = mRecoData->getITSClusters();
+  const auto patterns = mRecoData->getITSClustersPatterns();
   LOGP(info, "Preparing {} measurments", clusters.size());
   auto geom = its::GeometryTGeo::Instance();
   geom->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G));
@@ -782,10 +832,10 @@ void AlignmentSpec::prepareMeasurments(std::span<const itsmft::CompClusterExt> c
 void AlignmentSpec::buildT2V()
 {
   const auto& itsTracks = mRecoData->getITSTracks();
-  mT2PV.clear();
-  mT2PV.resize(itsTracks.size(), -1);
+  mT2PVMC.clear();
+  mT2PVMC.resize(itsTracks.size(), -1);
   if (mUseMC) {
-    mPVs.reserve(mcReader->getNEvents(0));
+    mPVMC.reserve(mcReader->getNEvents(0));
     for (int iEve{0}; iEve < mcReader->getNEvents(0); ++iEve) {
       const auto& eve = mcReader->getMCEventHeader(0, iEve);
       dataformats::VertexBase vtx;
@@ -796,7 +846,7 @@ void AlignmentSpec::buildT2V()
       vtx.setSigmaX(err);
       vtx.setSigmaY(err);
       vtx.setSigmaZ(err);
-      mPVs.push_back(vtx);
+      mPVMC.push_back(vtx);
     }
     const auto& mcLbls = mRecoData->getITSTracksMCLabels();
     for (size_t iTrk{0}; iTrk < mcLbls.size(); ++iTrk) {
@@ -806,11 +856,11 @@ void AlignmentSpec::buildT2V()
       }
       const auto& mcTrk = mcReader->getTrack(lbl);
       if (mcTrk->isPrimary()) {
-        mT2PV[iTrk] = lbl.getEventID();
+        mT2PVMC[iTrk] = lbl.getEventID();
       }
     }
   } else {
-    LOGP(fatal, "Data PV to track TODO");
+    LOGP(warn, "Data PV to track TODO");
   }
 }
 
@@ -940,7 +990,7 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
   }
 }
 
-DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withPV, bool withITS, o2::alignrs::OutputEnum out)
+DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withITS, o2::alignrs::OutputEnum out)
 {
   auto dataRequest = std::make_shared<DataRequest>();
   std::shared_ptr<o2::base::GRPGeomRequest> ggRequest{nullptr};
@@ -951,9 +1001,7 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
     } else {
       dataRequest->requestClusters(srcClusters, useMC);
     }
-    if (withPV && !useMC) {
-      dataRequest->requestPrimaryVertices(useMC);
-    }
+    dataRequest->requestPrimaryVertices(useMC);
     ggRequest = std::make_shared<o2::base::GRPGeomRequest>(false,                             // orbitResetTime
                                                            false,                             // GRPECS=true
                                                            true,                              // GRPLHCIF
@@ -982,7 +1030,7 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
     .name = "its3-alignment",
     .inputs = dataRequest->inputs,
     .outputs = {},
-    .algorithm = AlgorithmSpec{adaptFromTask<AlignmentSpec>(dataRequest, ggRequest, srcTracks, useMC, withPV, withITS, out)},
+    .algorithm = AlgorithmSpec{adaptFromTask<AlignmentSpec>(dataRequest, ggRequest, srcTracks, useMC, withITS, out)},
     .options = opts};
 }
 } // namespace o2::alignrs

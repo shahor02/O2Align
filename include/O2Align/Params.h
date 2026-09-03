@@ -31,6 +31,9 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // o2::base::PropagatorD::MatCorrType matCorrType = o2::base::PropagatorD::MatCorrType::USEMatCorrTGeo;
   o2::base::PropagatorD::MatCorrType corrType = o2::base::PropagatorD::MatCorrType::USEMatCorrLUT;
 
+  int usePVConstraintMinTrackes = 5; // minimum number of tracks to use PV constraint
+
+  bool verbose = 0; // verbosity level
   bool useStableRef = true; // use input tracks as linearization point
   float minMS = 1e-6f;      //  minimum scattering to account for
   float maxChi2Ndf = 10;    // maximum Chi2/Ndf allowed for GBL fit
