@@ -25,6 +25,13 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   int minITSCls = 7;         // minimum number of ITS clusters
   float maxITSChi2Ndf = 1.2; // maximum ITS track chi2
 
+  // ITS overlap handling
+  float ITSOverlapMargin = 0.15;     // consider for overlaps only clusters within this marging from the chip edge (in cm)
+  float ITSOverlapMaxChi2 = 16;      // max chi2 between track and overlapping cluster
+  float ITSOverlapMaxDZ = 0.3;       // max difference in Z for clusters on overlapping ITS chips to consider as candidate for a double hit
+  int ITSOverlapEdgeRows = 1;        // require clusters to not have pixels closer than this distance from the edge
+
+
   // propagation opt
   double maxSnp = 0.85;
   double maxStep = 2.0;
@@ -39,8 +46,8 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   float maxChi2Ndf = 10;    // maximum Chi2/Ndf allowed for GBL fit
 
   // per chip extra error
-  float extraClsErrY[6] = {0};
-  float extraClsErrZ[6] = {0};
+  float extraClsErrYITS[7] = {0};
+  float extraClsErrZITS[7] = {0};
 
   // misalignment simulation
   bool doMisalignmentLeg = false;  // simulate Legendre deformation on ITS3 layers

@@ -35,6 +35,7 @@
 #include "DetectorsBase/Propagator.h"
 #include "DetectorsBase/GRPGeomHelper.h"
 #include "ReconstructionDataFormats/PrimaryVertex.h"
+#include "ReconstructionDataFormats/VtxTrackIndex.h"
 #include "Steer/MCKinematicsReader.h"
 #include "CommonUtils/TreeStreamRedirector.h"
 #include "ReconstructionDataFormats/VtxTrackRef.h"
@@ -43,6 +44,7 @@
 #include "ITStracking/MathUtils.h"
 #include "ITStracking/IOUtils.h"
 #include "ITS3Reconstruction/IOUtils.h"
+#include "ITSMFTReconstruction/ChipMappingITS.h"
 #include "O2Align/TrackFit.h"
 #include "O2Align/AlignmentSpec.h"
 #include "O2Align/Params.h"
@@ -60,20 +62,22 @@ using PVertex = o2::dataformats::PrimaryVertex;
 using V2TRef = o2::dataformats::VtxTrackRef;
 using VTIndex = o2::dataformats::VtxTrackIndex;
 using GTrackID = o2::dataformats::GlobalTrackID;
-using GlobalIDSet = o2::dataformats::RecoContainer::GlobalIDSet;
+using GlobalIDSet = std::array<GTrackID, GTrackID::NSources>;
 using TrackD = o2::track::TrackParCovD;
+using ClusterD = o2::BaseCluster<double>;
+using ClusterF = o2::BaseCluster<float>;
 
 namespace
 {
 DerivativeContext makeDerivativeContext(const FrameInfoExt& frame, const TrackD& trk)
 {
   const auto slopes = TrackSlopes::computeTrackSlopes(trk.getSnp(), trk.getTgl());
-  const bool isITS3 = o2::its3::constants::detID::isDetITS3(frame.sens);
-  return {.sensorID = isITS3 ? o2::its3::constants::detID::getSensorID(frame.sens) : -1,
-          .layerID = isITS3 ? o2::its3::constants::detID::getDetID2Layer(frame.sens) : -1,
+  const bool isITS3 = o2::its3::constants::detID::isDetITS3(frame.cluster.getSensorID());
+  return {.sensorID = isITS3 ? o2::its3::constants::detID::getSensorID(frame.cluster.getSensorID()) : -1,
+          .layerID = isITS3 ? o2::its3::constants::detID::getDetID2Layer(frame.cluster.getSensorID()) : -1,
           .measX = frame.x,
           .measAlpha = frame.alpha,
-          .measZ = frame.positionTrackingFrame[1],
+          .measZ = frame.cluster.getZ(),
           .trkY = trk.getY(),
           .trkZ = trk.getZ(),
           .snp = trk.getSnp(),
@@ -112,13 +116,14 @@ class AlignmentSpec final : public Task
     void print() const;
   };
 
+
   ~AlignmentSpec() final = default;
   AlignmentSpec(const AlignmentSpec&) = delete;
   AlignmentSpec(AlignmentSpec&&) = delete;
   AlignmentSpec& operator=(const AlignmentSpec&) = delete;
   AlignmentSpec& operator=(AlignmentSpec&&) = delete;
   AlignmentSpec(std::shared_ptr<DataRequest> dr, std::shared_ptr<o2::base::GRPGeomRequest> gr, GTrackID::mask_t src, bool useMC, bool withITS, o2::alignrs::OutputEnum out)
-    : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrcMask(src), mUseMC(useMC), mIsITS3(!withITS), mOutOpt(out)
+    : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrcMask(src), mUseMC(useMC), mIsITS3(!withITS), mOutOpt(out), mITS(std::make_unique<SensorITS>(!withITS))
   {
   }
 
@@ -132,6 +137,11 @@ class AlignmentSpec final : public Task
   void updateTimeDependentParams(ProcessingContext& pc);
   void buildHierarchy();
 
+  bool processITSPart(Track& resTrack, const GlobalIDSet& contributorsGID);
+  bool processTPCPart(Track& resTrack, const GlobalIDSet& contributorsGID);
+  bool processTRDPart(Track& resTrack, const GlobalIDSet& contributorsGID);
+  bool processTOFPart(Track& resTrack, const GlobalIDSet& contributorsGID);
+
   // calculate the transport jacobian for points FROM and TO numerically via ridder's method
   // this assumes the track is already at point FROM and will be extrapolated to TO's x (xTo)
   // method does not modify the original track
@@ -142,8 +152,6 @@ class AlignmentSpec final : public Task
   bool prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack, Track& resTrack);
 
   // prepare ITS measuremnt points
-  void prepareITSPoints();
-
   // build track to vertex association
   void buildT2V();
 
@@ -161,7 +169,9 @@ class AlignmentSpec final : public Task
   const o2::its3::TopologyDictionary* mIT3Dict{nullptr};
   o2::globaltracking::RecoContainer* mRecoData = nullptr;
   std::unique_ptr<steer::MCKinematicsReader> mcReader;
-  std::vector<FrameInfoExt> mITSTrackingInfo;
+
+  std::unique_ptr<SensorITS> mITS;
+
   std::shared_ptr<DataRequest> mDataRequest;
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
   std::unique_ptr<Volume> mHierarchy;   // tree-hiearchy
@@ -223,7 +233,7 @@ void AlignmentSpec::process() // collisions
   if (mUseMC) {
     mcLbls = mRecoData->getITSTracksMCLabels();
   }
-  prepareITSPoints();
+  mITS->prepareData(mRecoData);
 
   if (mParams->usePVConstraintMinTrackes > 0) {
     buildT2V(); // RSTODO for data
@@ -252,6 +262,7 @@ void AlignmentSpec::process() // collisions
   int nVtx = 0, nVtxAcc = 0, nTrc = 0, nTrcAcc = 0;
   for (int ivref = 0; ivref < nvRefs; ivref++) {
     const o2::dataformats::PrimaryVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;
+    const auto& trackRef = primVer2TRefs[ivref];
     bool useVertexConstraint = false;
     if (vtx && mParams->usePVConstraintMinTrackes > 0 && vtx->getNContributors() >= mParams->usePVConstraintMinTrackes) {
       useVertexConstraint = true;
@@ -288,25 +299,26 @@ void AlignmentSpec::process() // collisions
     for (size_t itr = 0; itr < (int)resTracks.size(); itr++) {
       auto &track = resTracks[itr];
       auto contributorsGID = mRecoData->getSingleDetectorRefs(track.gid);
-      if ( GTrackIincludesDet(DetID::ITS) && !processITSPart(track, contributorsGID) ) {
+      if ( track.gid.includesDet(DetID::ITS) && !processITSPart(track, contributorsGID) ) {
         track.gid.clear(); // mark as failed
         continue;
       }
-      if ( GTrackIincludesDet(DetID::TPC) && !processTPCPart(track, contributorsGID) ) { // do we want to abandont the track if TPC fails? or just continue with ITS?
+      if ( track.gid.includesDet(DetID::TPC) && !processTPCPart(track, contributorsGID) ) { // do we want to abandont the track if TPC fails? or just continue with ITS?
         track.gid.clear(); // mark as failed
         continue;
       }
-      if ( GTrackIincludesDet(DetID::TRD) && !processTRDPart(track, contributorsGID) ) { // do we want to abandont the track if TRD fails? or just continue with ITS?
+      if ( track.gid.includesDet(DetID::TRD) && !processTRDPart(track, contributorsGID) ) { // do we want to abandont the track if TRD fails? or just continue with ITS?
         track.gid.clear(); // mark as failed
         continue;
       }
-      if ( GTrackIincludesDet(DetID::TOF) && !processTOFPart(track, contributorsGID) ) { // do we want to abandont the track if TOF fails? or just continue with ITS?
+      if ( track.gid.includesDet(DetID::TOF) && !processTOFPart(track, contributorsGID) ) { // do we want to abandont the track if TOF fails? or just continue with ITS?
         track.gid.clear(); // mark as failed
         continue;
       }
     }
   }
 
+/*
   // Data
 
 #ifdef WITH_OPENMP
@@ -572,18 +584,19 @@ void AlignmentSpec::process() // collisions
       }
     }
   }
+  */
 }
 
 void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
 {
-  o2::base::GRPGeomHelper::instance().checkUpdates(pc);
+  o2::base::GRPGeomHelper::instance().checkUpdates(pc);  
   if (static bool initOnce{false}; !initOnce) {
     initOnce = true;
+    mITS->setTopologyDictionaries(mITSDict, mIT3Dict);
     auto geom = o2::its::GeometryTGeo::Instance();
     o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
     mParams = &Params::Instance();
     mParams->printKeyValues(true, true);
-
     buildHierarchy();
 
     if (mParams->doMisalignmentLeg || mParams->doMisalignmentRB || mParams->doMisalignmentInex) {
@@ -725,9 +738,22 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
 
 bool AlignmentSpec::processITSPart(Track& resTrack, const GlobalIDSet& contributorsGID)
 {
-  if (!prepareITSTrack(trkID.getIndex(), itsTrack, resTrack)) {
-    return false;
-  }
+  return true;
+}
+
+bool AlignmentSpec::processTPCPart(Track& resTrack, const GlobalIDSet& contributorsGID)
+{
+  return true;
+}
+
+
+bool AlignmentSpec::processTRDPart(Track& resTrack, const GlobalIDSet& contributorsGID)
+{
+  return true;
+}
+
+bool AlignmentSpec::processTOFPart(Track& resTrack, const GlobalIDSet& contributorsGID)
+{
   return true;
 }
 
@@ -749,20 +775,21 @@ bool AlignmentSpec::prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack,
       if (!prop->propagateToAlphaX(tr, refLin, frameArr[i]->alpha, frameArr[i]->x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType)) {
         return 2;
       }
-      meas.dy = frameArr[i]->positionTrackingFrame[0] - tr.getY();
-      meas.dz = frameArr[i]->positionTrackingFrame[1] - tr.getZ();
-      meas.sig2y = frameArr[i]->covarianceTrackingFrame[0];
-      meas.sig2z = frameArr[i]->covarianceTrackingFrame[2];
+      const auto& cluster = frameArr[i]->cluster;
+      meas.dy = cluster.getY() - tr.getY();
+      meas.dz = cluster.getZ() - tr.getZ();
+      meas.sig2y = cluster.getSigmaY2();
+      meas.sig2z = cluster.getSigmaZ2();
       meas.z = tr.getZ();
       meas.phi = tr.getPhi();
       o2::math_utils::bringTo02Pid(meas.phi);
-      chi2 += (float)tr.getPredictedChi2Quiet(frameArr[i]->positionTrackingFrame, frameArr[i]->covarianceTrackingFrame);
-      if (!tr.update(frameArr[i]->positionTrackingFrame, frameArr[i]->covarianceTrackingFrame)) {
+      chi2 += (float)tr.getPredictedChi2Quiet(cluster);
+      if (!tr.update(cluster)) {
         return 2;
       }
       if (refLin) { // displace the reference to the last updated cluster
-        refLin->setY(frameArr[i]->positionTrackingFrame[0]);
-        refLin->setZ(frameArr[i]->positionTrackingFrame[1]);
+        refLin->setY(cluster.getY());
+        refLin->setZ(cluster.getZ());
       }
       return 0;
     }
@@ -782,14 +809,10 @@ bool AlignmentSpec::prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack,
     }
     pvInfo.alpha = (float)tmp.getAlpha();
     double ca{0}, sa{0};
-    o2::math_utils::bringToPMPid(pvInfo.alpha);
+    o2::math_utils::bringToPMPi(pvInfo.alpha);
     o2::math_utils::sincosd(pvInfo.alpha, sa, ca);
     pvInfo.x = tmp.getX();
-    pvInfo.positionTrackingFrame[0] = -pv.getX() * sa + pv.getY() * ca;
-    pvInfo.positionTrackingFrame[1] = pv.getZ();
-    pvInfo.covarianceTrackingFrame[0] = 0.5 * (pv.getSigmaX2() + pv.getSigmaY2());
-    pvInfo.covarianceTrackingFrame[2] = pv.getSigmaY2();
-    pvInfo.sens = -1;
+    pvInfo.cluster = ClusterF(-1, 0.f, -pv.getX() * sa + pv.getY() * ca, pv.getZ(), 0.5 * (pv.getSigmaX2() + pv.getSigmaY2()), pv.getSigmaY2(), 0.);
     pvInfo.lr = -1;
     frameArr[0] = &pvInfo;
   }
@@ -797,7 +820,7 @@ bool AlignmentSpec::prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack,
   // collect all track clusters to array, placing them to layer+1 slot
   int nCl = itsTrack.getNClusters();
   for (int i = 0; i < nCl; i++) { // clusters are ordered from the outermost to the innermost
-    const auto& curInfo = mITSTrackingInfo[itsClRefs[itsTrack.getClusterEntry(i)]];
+    const auto& curInfo = mITS->getPointsInfo()[itsClRefs[itsTrack.getClusterEntry(i)]];
     frameArr[1 + curInfo.lr] = &curInfo;
   }
 
@@ -828,56 +851,146 @@ bool AlignmentSpec::prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack,
   return true;
 }
 
+#if 0
 void AlignmentSpec::prepareITSPoints()
 {
-  const auto clusters = mRecoData->getITSClusters();
+  // prepare TF ITS data for processing: convert clusters and build overlap info. // RSTODO At the moment it is not ITS3/staggering compatible!
+  const auto clusITS = mRecoData->getITSClusters();
+  const auto clusITSROF = mRecoData->getITSClustersROFRecords();
   const auto patterns = mRecoData->getITSClustersPatterns();
-  LOGP(info, "Preparing {} measurments", clusters.size());
-  auto geom = its::GeometryTGeo::Instance();
-  geom->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G));
-  mITSTrackingInfo.clear();
-  mITSTrackingInfo.reserve(clusters.size());
   auto pattIt = patterns.begin();
-  for (const auto& cls : clusters) {
-    const auto sens = cls.getSensorID();
-    const auto lay = geom->getLayer(sens);
-    double sigmaY2{0}, sigmaZ2{0};
-    math_utils::Point3D<float> locXYZ;
-    if (mIsITS3) {
-      locXYZ = o2::its3::ioutils::extractClusterData(cls, pattIt, mIT3Dict, sigmaY2, sigmaZ2);
-    } else {
-      locXYZ = o2::its::ioutils::extractClusterData(cls, pattIt, mITSDict, sigmaY2, sigmaZ2);
-    }
-    sigmaY2 += mParams->extraClsErrY[lay] * mParams->extraClsErrY[lay];
-    sigmaZ2 += mParams->extraClsErrZ[lay] * mParams->extraClsErrZ[lay];
-    // Transformation to the local --> global
-    const auto gloXYZ = geom->getMatrixL2G(sens) * locXYZ;
-    // Inverse transformation to the local --> tracking
-    auto trkXYZf = geom->getMatrixT2L(sens) ^ locXYZ;
-    o2::math_utils::Point3D<double> trkXYZ;
-    trkXYZ.SetCoordinates(trkXYZf.X(), trkXYZf.Y(), trkXYZf.Z());
-    // Tracking alpha angle
-    // We want that each cluster rotates its tracking frame to the clusters phi
-    // that way the track linearization around the measurement is less biases to the arc
-    // this means automatically that the measurement on the arc is at 0 for the curved layers
-    double alpha = geom->getSensorRefAlpha(sens);
-    double x = trkXYZ.x();
-    if (mIsITS3 && o2::its3::constants::detID::isDetITS3(sens)) {
-      trkXYZ.SetY(0.f);
-      // alpha&x always have to be defined wrt to the global Z axis!
-      x = std::hypot(gloXYZ.x(), gloXYZ.y());
-      trkXYZ.SetX(x);
-      alpha = std::atan2(gloXYZ.y(), gloXYZ.x());
-      auto chip = o2::its3::constants::detID::getSensorID(sens);
-      sigmaY2 += mParams->extraClsErrY[chip] * mParams->extraClsErrY[chip];
-      sigmaZ2 += mParams->extraClsErrZ[chip] * mParams->extraClsErrZ[chip];
-    }
-    math_utils::bringToPMPid(alpha);
-    mITSTrackingInfo.emplace_back(sens, lay, x, alpha,
-                                  std::array<double, 2>{trkXYZ.y(), trkXYZ.z()},
-                                  std::array<double, 3>{sigmaY2, 0., sigmaZ2});
+  mITSPointsInfo.clear();
+  mITSPointsInfo.reserve(clusITS.size());
+  if (mParams->ITSOverlapMargin > 0) {
+    mITSOvlClusRef.clear();
+    mITSOvlClusRef.resize(clusITS.size(), -1);
+    mITSOvlCandidateID.clear();
+    mITSOvlCandidateID.reserve(clusITS.size());
   }
+  auto geom = its::GeometryTGeo::Instance();
+  std::vector<int> edgeClusters;
+  int ROFCount = 0, curSensID = -1;
+  struct ROFChipEntry {
+    int rofCount = -1;
+    int chipFirstEntry = -1;
+  };
+  std::array<ROFChipEntry, o2::itsmft::ChipMappingITS::getNChips()> chipROFStart{}; // fill only for clusters with overlaps
+
+  for (const auto& rof : clusITSROF) {
+    int maxic = rof.getFirstEntry() + rof.getNEntries();
+    edgeClusters.clear();
+    for (int ic = rof.getFirstEntry(); ic < maxic; ic++) {
+      const auto& cls = clusITS[ic];
+      const auto sensID = cls.getSensorID();
+      const auto lay = geom->getLayer(sensID);
+      float sigmaY2{0.}, sigmaZ2{0.};
+      math_utils::Point3D<float> locXYZ;
+      if (mIsITS3) {
+        locXYZ = o2::its3::ioutils::extractClusterData(cls, pattIt, mIT3Dict, sigmaY2, sigmaZ2);
+      } else {
+        locXYZ = o2::its::ioutils::extractClusterData(cls, pattIt, mITSDict, sigmaY2, sigmaZ2);
+      }
+      sigmaY2 += mParams->extraClsErrYITS[lay] * mParams->extraClsErrYITS[lay];
+      sigmaZ2 += mParams->extraClsErrZITS[lay] * mParams->extraClsErrZITS[lay];
+      const auto gloXYZ = geom->getMatrixL2G(sensID) * locXYZ; // local --> global
+      auto trkXYZ = geom->getMatrixT2L(sensID) ^ locXYZ; // local --> tracking
+      // Tracking alpha angle: We want that each cluster rotates its tracking frame to the clusters phi
+      // that way the track linearization around the measurement is less biases to the arc
+      // this means automatically that the measurement on the arc is at 0 for the curved layers
+      double alpha = geom->getSensorRefAlpha(sensID); // RSTODO: what is this for ITS3 IB?
+      double x = geom->getSensorRefX(sensID);
+      if (mIsITS3 && o2::its3::constants::detID::isDetITS3(sensID)) {
+        trkXYZ.SetY(0.f);
+        x = std::hypot(gloXYZ.x(), gloXYZ.y());  // alpha, x always have to be defined wrt to the global Z axis!
+        trkXYZ.SetX(x);
+        alpha = std::atan2(gloXYZ.y(), gloXYZ.x());
+      }
+      math_utils::bringToPMPid(alpha);
+      o2::BaseCluster<float> clus(sensID, trkXYZ, sigmaY2, sigmaZ2, 0.f);
+      auto& pointInfo = mITSPointsInfo.emplace_back(lay, x, alpha, clus, {});
+      if (mParams->ITSOverlapMargin > 0 && (!mIsITS3 || lay > 2)) {
+        // fill chips overlaps info for clusters whose center is within of the mParams->ITSOverlapMargin distance from the chip min or max row edge
+        // but the pixel closest to this edge has distance of at least mParams->ITSOverlapEdgeRows from the edge
+        int row = 0, col = 0; // effective row/col of the cluster center
+        o2::itsmft::SegmentationAlpide::localToDetectorUnchecked(locXYZ.X(), locXYZ.Z(), row, col);
+        int drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? row : o2::itsmft::SegmentationAlpide::NRows - row - 1; // distance to the edge
+        if (drow * o2::itsmft::SegmentationAlpide::PitchRow < mParams->ITSOverlapMargin) {                                   // rough check is passed, check if the edge cluster is indeed good
+          pointInfo.cluster.setBit(row < o2::itsmft::SegmentationAlpide::NRows / 2 ? EdgeFlags::LowRow : EdgeFlags::HighRow);            // flag that this is an edge cluster and indicate the low/high row side
+          // check if it is not too close to the edge (to be biased)
+          if (mParams->ITSOverlapEdgeRows > 0) { // is there a restriction?
+            auto pattID = cls.getPatternID();
+            drow = cls.getRow();
+            if (pattID != itsmft::CompCluster::InvalidPatternID) {
+              if (!mITSDict->isGroup(pattID)) {
+                const auto& patt = mITSDict->getPattern(pattID); // reference pixel is min row/col corner
+                if (row > o2::itsmft::SegmentationAlpide::NRows / 2) {
+                  drow = o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() - 1);
+                }
+              } else { // group: reference pixel is the one containing the COG
+                o2::itsmft::ClusterPattern patt(pattItCopy);
+                drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? drow - patt.getRowSpan() / 2 : o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() / 2 - 1);
+              }
+            } else {
+              o2::itsmft::ClusterPattern patt(pattItCopy); // reference pixel is min row/col corner
+              if (row > o2::itsmft::SegmentationAlpide::NRows / 2) {
+                drow = o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() - 1);
+              }
+            }
+            if (drow < mParams->ITSOverlapEdgeRows) { // too close to the edge, flag this
+              pointInfo.cluster.setBit(EdgeFlags::Biased);
+            }
+          }
+          if (!pointInfo.cluster.isBitSet(EdgeFlags::Biased)) {
+            if (chipROFStart[sensID].rofCount != ROFCount) { // remember 1st entry
+              chipROFStart[sensID].rofCount = ROFCount;
+              chipROFStart[sensID].chipFirstEntry = edgeClusters.size(); // remember 1st entry of edge cluster for this chip
+            }
+            edgeClusters.push_back(ic);
+          }
+        }
+      }
+    } // clusters of ROF
+    // relate edge clusters of ROF to each other
+    int prevSensID = -1;
+    for (auto ic : edgeClusters) {
+      auto& cl = mITSPointsInfo[ic].cluster;
+        int sensID = cl.getSensorID();
+        auto ovl = mOverlaps[sensID];
+        int ovlCount = 0;
+        for (int ir = 0; ir < OVL::NSides; ir++) {
+          if (ovl.rowSide[ir] == OVL::NONE) { // no overlap from this row side
+            continue;
+        }
+        int chipOvl = ovl.rowSide[ir]; // look for overlaps with this chip
+        // are there clusters with overlaps on chipOvl?
+        if (chipROFStart[chipOvl].rofCount == ROFCount) {
+          auto oClusID = edgeClusters[chipROFStart[chipOvl].chipFirstEntry];
+          while (oClusID < int(mITSPointsInfo.size())) {
+            auto oClus = mITSPointsInfo[oClusID].cluster;
+            if (oClus.getSensorID() != sensID) {
+              break; // no more clusters on the overlapping chip
+            }
+            if (oClus.isBitSet(ovl.rowSideOverlap[ir]) &&                       // make sure that the edge cluster is on the right side of the row
+                !oClus.isBitSet(EdgeFlags::Biased) &&                           // not too close to the edge
+                std::abs(oClus.getZ() - cl.getZ()) < mParams->ITSOverlapMaxDZ) { // apply fiducial cut on Z distance of 2 clusters
+              // register overlaping cluster
+              if (!ovlCount) { // 1st overlap
+                mITSOvlClusRef[ic] = mITSOvlCandidateID.size();
+              }
+              mITSOvlCandidateID.push_back(oClusID);
+              ovlCount++;
+            }
+            oClusID++;
+          }
+        }
+      }
+      cl.setCount(std::min(127, ovlCount));
+    }
+    ROFCount++;
+  } // loop over ROFs
 }
+
+#endif
 
 void AlignmentSpec::buildT2V()
 {
@@ -916,18 +1029,18 @@ void AlignmentSpec::buildT2V()
 
 bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk)
 {
-  if (!o2::its3::constants::detID::isDetITS3(frame.sens)) {
+  if (!o2::its3::constants::detID::isDetITS3(frame.cluster.getSensorID())) {
     return true;
   }
 
-  const int sensorID = o2::its3::constants::detID::getSensorID(frame.sens);
-  const int layerID = o2::its3::constants::detID::getDetID2Layer(frame.sens);
+  const int sensorID = o2::its3::constants::detID::getSensorID(frame.cluster.getSensorID());
+  const int layerID = o2::its3::constants::detID::getDetID2Layer(frame.cluster.getSensorID());
   const MisalignmentFrame misFrame{
     .sensorID = sensorID,
     .layerID = layerID,
     .x = frame.x,
     .alpha = frame.alpha,
-    .z = frame.positionTrackingFrame[1]};
+    .z = frame.cluster.getZ()};
 
   // --- Legendre deformation (non-rigid-body) ---
   if (mParams->doMisalignmentLeg && mIsITS3 && mUseMC) {
@@ -968,7 +1081,7 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
   //   dres/da_parent = dres/da_TRK * J_L2T_tile * J_L2P_tile
   // The tile is a pseudo-volume; Millepede fits at the halfBarrel (parent) level.
   if (mParams->doMisalignmentRB) {
-    Label lbl(0, frame.sens, true);
+    Label lbl(0, frame.cluster.getSensorID(), true);
     if (mChip2Hiearchy.find(lbl) == mChip2Hiearchy.end()) {
       return true; // sensor not in hierarchy, skip
     }
@@ -1009,7 +1122,7 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
                << "dz=" << res[1]
                << "sens=" << sensorID
                << "lay=" << layerID
-               << "z=" << frame.positionTrackingFrame[1]
+               << "z=" << frame.cluster.getZ()
                << "phi=" << frame.alpha
                << "\n";
   }

@@ -14,6 +14,7 @@
 
 #include <string>
 #include "ReconstructionDataFormats/Track.h"
+#include "ReconstructionDataFormats/VtxTrackIndex.h"
 #include "DataFormatsITS/TrackITS.h"
 
 namespace o2::alignrs
@@ -30,13 +31,10 @@ struct Measurement final {
 };
 
 struct FrameInfoExt final {
-  int16_t sens = -1;
   int8_t lr = -1; // -1 = vtx
-  double x{-999.f};
-  double alpha{-999.f};
-  std::array<double, 2> positionTrackingFrame = {999., 999.};
-  std::array<double, 3> covarianceTrackingFrame = {999., 999., 999.};
-
+  float x{-999.f};
+  float alpha{-999.f};
+  o2::BaseCluster<float> cluster; // cluster info
   std::string asString() const;
 
   ClassDefNV(FrameInfoExt, 1)
