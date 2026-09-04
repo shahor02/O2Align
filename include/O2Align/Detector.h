@@ -9,29 +9,25 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#ifndef O2_ALIGN_SENSORITS_H
-#define O2_ALIGN_SENSORITS_H
+#ifndef O2_ALIGN_DETECTOR_H
+#define O2_ALIGN_DETECTOR_H
 
 #include "O2Align/Volume.h"
+
+namespace o2::globaltracking
+{
+class RecoContainer;
+}
 
 namespace o2::alignrs
 {
 
-class SensorITS final : public Volume
+class Detector
 {
  public:
-  using Volume::Volume;
-  void defineMatrixL2G() final;
-  void defineMatrixT2L() final;
-  void computeJacobianL2T(const double* pos, Matrix66& jac) const final;
-};
-
-class SensorIT3 final : public Volume
-{
-  using Volume::Volume;
-  void defineMatrixL2G() final;
-  void defineMatrixT2L() final;
-  void computeJacobianL2T(const double* pos, Matrix66& jac) const final;
+  virtual ~Detector() = default;
+  virtual void prepareData(o2::globaltracking::RecoContainer* recoData) = 0;
+  virtual Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) = 0;
 };
 
 } // namespace o2::alignrs

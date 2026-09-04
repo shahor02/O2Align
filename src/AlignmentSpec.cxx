@@ -51,6 +51,7 @@
 #include "O2Align/AlignmentTypes.h"
 #include "O2Align/Volume.h"
 #include "O2Align/MisalignmentUtils.h"
+#include "O2Align/DetectorITS.h"
 #include "O2Align/SensorITS.h"
 
 namespace o2::alignrs
@@ -123,7 +124,7 @@ class AlignmentSpec final : public Task
   AlignmentSpec& operator=(const AlignmentSpec&) = delete;
   AlignmentSpec& operator=(AlignmentSpec&&) = delete;
   AlignmentSpec(std::shared_ptr<DataRequest> dr, std::shared_ptr<o2::base::GRPGeomRequest> gr, GTrackID::mask_t src, bool useMC, bool withITS, o2::alignrs::OutputEnum out)
-    : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrcMask(src), mUseMC(useMC), mIsITS3(!withITS), mOutOpt(out), mITS(std::make_unique<SensorITS>(!withITS))
+    : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrcMask(src), mUseMC(useMC), mIsITS3(!withITS), mOutOpt(out), mITS(std::make_unique<DetectorITS>(!withITS))
   {
   }
 
@@ -170,7 +171,7 @@ class AlignmentSpec final : public Task
   o2::globaltracking::RecoContainer* mRecoData = nullptr;
   std::unique_ptr<steer::MCKinematicsReader> mcReader;
 
-  std::unique_ptr<SensorITS> mITS;
+  std::unique_ptr<DetectorITS> mITS;
 
   std::shared_ptr<DataRequest> mDataRequest;
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
@@ -225,14 +226,11 @@ void AlignmentSpec::process() // collisions
   auto prop = o2::base::PropagatorD::Instance();
   const auto bz = prop->getNominalBz();
   const bool fieldON = std::abs(bz) > 0.1;
-  const auto itsTracks = mRecoData->getITSTracks();
-  const auto itsClRefs = mRecoData->getITSTracksClusterRefs();
-  const auto clusITS = mRecoData->getITSClusters();
-  const auto patterns = mRecoData->getITSClustersPatterns();
   std::span<const o2::MCCompLabel> mcLbls;
   if (mUseMC) {
     mcLbls = mRecoData->getITSTracksMCLabels();
   }
+  // prepare detector data
   mITS->prepareData(mRecoData);
 
   if (mParams->usePVConstraintMinTrackes > 0) {
@@ -628,11 +626,7 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
 
 void AlignmentSpec::buildHierarchy()
 {
-  if (mIsITS3) {
-    mHierarchy = buildHierarchyIT3(mChip2Hiearchy);
-  } else {
-    mHierarchy = buildHierarchyITS(mChip2Hiearchy);
-  }
+  mITS->buildHierarchy(mChip2Hiearchy);
 
   if (!mParams->dofConfigJson.empty()) {
     Volume::applyDOFConfig(mHierarchy.get(), mParams->dofConfigJson); // RSTODO loop over detectors
