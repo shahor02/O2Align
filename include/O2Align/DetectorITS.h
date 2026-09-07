@@ -46,6 +46,8 @@ class DetectorITS : public Detector
   explicit DetectorITS(bool isITS3) : mIsITS3(isITS3) {}
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
+  bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& itsID, Track& resTrack) final;
+
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final 
   {
     return mIsITS3 ? buildHierarchyIT3(sensorMap) : buildHierarchyITS(sensorMap);
@@ -56,6 +58,7 @@ class DetectorITS : public Detector
     mITSDict = itsDict;
     mIT3Dict = its3Dict;
   }
+
   const std::vector<FrameInfoExt>& getPointsInfo() const { return mITSPointsInfo; }
 
  private:

@@ -41,7 +41,7 @@
 #include "ReconstructionDataFormats/VtxTrackRef.h"
 #include "ITS3Reconstruction/TopologyDictionary.h"
 #include "DataFormatsITSMFT/TopologyDictionary.h"
-#include "ITStracking/MathUtils.h"
+#include "MathUtils/Utils.h"
 #include "ITStracking/IOUtils.h"
 #include "ITS3Reconstruction/IOUtils.h"
 #include "ITSMFTReconstruction/ChipMappingITS.h"
@@ -297,7 +297,7 @@ void AlignmentSpec::process() // collisions
     for (size_t itr = 0; itr < (int)resTracks.size(); itr++) {
       auto &track = resTracks[itr];
       auto contributorsGID = mRecoData->getSingleDetectorRefs(track.gid);
-      if ( track.gid.includesDet(DetID::ITS) && !processITSPart(track, contributorsGID) ) {
+      if ( track.gid.includesDet(DetID::ITS) && !mITS->prepareTrack(mRecoData, contributorsGID, track) ) {
         track.gid.clear(); // mark as failed
         continue;
       }
@@ -367,7 +367,7 @@ void AlignmentSpec::process() // collisions
 
       // outward stepping from track IU
       auto wTrk = resTrack.track;
-      const bool hasPV = resTrack.info[0].lr == -1;
+      const bool hasPV = resTrack.info[0]->lr == -1;
       std::vector<gbl::GblPoint> points;
       bool failed = false;
       const int np = (int)resTrack.points.size();
@@ -375,7 +375,7 @@ void AlignmentSpec::process() // collisions
       lt.setTimeNotNeeded();
       constexpr int perm[5] = {4, 2, 3, 0, 1}; // ALICE->GBL: Q/Pt,Snp,Tgl,Y,Z
       for (int ip{0}; ip < np; ++ip) {
-        const auto& frame = resTrack.info[ip];
+        const auto& frame = *resTrack.info[ip];
         gbl::Matrix5d err = gbl::Matrix5d::Identity(), jacALICE = gbl::Matrix5d::Identity(), jacGBL;
         float msErr = 0.f;
         if (ip) {
@@ -831,7 +831,7 @@ bool AlignmentSpec::prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack,
       return false;
     } else if (res == 0) {
       resTrack.points.push_back(point);
-      resTrack.info.push_back(*frameArr[i]);
+      resTrack.info.push_back(const_cast<FrameInfoExt*>(frameArr[i]));
       resTrack.track = trFit; // put track to whatever the IU is
     }
   }

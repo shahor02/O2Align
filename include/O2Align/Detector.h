@@ -12,21 +12,26 @@
 #ifndef O2_ALIGN_DETECTOR_H
 #define O2_ALIGN_DETECTOR_H
 
-#include "O2Align/Volume.h"
+#include <array>
 
-namespace o2::globaltracking
-{
-class RecoContainer;
-}
+#include "O2Align/Volume.h"
+#include "DataFormatsGlobalTracking/RecoContainer.h"
+#include "ReconstructionDataFormats/GlobalTrackID.h"
+
 
 namespace o2::alignrs
 {
+class Track;
+
+using GTrackID = o2::dataformats::GlobalTrackID;
+using GlobalIDSet = std::array<GTrackID, GTrackID::NSources>;
 
 class Detector
 {
  public:
   virtual ~Detector() = default;
   virtual void prepareData(o2::globaltracking::RecoContainer* recoData) = 0;
+  virtual bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& itsID, Track& resTrack) = 0;
   virtual Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) = 0;
 };
 

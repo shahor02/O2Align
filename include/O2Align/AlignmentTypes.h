@@ -13,6 +13,7 @@
 #define O2_ALIGN_TYPES_H
 
 #include <string>
+#include <vector>
 #include "ReconstructionDataFormats/Track.h"
 #include "ReconstructionDataFormats/VtxTrackIndex.h"
 #include "DataFormatsITS/TrackITS.h"
@@ -50,11 +51,11 @@ struct FitInfo final {
 struct Track {
   o2::dataformats::VtxTrackIndex gid; // global track ID
   o2::its::TrackITS its;           // original ITS track
-  o2::track::TrackParCovD track;   // track at innermost update point, refitted from outwards seed
+  o2::track::TrackParCovD track;   // prepared track state
   FitInfo kfFit;                   // kf fit information
   FitInfo gblFit;                  // gbl fit information
   std::vector<Measurement> points; // measurment point
-  std::vector<FrameInfoExt> info;  // frame info
+  std::vector<FrameInfoExt*> info; // frame info
   ClassDefNV(Track, 1)
 };
 
