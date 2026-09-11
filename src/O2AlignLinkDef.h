@@ -21,6 +21,8 @@
 #pragma link C++ class o2::alignrs::Volume + ;
 #pragma link C++ class o2::alignrs::Constraint + ;
 
+#pragma link C++ class o2::alignrs::Label + ;
+
 #pragma link C++ class o2::alignrs::Measurement + ;
 #pragma link C++ class o2::alignrs::FrameInfoExt + ;
 #pragma link C++ class o2::alignrs::FitInfo + ;

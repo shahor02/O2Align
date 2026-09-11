@@ -20,6 +20,9 @@ set(O2_ALIGN_PUBLIC_LIBRARIES
     O2::ITSBase
     O2::ITSMFTSimulation
     O2::ITS3Reconstruction
+    O2::TRDBase
+    O2::TOFBase
+    O2::GPUTracking
     O2::Framework
     O2::GlobalTrackingWorkflowReaders
     O2::GlobalTrackingWorkflowHelpers
@@ -35,7 +38,13 @@ add_library(O2Align
             src/Params.cxx
             src/Detector.cxx
             src/DetectorITS.cxx
+            src/DetectorTPC.cxx
+            src/DetectorTRD.cxx
+            src/DetectorTOF.cxx
             src/SensorITS.cxx
+            src/SensorTPC.cxx
+            src/SensorTRD.cxx
+            src/SensorTOF.cxx
             src/MisalignmentUtils.cxx # tmp?
             src/AlignmentTypes.cxx
             src/AlignmentSpec.cxx)

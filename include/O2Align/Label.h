@@ -51,6 +51,7 @@ class Label
   static constexpr T DET_MAX = (T(1) << DET_BITS) - T(1);
   static constexpr T DET_MASK = DET_MAX << DET_SHIFT;
 
+  Label() = default; // invalid/empty label
   Label(T det, T id, bool sens, bool calib = false)
     : mID((((id + 1) & ID_MAX) << ID_SHIFT) |
           ((det & DET_MAX) << DET_SHIFT) |

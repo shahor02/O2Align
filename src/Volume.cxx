@@ -27,18 +27,21 @@
 namespace o2::alignrs
 {
 
-Volume::Volume(const char* symName, uint32_t label, uint32_t det, bool sens) : mSymName(symName), mLabel(det, label, sens)
+Volume::Volume(const char* symName, uint32_t label, uint32_t det, bool sens, bool virt) : mSymName(symName), mLabel(det, label, sens), mVirtual(virt)
 {
   init();
 }
 
-Volume::Volume(const char* symName, Label label) : mSymName(symName), mLabel(label)
+Volume::Volume(const char* symName, Label label, bool virt) : mSymName(symName), mLabel(label), mVirtual(virt)
 {
   init();
 }
 
 void Volume::init()
 {
+  if (mVirtual) { // fictitious volume, has no counterpart in the geometry
+    return;
+  }
   // check if this sym volume actually exists
   mPNE = gGeoManager->GetAlignableEntry(mSymName.c_str());
   if (mPNE == nullptr) {
@@ -54,12 +57,63 @@ void Volume::init()
   }
 }
 
+const TGeoHMatrix& Volume::getMatrixL2G() const
+{
+  // sensors may redefine the L2G matrix and fictitious volumes have no geometry to take it from,
+  // in both cases mL2G is filled by defineMatrixL2G()
+  if (!isLeaf() && !mVirtual) {
+    return *mPN->GetMatrix(); // global matrix (including possible pre-alignment)
+  }
+  return mL2G;
+}
+
+void Volume::computeJacobianL2T(const double* posLoc, Matrix66& jac) const
+{
+  jac.setZero();
+  Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> rotT2L(mT2L.GetRotationMatrix());
+  Eigen::Matrix3d skew, rotL2T = rotT2L.transpose();
+  skew << 0, -posLoc[2], posLoc[1], posLoc[2], 0, -posLoc[0], -posLoc[1], posLoc[0], 0;
+  jac.topLeftCorner<3, 3>() = rotL2T;
+  jac.topRightCorner<3, 3>() = -rotL2T * skew;
+  jac.bottomRightCorner<3, 3>() = rotL2T;
+}
+
 void Volume::finalise(uint8_t level)
 {
   if (level == 0 && !isRoot()) {
     LOGP(fatal, "Finalise should be called only from the root node!");
   }
   mLevel = level;
+  if (isLeaf()) {
+    // for sensors we need also to define the transformation from the measurment (TRK) to the local frame (LOC)
+    // need to it with including possible pre-alignment to allow for iterative convergence
+    // (TRK) is defined wrt global z-axis
+    defineMatrixL2G();
+    defineMatrixT2L();
+  } else if (mVirtual) {
+    // a fictitious intermediate volume must define its L2G before the children derive their L2P from it
+    defineMatrixL2G();
+  }
+  if (!isRoot()) {
+    // prepare the transformation matrices, e.g. from child frame to parent frame
+    // this is not necessarily just one level transformation
+    TGeoHMatrix mat = getMatrixL2G();
+    auto inv = mParent->getMatrixL2G().Inverse(); // global (including possible pre-alignment) from the parent to the global frame
+    mat.MultiplyLeft(inv);                        // left mult. effectively subtracts the parent transformation which is included in the the childs
+    mL2P = mat;                                   // now this is directly the child to the parent transformation (LOC) (including possible pre-alignment)
+
+    // prepare jacobian from child to parent frame
+    Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> rotL2P(mL2P.GetRotationMatrix());
+    Eigen::Matrix3d rotInv = rotL2P.transpose(); // parent-to-child rotation
+    const double* t = mL2P.GetTranslation();     // child origin in parent frame
+    Eigen::Matrix3d skewT;
+    skewT << 0, -t[2], t[1], t[2], 0, -t[0], -t[1], t[0], 0;
+    mJL2P.setZero();
+    mJL2P.topLeftCorner<3, 3>() = rotInv;
+    mJL2P.topRightCorner<3, 3>() = -rotInv * skewT;
+    mJL2P.bottomRightCorner<3, 3>() = rotInv;
+    mJP2L = mJL2P.inverse();
+  }
   if (!isLeaf()) {
     // depth first
     for (const auto& c : mChildren) {
@@ -83,35 +137,6 @@ void Volume::finalise(uint8_t level)
         }
       }
     }
-  } else {
-    // for sensors we need also to define the transformation from the measurment (TRK) to the local frame (LOC)
-    // need to it with including possible pre-alignment to allow for iterative convergence
-    // (TRK) is defined wrt global z-axis
-    defineMatrixL2G();
-    defineMatrixT2L();
-  }
-  if (!isRoot()) {
-    // prepare the transformation matrices, e.g. from child frame to parent frame
-    // this is not necessarily just one level transformation
-    TGeoHMatrix mat = *mPN->GetMatrix(); // global matrix (including possible pre-alignment) from this volume to the global frame
-    if (isLeaf()) {
-      mat = mL2G; // for sensor volumes they might have redefined the L2G definition
-    }
-    auto inv = mParent->mPN->GetMatrix()->Inverse(); // global (including possible pre-alignment) from this volume to the global frame
-    mat.MultiplyLeft(inv);                           // left mult. effectively subtracts the parent transformation which is included in the the childs
-    mL2P = mat;                                      // now this is directly the child to the parent transformation (LOC) (including possible pre-alignment)
-
-    // prepare jacobian from child to parent frame
-    Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> rotL2P(mL2P.GetRotationMatrix());
-    Eigen::Matrix3d rotInv = rotL2P.transpose(); // parent-to-child rotation
-    const double* t = mL2P.GetTranslation();     // child origin in parent frame
-    Eigen::Matrix3d skewT;
-    skewT << 0, -t[2], t[1], t[2], 0, -t[0], -t[1], t[0], 0;
-    mJL2P.setZero();
-    mJL2P.topLeftCorner<3, 3>() = rotInv;
-    mJL2P.topRightCorner<3, 3>() = -rotInv * skewT;
-    mJL2P.bottomRightCorner<3, 3>() = rotInv;
-    mJP2L = mJL2P.inverse();
   }
 }
 

@@ -94,6 +94,7 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
       o2::BaseCluster<float> clus(sensID, trkXYZ, sigmaY2, sigmaZ2, 0.f);
       auto& pointInfo = mITSPointsInfo.emplace_back();
       pointInfo.lr = lay;
+      pointInfo.label = Label(mDetIdx, sensID, true);
       pointInfo.x = x;
       pointInfo.alpha = alpha;
       pointInfo.cluster = clus;
@@ -170,12 +171,12 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
   }
 }
 
-bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& itsID, Track& resTrack)
+bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack)
 {
   const auto& params = Params::Instance();
   const bool allowOverlaps = params.ITSOverlapMaxChi2 > 0.f;
-  const auto gidITS = itsID[GTrackID::ITS];
-  const auto gidITSAB = itsID[GTrackID::ITSAB];
+  const auto gidITS = ids[GTrackID::ITS];
+  const auto gidITSAB = ids[GTrackID::ITSAB];
   const bool useITS = gidITS.isIndexSet();
   const bool useITSAB = !useITS && gidITSAB.isIndexSet();
   if (!useITS && !useITSAB) {
@@ -337,13 +338,13 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     if (!frameArr[i]) {
       continue;
     }
-    resTrack.info.push_back(frameArr[i]);
+    resTrack.info.push_back(*frameArr[i]);
     if (overlapArr[i]) {
-      resTrack.info.push_back(overlapArr[i]);
+      resTrack.info.push_back(*overlapArr[i]);
     }
   }
-  std::stable_sort(resTrack.info.begin(), resTrack.info.end(), [](const auto* a, const auto* b) {
-    return a->x < b->x;
+  std::stable_sort(resTrack.info.begin(), resTrack.info.end(), [](const auto& a, const auto& b) {
+    return a.x < b.x;
   });
 
   auto trFinal = itsTrack ? convertTrack<double>(itsTrack->getParamIn()) : convertTrack<double>(recoData->getTrackParam(resTrack.gid));
@@ -353,8 +354,8 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     refLinFinal = &(trkFinalRef = trFinal);
   }
   float finalChi2 = 0.f;
-  for (auto* frame : resTrack.info) {
-    if (!accountCluster(*frame, trFinal, finalChi2, refLinFinal)) {
+  for (const auto& frame : resTrack.info) {
+    if (!accountCluster(frame, trFinal, finalChi2, refLinFinal)) {
       return false;
     }
   }
@@ -369,7 +370,8 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
 
 Volume::Ptr DetectorITS::buildHierarchyITS(Volume::SensorMapping& sensorMap)
 {
-  uint32_t gLbl{0}, det{0};
+  uint32_t gLbl{0};
+  const uint32_t det = mDetIdx;
   auto geom = o2::its::GeometryTGeo::Instance();
   Volume *volHB{nullptr}, *volSt{nullptr}, *volHSt{nullptr}, *volMod{nullptr};
   std::unordered_map<std::string, Volume*> sym2vol;
@@ -412,7 +414,8 @@ Volume::Ptr DetectorITS::buildHierarchyITS(Volume::SensorMapping& sensorMap)
 
 Volume::Ptr DetectorITS::buildHierarchyIT3(Volume::SensorMapping& sensorMap)
 {
-  uint32_t gLbl{0}, det{0};
+  uint32_t gLbl{0};
+  const uint32_t det = mDetIdx;
   auto geom = o2::its::GeometryTGeo::Instance();
   Volume *volHB{nullptr}, *volSt{nullptr}, *volHSt{nullptr}, *volMod{nullptr};
   std::unordered_map<std::string, Volume*> sym2vol;

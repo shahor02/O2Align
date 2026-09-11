@@ -17,6 +17,7 @@
 #include "ReconstructionDataFormats/Track.h"
 #include "ReconstructionDataFormats/VtxTrackIndex.h"
 #include "DataFormatsITS/TrackITS.h"
+#include "O2Align/Label.h"
 
 namespace o2::alignrs
 {
@@ -32,13 +33,14 @@ struct Measurement final {
 };
 
 struct FrameInfoExt final {
-  int8_t lr = -1; // -1 = vtx
-  float x{-999.f};
-  float alpha{-999.f};
+  int8_t lr = -1;                 // detector-specific layer-like index, -1 = vtx (or invalid point)
+  Label label{};                  // label of the sensitive volume this point belongs to
+  float x{-999.f};                // X of the measurement in the tracking frame
+  float alpha{-999.f};            // rotation angle of the tracking frame
   o2::BaseCluster<float> cluster; // cluster info
   std::string asString() const;
 
-  ClassDefNV(FrameInfoExt, 1)
+  ClassDefNV(FrameInfoExt, 2)
 };
 
 struct FitInfo final {
@@ -55,8 +57,8 @@ struct Track {
   FitInfo kfFit;                   // kf fit information
   FitInfo gblFit;                  // gbl fit information
   std::vector<Measurement> points; // measurment point
-  std::vector<FrameInfoExt*> info; // frame info
-  ClassDefNV(Track, 1)
+  std::vector<FrameInfoExt> info;  // frame info, owned by the track (detectors append to it)
+  ClassDefNV(Track, 2)
 };
 
 struct TrackSlopes {

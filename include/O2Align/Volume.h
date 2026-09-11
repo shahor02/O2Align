@@ -43,8 +43,11 @@ class Volume
   Volume(Volume&&) = delete;
   Volume& operator=(const Volume&) = delete;
   Volume& operator=(Volume&&) = delete;
-  Volume(const char* symName, uint32_t label, uint32_t det, bool sens);
-  Volume(const char* symName, Label label);
+  /// \param virt if true the volume has no counterpart in the geometry (fictitious envelope,
+  ///             TPC readout sector, ...); no alignable entry is looked up and the volume is
+  ///             expected to define its own L2G matrix in defineMatrixL2G()
+  Volume(const char* symName, uint32_t label, uint32_t det, bool sens, bool virt = false);
+  Volume(const char* symName, Label label, bool virt = false);
   virtual ~Volume() = default;
 
   static void applyDOFConfig(Volume* root, const std::string& jsonPath);  
@@ -65,17 +68,17 @@ class Volume
   
   template <class T = Volume>
     requires std::derived_from<T, Volume>
-  Volume* addChild(const char* symName, uint32_t label, uint32_t det, bool sens)
+  Volume* addChild(const char* symName, uint32_t label, uint32_t det, bool sens, bool virt = false)
   {
-    auto c = std::make_unique<T>(symName, label, det, sens);
+    auto c = std::make_unique<T>(symName, label, det, sens, virt);
     return setParent(std::move(c));
   }
 
   template <class T = Volume>
     requires std::derived_from<T, Volume>
-  Volume* addChild(const char* symName, Label lbl)
+  Volume* addChild(const char* symName, Label lbl, bool virt = false)
   {
-    auto c = std::make_unique<T>(symName, lbl);
+    auto c = std::make_unique<T>(symName, lbl, virt);
     return setParent(std::move(c));
   }
 
@@ -100,6 +103,7 @@ class Volume
   DOFSet* getCalib() const { return mCalib.get(); }
   void setPseudo(bool p) noexcept { mIsPseudo = p; }
   bool isPseudo() const noexcept { return mIsPseudo; }
+  bool isVirtual() const noexcept { return mVirtual; }
   void setSensorId(int id) noexcept { mSensorId = id; }
   int getSensorId() const noexcept { return mSensorId; }
   // true if this volume participates in the hierarchy (has DOFs or is pseudo)
@@ -108,7 +112,11 @@ class Volume
   // transformation matrices
   virtual void defineMatrixL2G() {}
   virtual void defineMatrixT2L() {}
-  virtual void computeJacobianL2T(const double* pos, Matrix66& jac) const {};
+  /// jacobian of the (LOC)->(TRK) rigid-body parameter transformation at the local point posLoc
+  virtual void computeJacobianL2T(const double* posLoc, Matrix66& jac) const;
+  /// (LOC)->(GLO) matrix: for sensors and fictitious volumes it is defined by the volume itself,
+  /// for the rest it is taken from the (possibly pre-aligned) geometry
+  const TGeoHMatrix& getMatrixL2G() const;
   const TGeoHMatrix& getL2P() const { return mL2P; }
   const TGeoHMatrix& getT2L() const { return mT2L; }
   const Matrix66& getJL2P() const { return mJL2P; }
@@ -128,6 +136,7 @@ class Volume
  private:
   std::string mSymName;
   Label mLabel;
+  bool mVirtual{false}; // no counterpart in the geometry
   uint8_t mLevel{0};
   bool mIsPseudo{false};
   int mSensorId{-1}; // RS check if needed

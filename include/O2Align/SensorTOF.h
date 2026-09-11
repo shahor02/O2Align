@@ -1,0 +1,32 @@
+// Copyright 2019-2026 CERN and copyright holders of ALICE O2.
+// See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
+// All rights not expressly granted are reserved.
+//
+// This software is distributed under the terms of the GNU General Public
+// License v3 (GPL Version 3), copied verbatim in the file "COPYING".
+//
+// In applying this license CERN does not waive the privileges and immunities
+// granted to it by virtue of its status as an Intergovernmental Organization
+// or submit itself to any jurisdiction.
+
+#ifndef O2_ALIGN_SENSORTOF_H
+#define O2_ALIGN_SENSORTOF_H
+
+#include "O2Align/Volume.h"
+
+namespace o2::alignrs
+{
+
+/// A TOF "sensor" is an MRPC strip. The sensor ID is the continuous strip number
+/// stripInSM + sector * NSTRIPXSECTOR, i.e. the sector is sensorID / NSTRIPXSECTOR.
+class SensorTOF final : public Volume
+{
+ public:
+  using Volume::Volume;
+  void defineMatrixL2G() final;
+  void defineMatrixT2L() final;
+};
+
+} // namespace o2::alignrs
+
+#endif

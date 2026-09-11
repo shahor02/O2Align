@@ -626,7 +626,7 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
 
 void AlignmentSpec::buildHierarchy()
 {
-  mITS->buildHierarchy(mChip2Hiearchy);
+  mHierarchy = mITS->buildHierarchy(mChip2Hiearchy);
 
   if (!mParams->dofConfigJson.empty()) {
     Volume::applyDOFConfig(mHierarchy.get(), mParams->dofConfigJson); // RSTODO loop over detectors
@@ -831,7 +831,7 @@ bool AlignmentSpec::prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack,
       return false;
     } else if (res == 0) {
       resTrack.points.push_back(point);
-      resTrack.info.push_back(const_cast<FrameInfoExt*>(frameArr[i]));
+      resTrack.info.push_back(*frameArr[i]);
       resTrack.track = trFit; // put track to whatever the IU is
     }
   }

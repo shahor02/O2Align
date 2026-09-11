@@ -19,7 +19,7 @@ namespace o2::alignrs
 
 std::string FrameInfoExt::asString() const
 {
-  return std::format("Sensor={} Layer={} X={} Alpha={} y={} z={}", cluster.getSensorID(), lr, x, alpha, cluster.getY(), cluster.getZ());
+  return std::format("[{}] Sensor={} Layer={} X={} Alpha={} y={} z={}", label.asString(), cluster.getSensorID(), lr, x, alpha, cluster.getY(), cluster.getZ());
 }
 
 // RSTODO temporary here

@@ -31,6 +31,21 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   float ITSOverlapMaxDZ = 0.3;       // max difference in Z for clusters on overlapping ITS chips to consider as candidate for a double hit
   int ITSOverlapEdgeRows = 1;        // require clusters to not have pixels closer than this distance from the edge
 
+  // TPC
+  int minTPCClusters = 10;            // discard tracks with less clusters
+  int minTPCPadRow = 6;               // min TPC pad-row to account
+  int maxTPCPadRow = 146;             // max TPC pad-row to account
+  int maxTPCRowsCombined = 1;         // allow combining clusters on so many rows to a single cluster
+  int discardEdgePadrows = 3;         // discard padrow if its distance to stack edge padrow < this
+  float discardSectorEdgeDepth = 2.5; // discard clusters too close to the sector edge
+
+  // TRD
+  int minTRDTracklets = 3;         // min TRD tracklets to accept the track
+  float TRDCorrDVT = 0.f;          // correction to Vdrift*t (equivalent to a shift in X at which Y is evaluated)
+  float TRDNonRCCorrDzDtgl = 0.f;  // correction in Z proportional to tgl for non-row-crossing tracklets
+
+  // TOF
+  int minTOFClusters = 1; // min TOF clusters to accept track
 
   // propagation opt
   double maxSnp = 0.85;
@@ -48,6 +63,13 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // per chip extra error
   float extraClsErrYITS[7] = {0};
   float extraClsErrZITS[7] = {0};
+  // extra systematic errors of the non-ITS measurements
+  float extraClsErrYTPC = 0.f;
+  float extraClsErrZTPC = 0.f;
+  float extraClsErrYTRD = 0.f;
+  float extraClsErrZTRD = 0.f;
+  float extraClsErrYTOF = 0.f;
+  float extraClsErrZTOF = 0.f;
 
   // misalignment simulation
   bool doMisalignmentLeg = false;  // simulate Legendre deformation on ITS3 layers

@@ -43,10 +43,10 @@ class DetectorITS : public Detector
     Biased = 2
   };
 
-  explicit DetectorITS(bool isITS3) : mIsITS3(isITS3) {}
+  explicit DetectorITS(bool isITS3) : Detector(DetITS), mIsITS3(isITS3) {}
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
-  bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& itsID, Track& resTrack) final;
+  bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
 
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final 
   {
