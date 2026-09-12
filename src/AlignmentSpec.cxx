@@ -172,6 +172,9 @@ class AlignmentSpec final : public Task
   std::unique_ptr<steer::MCKinematicsReader> mcReader;
 
   std::unique_ptr<DetectorITS> mITS;
+  std::unique_ptr<DetectorTPC> mTPC;
+  std::unique_ptr<DetectorTRD> mTRD;
+  std::unique_ptr<DetectorTOF> mTOF;
 
   std::shared_ptr<DataRequest> mDataRequest;
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
