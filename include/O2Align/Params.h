@@ -25,6 +25,8 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   int minITSCls = 7;         // minimum number of ITS clusters
   float maxITSChi2Ndf = 1.2; // maximum ITS track chi2
 
+  std::string detectors = "ITS"; // detectors participating in the track fit
+
   // ITS overlap handling
   float ITSOverlapMargin = 0.15;     // consider for overlaps only clusters within this marging from the chip edge (in cm)
   float ITSOverlapMaxChi2 = 16;      // max chi2 between track and overlapping cluster

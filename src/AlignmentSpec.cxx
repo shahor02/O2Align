@@ -51,8 +51,11 @@
 #include "O2Align/AlignmentTypes.h"
 #include "O2Align/Volume.h"
 #include "O2Align/MisalignmentUtils.h"
-#include "O2Align/DetectorITS.h"
 #include "O2Align/SensorITS.h"
+#include "O2Align/DetectorITS.h"
+#include "O2Align/DetectorTPC.h"
+#include "O2Align/DetectorTRD.h"
+#include "O2Align/DetectorTOF.h"
 
 namespace o2::alignrs
 {
@@ -123,9 +126,21 @@ class AlignmentSpec final : public Task
   AlignmentSpec(AlignmentSpec&&) = delete;
   AlignmentSpec& operator=(const AlignmentSpec&) = delete;
   AlignmentSpec& operator=(AlignmentSpec&&) = delete;
-  AlignmentSpec(std::shared_ptr<DataRequest> dr, std::shared_ptr<o2::base::GRPGeomRequest> gr, GTrackID::mask_t src, bool useMC, bool withITS, o2::alignrs::OutputEnum out)
-    : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrcMask(src), mUseMC(useMC), mIsITS3(!withITS), mOutOpt(out), mITS(std::make_unique<DetectorITS>(!withITS))
+  AlignmentSpec(std::shared_ptr<DataRequest> dr, std::shared_ptr<o2::base::GRPGeomRequest> gr, GTrackID::mask_t src, DetID::mask_t dmask, bool useMC, bool withITS3, o2::alignrs::OutputEnum out)
+    : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrcMask(src), mUseMC(useMC), mIsITS3(withITS3), mOutOpt(out)
   {
+    if (dmask[DetID::ITS]) {
+      mITS = std::make_unique<DetectorITS>(withITS3);
+    }
+    if (dmask[DetID::TPC]) {
+      mTPC = std::make_unique<DetectorTPC>();
+    }
+    if (dmask[DetID::TRD]) {
+      mTRD = std::make_unique<DetectorTRD>();
+    }
+    if (dmask[DetID::TOF]) {
+      mTOF = std::make_unique<DetectorTOF>();
+     }
   }
 
   void init(InitContext& ic) final;
@@ -202,7 +217,7 @@ void AlignmentSpec::init(InitContext& ic)
   if (mUseMC) {
     mcReader = std::make_unique<steer::MCKinematicsReader>("collisioncontext.root");
   }
-   for (int src = GTrackID::NSources; src--;) {
+  for (int src = GTrackID::NSources; src--;) {
     if (mTracksSrcMask[src]) {
       mTrackSources.push_back(src);
     }
@@ -300,19 +315,19 @@ void AlignmentSpec::process() // collisions
     for (size_t itr = 0; itr < (int)resTracks.size(); itr++) {
       auto &track = resTracks[itr];
       auto contributorsGID = mRecoData->getSingleDetectorRefs(track.gid);
-      if ( track.gid.includesDet(DetID::ITS) && !mITS->prepareTrack(mRecoData, contributorsGID, track) ) {
+      if ( track.gid.includesDet(DetID::ITS) && mITS && !mITS->prepareTrack(mRecoData, contributorsGID, track) ) {
         track.gid.clear(); // mark as failed
         continue;
       }
-      if ( track.gid.includesDet(DetID::TPC) && !processTPCPart(track, contributorsGID) ) { // do we want to abandont the track if TPC fails? or just continue with ITS?
+      if ( track.gid.includesDet(DetID::TPC) && mTPC && !mTPC->prepareTrack(mRecoData, contributorsGID, track) ) { // do we want to abandont the track if TPC fails? or just continue with ITS?
         track.gid.clear(); // mark as failed
         continue;
       }
-      if ( track.gid.includesDet(DetID::TRD) && !processTRDPart(track, contributorsGID) ) { // do we want to abandont the track if TRD fails? or just continue with ITS?
+      if ( track.gid.includesDet(DetID::TRD) && mTRD && !mTRD->prepareTrack(mRecoData, contributorsGID, track) ) { // do we want to abandont the track if TRD fails? or just continue with ITS?
         track.gid.clear(); // mark as failed
         continue;
       }
-      if ( track.gid.includesDet(DetID::TOF) && !processTOFPart(track, contributorsGID) ) { // do we want to abandont the track if TOF fails? or just continue with ITS?
+      if ( track.gid.includesDet(DetID::TOF) && mTOF && !mTOF->prepareTrack(mRecoData, contributorsGID, track) ) { // do we want to abandont the track if TOF fails? or just continue with ITS?
         track.gid.clear(); // mark as failed
         continue;
       }
@@ -593,11 +608,11 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
   o2::base::GRPGeomHelper::instance().checkUpdates(pc);  
   if (static bool initOnce{false}; !initOnce) {
     initOnce = true;
+    mParams = &Params::Instance();
+    mParams->printKeyValues(true, true);
     mITS->setTopologyDictionaries(mITSDict, mIT3Dict);
     auto geom = o2::its::GeometryTGeo::Instance();
     o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
-    mParams = &Params::Instance();
-    mParams->printKeyValues(true, true);
     buildHierarchy();
 
     if (mParams->doMisalignmentLeg || mParams->doMisalignmentRB || mParams->doMisalignmentInex) {
@@ -1150,13 +1165,15 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
   }
 }
 
-DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withITS, o2::alignrs::OutputEnum out)
+DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withITS3, o2::alignrs::OutputEnum out)
 {
   auto dataRequest = std::make_shared<DataRequest>();
   std::shared_ptr<o2::base::GRPGeomRequest> ggRequest{nullptr};
+  auto detMask = GTrackID::getSourcesDetectorsMask(srcClusters);
+
   if (!out[o2::alignrs::OutputOpt::MilleRes]) {
     dataRequest->requestTracks(srcTracks, useMC);
-    if (!withITS) {
+    if (withITS3) {
       dataRequest->requestIT3Clusters(useMC);
     } else {
       dataRequest->requestClusters(srcClusters, useMC);
@@ -1187,10 +1204,10 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
   };
 
   return DataProcessorSpec{
-    .name = "its3-alignment",
+    .name = "barrel-alignment",
     .inputs = dataRequest->inputs,
     .outputs = {},
-    .algorithm = AlgorithmSpec{adaptFromTask<AlignmentSpec>(dataRequest, ggRequest, srcTracks, useMC, withITS, out)},
+    .algorithm = AlgorithmSpec{adaptFromTask<AlignmentSpec>(dataRequest, ggRequest, srcTracks, detMask, useMC, withITS3, out)},
     .options = opts};
 }
 } // namespace o2::alignrs

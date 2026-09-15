@@ -32,7 +32,7 @@ void customize(std::vector<ConfigParamSpec>& workflowOptions)
     {"disable-mc", o2::framework::VariantType::Bool, false, {"enable MC propagation"}},
     {"track-sources", VariantType::String, std::string{GID::ALL}, {"comma-separated list of track sources to use"}},
     {"cluster-sources", VariantType::String, "ITS", {"comma-separated list of cluster sources to use"}},
-    {"with-its", VariantType::Bool, false, {"ITS alignment mode"}},
+    {"with-its3", VariantType::Bool, false, {"ITS3 alignment mode"}},
     {"output", VariantType::String, "", {"output steering"}},
     {"disable-root-input", VariantType::Bool, false, {"disable root-files input reader"}},
     {"configKeyValues", VariantType::String, "", {"Semicolon separated key=value strings ..."}}};
@@ -50,7 +50,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
   const GID::mask_t srcTrc = allowedSourcesTrc & GID::getSourcesMask(cfg.options().get<std::string>("track-sources"));
   const GID::mask_t srcCls = allowedSourcesClus & GID::getSourcesMask(cfg.options().get<std::string>("cluster-sources"));
   const auto useMC = !cfg.options().get<bool>("disable-mc");
-  const auto withITS = cfg.options().get<bool>("with-its");
+  const auto withITS3 = cfg.options().get<bool>("with-its3");
   const o2::alignrs::OutputEnum output(cfg.options().get<std::string>("output"));
 
   WorkflowSpec specs;
@@ -61,7 +61,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
     specs.emplace_back(o2::globaltracking::getNoInpDummyOutSpec(0));
   }
 
-  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, srcCls, useMC, withITS, output));
+  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, srcCls, useMC, withITS3, output));
 
   o2::raw::HBFUtilsInitializer hbfIni(cfg, specs);
   return std::move(specs);
