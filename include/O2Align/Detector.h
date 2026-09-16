@@ -50,6 +50,12 @@ class Detector
   const char* getDetName() const noexcept { return DetName[mDetIdx]; }
 
  protected:
+  /// Continue the KF fit of resTrack.track outward, using the frames appended by the caller to
+  /// resTrack.info starting from the slot nFramesIni. The caller must append them in the outward
+  /// direction. The fit is done on a copy, hence on failure the new frames are dropped and both
+  /// resTrack.track and resTrack.kfFit stay intact.
+  static bool continueFitOutward(Track& resTrack, size_t nFramesIni);
+
   DetIdx mDetIdx{DetITS};
 };
 

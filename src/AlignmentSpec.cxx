@@ -275,6 +275,11 @@ void AlignmentSpec::process() // collisions
   double chi2Sum{0}, lostWeightSum{0};
   int ndfSum{0};
 
+  auto resetTrackCov = [](TrackD& trk) {
+    trk.resetCovariance();
+    trk.setCov(trk.getQ2Pt() * trk.getQ2Pt() * trk.getCov()[14], 14);
+  };
+
   int nVtx = 0, nVtxAcc = 0, nTrc = 0, nTrcAcc = 0;
   for (int ivref = 0; ivref < nvRefs; ivref++) {
     const o2::dataformats::PrimaryVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;
@@ -287,6 +292,7 @@ void AlignmentSpec::process() // collisions
     if (mParams->verbose > 1) {
       LOGP(info, "processing vtref {} of {} with {} tracks, {}", ivref, nvRefs, trackRef.getEntries(), vtx ? vtx->asString() : std::string{});
     }
+    resTracks.clear();
     nVtx++;
     for (int src : mTrackSources) {      
       int start = trackRef.getFirstEntryOfSource(src), end = start + trackRef.getEntriesOfSource(src);
@@ -305,7 +311,14 @@ void AlignmentSpec::process() // collisions
         }
         mStat.data[ProcStat::kInput][ProcStat::kTracks]++;
         // account preliminary
-        resTracks.emplace_back().gid = trackIndex;
+        auto& tr = resTracks.emplace_back();
+        tr.gid = trackIndex;
+        tr.track =  convertTrack<double>(trPar);
+        resetTrackCov(tr.track);
+        tr.kfFit.chi2 = 0.f; // the detectors accumulate the chi2 of their own points into it
+        if (useVertexConstraint) { // reserve a frame for eventual vertex point
+          tr.info.emplace_back();
+        }        
       }
     }
     // fit the tracks, prepare for GLB

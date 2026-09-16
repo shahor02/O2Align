@@ -88,14 +88,13 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   const float tOffset = trackTime / (o2::constants::lhc::LHCBunchSpacingMUS * 8);
 
   auto prop = o2::base::PropagatorD::Instance();
-  const double bz = prop->getNominalBz();
-  auto trkParam = convertTrack<double>(trk.getOuterParam()); // we refit the outer param inward
-  trkParam.resetCovariance();
-  {
-    const double qptB5Scale = std::abs(bz) > 0.1 ? std::abs(bz) / 5.006680 : 1.;
-    const double q2pt2 = trkParam.getQ2Pt() * trkParam.getQ2Pt(), q2pt2Wgh = q2pt2 * qptB5Scale * qptB5Scale;
-    trkParam.setCov((100. + q2pt2Wgh) / (1. + q2pt2Wgh) * q2pt2, 14); // -> 100 for high pTs, -> 1 for low pTs
+  // we continue the fit of the seed prepared by the inner detectors outward, w/o resetting its cov.matrix
+  auto trkParam = resTrack.track;
+  o2::track::TrackParD trkRef, *refLin = nullptr;
+  if (params.useStableRef) {
+    refLin = &(trkRef = trkParam);
   }
+  float chi2 = 0.f;
 
   constexpr float TAN10 = 0.17632698f; // tan of the half sector opening angle
   constexpr int NSectorsPerSide = o2::tpc::constants::MAXSECTOR / 2;
@@ -108,7 +107,8 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   uint8_t sector = 0, row = 0, currentSector = 0, currentRow = 0;
   int16_t clusterState = 0, nextState = 0;
 
-  for (int i = 0; i != nClus; i += cl ? 0 : 1) {
+  // the clusters are ordered from the outermost to the innermost, we traverse them in the outward direction
+  for (int i = nClus - 1; i >= 0; i -= cl ? 0 : 1) {
     float x{0.f}, y{0.f}, z{0.f}, xTmp{0.f}, yTmp{0.f}, zTmp{0.f}, charge{0.f};
     int clusters = 0;
     double combRow = 0;
@@ -116,16 +116,16 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     while (true) {
       if (!cl) {
         const auto* clTmp = &trk.getCluster(clusterIdxStruct, i, clusterNativeAccess, sector, row);
-        if (row < params.minTPCPadRow) { // inward refit: all following clusters will have a smaller padrow
+        if (row > params.maxTPCPadRow) { // outward refit: all following clusters will have a larger padrow
           stopLoop = true;
           break;
         }
-        if (row > params.maxTPCPadRow) { // the following clusters still have a chance to be accepted
+        if (row < params.minTPCPadRow) { // the following clusters still have a chance to be accepted
           break;
         }
         if (params.discardEdgePadrows > 0 && getDistanceToStackEdge(row) < params.discardEdgePadrows) {
-          if (i + 1 != nClus) {
-            ++i;
+          if (i != 0) {
+            --i;
             continue;
           }
           stopLoop = true;
@@ -133,8 +133,8 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
         }
         mCorrMaps->Transform(sector, row, clTmp->getPad(), clTmp->getTime(), xTmp, yTmp, zTmp, tOffset);
         if (params.discardSectorEdgeDepth > 0 && std::abs(yTmp) + params.discardSectorEdgeDepth > xTmp * TAN10) {
-          if (i + 1 != nClus) {
-            ++i;
+          if (i != 0) {
+            --i;
             continue;
           }
           stopLoop = true;
@@ -170,8 +170,8 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
         }
         cl = nullptr;
         ++clusters;
-        if (i + 1 != nClus) {
-          ++i;
+        if (i != 0) {
+          --i;
           continue;
         }
       }
@@ -191,11 +191,8 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     }
 
     const double alpha = o2::math_utils::detail::sector2Angle<double>(currentSector % NSectorsPerSide);
-    if (!prop->propagateToAlphaX(trkParam, nullptr, alpha, x, false, params.maxSnp, params.maxStep, 1, params.corrType)) {
+    if (!prop->propagateToAlphaX(trkParam, refLin, alpha, x, false, params.maxSnp, params.maxStep, 1, params.corrType)) {
       break;
-    }
-    if (!npoints) { // the Z of the 1st point defines the track Z (the TPC Z is not known a priori)
-      trkParam.setZ(z);
     }
     std::array<float, 3> cov{0.f, 0.f, 0.f};
     // TODO: this disables the occupancy / charge components of the error estimation
@@ -212,8 +209,13 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
 
     const std::array<double, 2> pos{y, z};
     const std::array<double, 3> covD{cov[0], cov[1], cov[2]};
+    chi2 += static_cast<float>(trkParam.getPredictedChi2Quiet(pos, covD));
     if (!trkParam.update(pos, covD)) {
       break;
+    }
+    if (refLin) { // displace the reference to the last updated cluster
+      refLin->setY(pos[0]);
+      refLin->setZ(pos[1]);
     }
 
     auto& pnt = resTrack.info.emplace_back();
@@ -229,6 +231,8 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     resTrack.info.resize(nPointsIni);
     return false;
   }
+  resTrack.track = trkParam; // the seed is replaced only by a successful fit
+  resTrack.kfFit.chi2 += chi2;
   return true;
 }
 

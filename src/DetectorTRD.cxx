@@ -110,10 +110,16 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   const auto* geo = o2::trd::Geometry::instance();
   const size_t nPointsIni = resTrack.info.size();
 
-  // we refit the outer param inward to get the tracklet coordinates accounting for the tilt
-  o2::track::TrackParD trkParam = convertTrack<double>(trk.getOuterParam());
+  // we continue the fit of the seed prepared by the inner detectors outward, w/o resetting its cov.matrix;
+  // the fitted track also provides the angles and the Z needed for the tilt correction and the covariance
+  auto trkParam = resTrack.track;
+  o2::track::TrackParD trkRef, *refLin = nullptr;
+  if (params.useStableRef) {
+    refLin = &(trkRef = trkParam);
+  }
+  float chi2 = 0.f;
 
-  for (int il = o2::trd::constants::NLAYER; il--;) {
+  for (int il = 0; il < o2::trd::constants::NLAYER; ++il) {
     const int trkltId = trk.getTrackletIndex(il);
     if (trkltId < 0) {
       continue;
@@ -134,10 +140,7 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
 
     const int trkltSec = o2::trd::Geometry::getSector(trkltDet);
     const double alpSens = o2::math_utils::detail::sector2Angle<double>(trkltSec);
-    if (trkltSec != o2::math_utils::angle2Sectord(trkParam.getAlpha()) ||
-        !trkParam.rotateParam(alpSens) ||
-        // we don't need high precision here
-        !prop->propagateTo(trkParam, traXYZ[0], false, o2::base::PropagatorD::MAX_SIN_PHI, 10., o2::base::PropagatorD::MatCorrType::USEMatCorrNONE)) {
+    if (!prop->propagateToAlphaX(trkParam, refLin, alpSens, traXYZ[0], false, params.maxSnp, params.maxStep, 1, params.corrType)) {
       resTrack.info.resize(nPointsIni);
       return false;
     }
@@ -168,12 +171,23 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
                                          static_cast<float>(posY), static_cast<float>(posZ),
                                          cov[0] + params.extraClsErrYTRD * params.extraClsErrYTRD,
                                          cov[2] + params.extraClsErrZTRD * params.extraClsErrZTRD, cov[1]);
+    chi2 += static_cast<float>(trkParam.getPredictedChi2Quiet(pnt.cluster));
+    if (!trkParam.update(pnt.cluster)) {
+      resTrack.info.resize(nPointsIni);
+      return false;
+    }
+    if (refLin) { // displace the reference to the last updated tracklet
+      refLin->setY(pnt.cluster.getY());
+      refLin->setZ(pnt.cluster.getZ());
+    }
   }
 
   if (static_cast<int>(resTrack.info.size() - nPointsIni) < params.minTRDTracklets) {
     resTrack.info.resize(nPointsIni);
     return false;
   }
+  resTrack.track = trkParam; // the seed is replaced only by a successful fit
+  resTrack.kfFit.chi2 += chi2;
   return true;
 }
 

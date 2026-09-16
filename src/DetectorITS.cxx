@@ -186,34 +186,16 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   auto trFitOut = itsTrack ? convertTrack<double>(itsTrack->getParamIn()) : convertTrack<double>(recoData->getTrackParam(resTrack.gid));
   auto trFitInw = itsTrack ? convertTrack<double>(itsTrack->getParamOut()) : convertTrack<double>(recoData->getTrackParam(resTrack.gid));
   auto prop = o2::base::PropagatorD::Instance();
-  std::array<FrameInfoExt*, 8> frameArr{};
-  std::array<FrameInfoExt*, 8> overlapArr{};
-  std::array<int, 8> clusIDArr{};
+  std::array<FrameInfoExt*, 7> frameArr{};
+  std::array<FrameInfoExt*, 7> overlapArr{};
+  std::array<int, 7> clusIDArr{};
   clusIDArr.fill(-1);
-  std::array<TrackD, 8> trkOutAt{};
-  std::array<bool, 8> hasTrkOutAt{};
+  std::array<TrackD, 7> trkOutAt{};
+  std::array<bool, 7> hasTrkOutAt{};
 
   auto resetTrackCov = [](TrackD& trk) {
     trk.resetCovariance();
     trk.setCov(trk.getQ2Pt() * trk.getQ2Pt() * trk.getCov()[14], 14);
-  };
-
-  auto accountCluster = [&](const FrameInfoExt& frame, TrackD& tr, float& chi2, o2::track::TrackParD* refLin, bool storeChi2 = true) {
-    if (!prop->propagateToAlphaX(tr, refLin, frame.alpha, frame.x, false, params.maxSnp, params.maxStep, 1, params.corrType)) {
-      return false;
-    }
-    const auto& cluster = frame.cluster;
-    if (storeChi2) {
-      chi2 += static_cast<float>(tr.getPredictedChi2Quiet(cluster));
-    }
-    if (!tr.update(cluster)) {
-      return false;
-    }
-    if (refLin) { // displace the reference to the last updated cluster
-      refLin->setY(cluster.getY());
-      refLin->setZ(cluster.getZ());
-    }
-    return true;
   };
 
   auto findBestOverlap = [&](const FrameInfoExt& frame, int clusID, const TrackD& tr) -> FrameInfoExt* {
@@ -251,9 +233,8 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     if (curInfo.cluster.getBits() && curInfo.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
       return;
     }
-    const int slot = 1 + curInfo.lr;
-    frameArr[slot] = &curInfo;
-    clusIDArr[slot] = clusID;
+    frameArr[curInfo.lr] = &curInfo;
+    clusIDArr[curInfo.lr] = clusID;
     ++nPoints;
   };
 
@@ -276,9 +257,6 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     return false;
   }
 
-  resTrack.points.clear();
-  resTrack.info.clear();
-
   if (allowOverlaps) {
     resetTrackCov(trFitOut);
     resetTrackCov(trFitInw);
@@ -286,7 +264,7 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     if (params.useStableRef) {
       refLinOut = &(trkOutRef = trFitOut);
     }
-    for (int i = 1; i <= 7; ++i) {
+    for (int i = 0; i < 7; ++i) {
       if (!frameArr[i]) {
         continue;
       }
@@ -307,7 +285,7 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     if (params.useStableRef) {
       refLinInw = &(trkInwRef = trFitInw);
     }
-    for (int i = 7; i >= 1; --i) {
+    for (int i = 7; i--;) {
       if (!frameArr[i]) {
         continue;
       }
@@ -333,8 +311,8 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       }
     }
   }
-
-  for (int i = 1; i <= 7; ++i) {
+  const size_t nFramesIni = resTrack.info.size(); // N frames before adding new ITS frames
+  for (int i = 0; i < 7; ++i) {
     if (!frameArr[i]) {
       continue;
     }
@@ -343,28 +321,12 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       resTrack.info.push_back(*overlapArr[i]);
     }
   }
-  std::stable_sort(resTrack.info.begin(), resTrack.info.end(), [](const auto& a, const auto& b) {
+  // the overlap frames are interleaved with their host layer frames, order them along the track
+  std::stable_sort(resTrack.info.begin() + nFramesIni, resTrack.info.end(), [](const auto& a, const auto& b) {
     return a.x < b.x;
   });
-
-  auto trFinal = itsTrack ? convertTrack<double>(itsTrack->getParamIn()) : convertTrack<double>(recoData->getTrackParam(resTrack.gid));
-  resetTrackCov(trFinal);
-  o2::track::TrackParD trkFinalRef, *refLinFinal = nullptr;
-  if (params.useStableRef) {
-    refLinFinal = &(trkFinalRef = trFinal);
-  }
-  float finalChi2 = 0.f;
-  for (const auto& frame : resTrack.info) {
-    if (!accountCluster(frame, trFinal, finalChi2, refLinFinal)) {
-      return false;
-    }
-  }
-  resTrack.track = trFinal;
-  resTrack.kfFit.chi2 = finalChi2;
-  resTrack.kfFit.ndf = static_cast<int>(resTrack.info.size()) * 2 - 5;
-  resTrack.kfFit.chi2Ndf = resTrack.kfFit.ndf > 0 ? finalChi2 / static_cast<float>(resTrack.kfFit.ndf) : -1.f;
-
-  return true;
+  // continue the fit of the seed prepared in advance outward, w/o resetting its cov.matrix
+  return continueFitOutward(resTrack, nFramesIni);
 }
 
 
