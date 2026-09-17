@@ -37,6 +37,7 @@ add_library(O2Align
             src/Constraint.cxx
             src/Params.cxx
             src/Detector.cxx
+            src/DetectorPVT.cxx
             src/DetectorITS.cxx
             src/DetectorTPC.cxx
             src/DetectorTRD.cxx

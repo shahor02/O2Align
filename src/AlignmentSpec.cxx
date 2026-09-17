@@ -26,14 +26,17 @@
 #include <MilleBinary.h>
 #include <nlohmann/json.hpp>
 
+#include "Framework/CCDBParamSpec.h"
 #include "Framework/ConfigParamRegistry.h"
 #include "Framework/DataProcessorSpec.h"
 #include "Framework/Task.h"
+#include "Framework/TimingInfo.h"
 #include "ITSBase/GeometryTGeo.h"
 #include "DataFormatsGlobalTracking/RecoContainer.h"
 #include "DetectorsCommonDataFormats/DetID.h"
 #include "DetectorsBase/Propagator.h"
 #include "DetectorsBase/GRPGeomHelper.h"
+#include "DataFormatsCalibration/MeanVertexObject.h"
 #include "DetectorsVertexing/PVertexer.h"
 #include "ReconstructionDataFormats/PrimaryVertex.h"
 #include "ReconstructionDataFormats/VtxTrackIndex.h"
@@ -55,6 +58,7 @@
 #include "O2Align/MisalignmentUtils.h"
 #include "O2Align/SensorITS.h"
 #include "O2Align/DetectorITS.h"
+#include "O2Align/DetectorPVT.h"
 #include "O2Align/DetectorTPC.h"
 #include "O2Align/DetectorTRD.h"
 #include "O2Align/DetectorTOF.h"
@@ -161,6 +165,7 @@ class AlignmentSpec final : public Task
     if (dmask[DetID::TOF]) {
       mTOF = std::make_unique<DetectorTOF>();
      }
+    mPVT = std::make_unique<DetectorPVT>(); // virtual, always created: it has no data of its own
   }
 
   void init(InitContext& ic) final;
@@ -197,6 +202,9 @@ class AlignmentSpec final : public Task
   // build and fit the GBL trajectory of a single track, accounting its frames from the ipStart slot outward
   bool buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj);
 
+  // impose the prior of the mean interaction point on the vertex point of one track of a collision
+  void addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint);
+
   // build and fit a single composed GBL trajectory for all tracks of one collision, with their
   // common vertex position as parameters shared by all of them
   bool buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj);
@@ -214,6 +222,7 @@ class AlignmentSpec final : public Task
   // ITS3 acceptance so false is to discard track
   bool applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk);
 
+  o2::framework::TimingInfo mTimeInfo;
   o2::alignrs::OutputEnum mOutOpt;
   std::unique_ptr<o2::utils::TreeStreamRedirector> mDBGOut;
   std::vector<dataformats::VertexBase> mPVMC;
@@ -223,8 +232,12 @@ class AlignmentSpec final : public Task
   const o2::its3::TopologyDictionary* mIT3Dict{nullptr};
   o2::globaltracking::RecoContainer* mRecoData = nullptr;
   std::unique_ptr<steer::MCKinematicsReader> mcReader;
-  o2::vertexing::PVertexer mVertexer; // used to refit the PV with the tracks refitted in the current alignment
+  o2::vertexing::PVertexer mVertexer;              // used to refit the PV with the tracks refitted in the current alignment
+  o2::dataformats::MeanVertexObject mMeanVtx{};    // mean vertex, the prior of the PV of every collision
+  bool mMeanVertexUpdated{false};                  // the mean vertex was updated from the CCDB
+  std::vector<int> mMeanVtxLabels;                 // Millepede labels of the mean vertex position
 
+  std::unique_ptr<DetectorPVT> mPVT; // virtual detector of the mean vertex
   std::unique_ptr<DetectorITS> mITS;
   std::unique_ptr<DetectorTPC> mTPC;
   std::unique_ptr<DetectorTRD> mTRD;
@@ -232,7 +245,8 @@ class AlignmentSpec final : public Task
 
   std::shared_ptr<DataRequest> mDataRequest;
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
-  std::unique_ptr<Volume> mHierarchy;   // tree-hiearchy
+  std::unique_ptr<Volume> mHierarchy;    // tree-hiearchy
+  std::unique_ptr<Volume> mHierarchyPVT; // separate top volume of the virtual PVT detector
   Volume::SensorMapping mChip2Hiearchy; // global label mapping to leaves in the tree
   ProcStat mStat{};     // processing statistics
   GBLStat mGBLStat{};   // GBL construction and fit statistics
@@ -270,9 +284,11 @@ void AlignmentSpec::run(ProcessingContext& pc)
     updateTimeDependentParams(pc);
     Volume::writeMillepedeResults(mHierarchy.get(), mParams->milleResFile, mParams->milleResOutJson, mParams->misAlgJson); // RSTODO loop over possible top volumes (detectors)
   } else {
+    mTimeInfo = pc.services().get<o2::framework::TimingInfo>();
     o2::globaltracking::RecoContainer recoData;
     mRecoData = &recoData;
     mRecoData->collectData(pc, *mDataRequest);
+    pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
     updateTimeDependentParams(pc);
     process();
   }
@@ -553,7 +569,7 @@ void AlignmentSpec::process() // collisions
         }
 
         if (frame.lr >= 0) {
-          Label lbl(0, frame.sens, true);
+          const auto& lbl = frame.label; // as assigned by the detector owning the frame
           if (mChip2Hiearchy.find(lbl) == mChip2Hiearchy.end()) {
             LOGP(fatal, "Cannot find global label: {}", lbl.asString());
           }
@@ -733,7 +749,8 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
     buildHierarchy();
     if (mParams->usePVConstraintMinTracks > 0) {
       o2::conf::ConfigurableParam::updateFromString("pvertexer.useTimeInChi2=false;"); // the PV refit does not use the track time
-      mVertexer.init(); // RSTODO: the calibrated mean vertex is not requested from the CCDB, the default one is used
+      mVertexer.setMeanVertex(&mMeanVtx);
+      mVertexer.init();
     }
 
     if (mParams->doMisalignmentLeg || mParams->doMisalignmentRB || mParams->doMisalignmentInex) {
@@ -766,12 +783,27 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
 void AlignmentSpec::buildHierarchy()
 {
   mHierarchy = mITS->buildHierarchy(mChip2Hiearchy);
+  if (mPVT && mParams->usePVConstraintMinTracks > 0) {
+    // the mean vertex is a top volume of its own: it is not a part of any real detector
+    mHierarchyPVT = mPVT->buildHierarchy(mChip2Hiearchy);
+    LOGP(info, "Mean vertex prior: {}", mMeanVtx.asString());
+  }
 
   if (!mParams->dofConfigJson.empty()) {
     Volume::applyDOFConfig(mHierarchy.get(), mParams->dofConfigJson); // RSTODO loop over detectors
+    if (mHierarchyPVT) { // a matching rule may fix the mean vertex position or free its rotations
+      Volume::applyDOFConfig(mHierarchyPVT.get(), mParams->dofConfigJson);
+    }
   }
 
   mHierarchy->finalise();
+  if (mHierarchyPVT) {
+    mHierarchyPVT->finalise();
+    mMeanVtxLabels = mPVT->getPositionLabels();
+    if (mMeanVtxLabels.empty()) {
+      LOGP(info, "Mean vertex position is fixed, it is imposed as a prior w/o being aligned");
+    }
+  }
   if (mOutOpt[o2::alignrs::OutputOpt::MilleSteer]) {
     std::ofstream tree(mParams->milleTreeFile);
     mHierarchy->writeTree(tree);
@@ -779,6 +811,10 @@ void AlignmentSpec::buildHierarchy()
     mHierarchy->writeRigidBodyConstraints(cons);
     std::ofstream par(mParams->milleParamFile);
     mHierarchy->writeParameters(par);
+    if (mHierarchyPVT) { // its own Parameter block, the mean vertex has no constraints to write
+      mHierarchyPVT->writeTree(tree);
+      mHierarchyPVT->writeParameters(par);
+    }
   }
 }
 
@@ -1149,6 +1185,44 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
   return fitGBLTrajectory(traj, resTrack.kfFit.chi2Ndf, gblTraj, resTrack.gblFit);
 }
 
+// Impose the prior on the vertex of the collision: it must agree with the mean interaction point
+// within the sigmas of the luminous region. Being a property of the collision, the prior is
+// accounted only once, as a measurement on the vertex point of a single track of the composed
+// trajectory (adding it per track would multiply its weight by their number).
+// The measurement carries the derivatives wrt the position of the mean vertex, which is a global
+// alignment parameter (the dummy volume of the virtual PVT detector), unless it is kept fixed.
+// trans is the d(local offsets)/d(vertex position) transformation of the hosting track, which is at
+// the same time the derivative of the local position of the mean vertex wrt its global position.
+void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint)
+{
+  const auto& frame = resTrack.info.front();
+  double ca{0}, sa{0};
+  o2::math_utils::sincosd(frame.alpha, sa, ca);
+  const auto slopes = TrackSlopes::computeTrackSlopes(resTrack.track.getSnp(), resTrack.track.getTgl());
+  // the mean vertex in the tracking frame of the vertex point, brought to the plane of this point
+  const double muX = mMeanVtx.getX() * ca + mMeanVtx.getY() * sa; // along the local X
+  const double dX = muX - frame.x;
+  const double muY = -mMeanVtx.getX() * sa + mMeanVtx.getY() * ca - slopes.dydx * dX;
+  const double muZ = mMeanVtx.getZ() - slopes.dzdx * dX;
+  Eigen::Vector2d res;
+  res << muY - resTrack.track.getY(), muZ - resTrack.track.getZ();
+  // covariance of the luminous region rotated to this frame: the transformation of the vertex
+  // position to the local offsets is the same as for the common parameters of the trajectory
+  Eigen::Matrix3d covGlo = Eigen::Matrix3d::Zero();
+  covGlo(0, 0) = mMeanVtx.getSigmaX2();
+  covGlo(1, 1) = mMeanVtx.getSigmaY2();
+  covGlo(2, 2) = mMeanVtx.getSigmaZ2();
+  const Eigen::Matrix2d cov = trans * covGlo * trans.transpose();
+  if (cov.determinant() < 1e-16) {
+    LOGP(warn, "Skipping the mean vertex prior: singular projected covariance of {}", mMeanVtx.asString());
+    return;
+  }
+  vtxPoint.addMeasurement(res, Eigen::Matrix2d(cov.inverse()));
+  if (!mMeanVtxLabels.empty()) { // the mean vertex position is aligned as well
+    vtxPoint.addGlobals(mMeanVtxLabels, trans);
+  }
+}
+
 // Build and fit a single composed GBL trajectory for all tracks of one collision, with the 3
 // coordinates of their common vertex as parameters shared by all of them: the vertex constraint is
 // then exact by parameterization, while every track keeps its own curvature and scattering
@@ -1182,6 +1256,9 @@ bool AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std:
     innerTrans(1, 0) = -slopes.dzdx * ca;      // dZ / dVx
     innerTrans(1, 1) = -slopes.dzdx * sa;      // dZ / dVy
     innerTrans(1, 2) = 1.;                     // dZ / dVz
+    if (used.empty()) { // impose the prior on the vertex of this collision
+      addMeanVertexPrior(*trc, innerTrans, points.front());
+    }
     pointsAndTrans.emplace_back(std::move(points), std::move(innerTrans));
     used.push_back(trc);
   }
@@ -1523,11 +1600,12 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
   //   dres/da_parent = dres/da_TRK * J_L2T_tile * J_L2P_tile
   // The tile is a pseudo-volume; Millepede fits at the halfBarrel (parent) level.
   if (mParams->doMisalignmentRB) {
-    Label lbl(0, frame.cluster.getSensorID(), true);
-    if (mChip2Hiearchy.find(lbl) == mChip2Hiearchy.end()) {
+    // use the label assigned by the detector owning the frame: it carries the right detector index
+    const auto volIt = mChip2Hiearchy.find(frame.label);
+    if (volIt == mChip2Hiearchy.end()) {
       return true; // sensor not in hierarchy, skip
     }
-    const auto* tileVol = mChip2Hiearchy.at(lbl);
+    const auto* tileVol = volIt->second;
 
     // derivative in TRK frame (3x6: rows = dy, dz, dsnp)
     Matrix36 der = getRigidBodyBaseDerivatives(makeDerivativeContext(frame, wTrk));
@@ -1593,6 +1671,12 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
     mIT3Dict = (const o2::its3::TopologyDictionary*)obj;
     return;
   }
+  if (matcher == ConcreteDataMatcher("GLO", "MEANVERTEX", 0)) {
+    mMeanVtx = *(const o2::dataformats::MeanVertexObject*)obj;
+    mMeanVertexUpdated = true;
+    LOGP(info, "Imposing new MeanVertex: {}", mMeanVtx.asString());
+    return;
+  }
 }
 
 DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withITS3, o2::alignrs::OutputEnum out)
@@ -1609,6 +1693,9 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
       dataRequest->requestClusters(srcClusters, useMC);
     }
     dataRequest->requestPrimaryVertices(useMC);
+    // the mean vertex is the prior of the primary vertex of every collision and the starting point
+    // of the alignment of the virtual PVT detector
+    dataRequest->inputs.emplace_back("meanvtx", "GLO", "MEANVERTEX", 0, Lifetime::Condition, ccdbParamSpec("GLO/Calib/MeanVertex", {}, 1));
     ggRequest = std::make_shared<o2::base::GRPGeomRequest>(false,                             // orbitResetTime
                                                            false,                             // GRPECS=true
                                                            true,                              // GRPLHCIF

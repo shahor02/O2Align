@@ -22,12 +22,12 @@ namespace o2::alignrs
 class Label
 {
   // Millepede label is any positive integer [1....)
-  // Layout: DOF(5) | CALIB(1) | ID(22) | SENS(1) | DET(2) = 31 usable bits (MSB reserved, GBL uses signed int)
+  // Layout: DOF(7) | CALIB(1) | ID(19) | SENS(1) | DET(3) = 31 usable bits (MSB reserved, GBL uses signed int)
  public:
   using T = uint32_t;
-  static constexpr int DOF_BITS = 5;   // bits 0-4
-  static constexpr int CALIB_BITS = 1; // bit 5: 0 = rigid body, 1 = calibration (only allow for one calibration, could be extended if needed)
-  static constexpr int ID_BITS = 22;   // bits 6-27
+  static constexpr int DOF_BITS = 7;   // bits 0-6
+  static constexpr int CALIB_BITS = 1; // bit 7: 0 = rigid body, 1 = calibration (only allow for one calibration, could be extended if needed)
+  static constexpr int ID_BITS = 19;   // bits 8-27
   static constexpr int SENS_BITS = 1;  // bit 28
   static constexpr int TOTAL_BITS = sizeof(T) * 8;
   static constexpr int DET_BITS = TOTAL_BITS - (DOF_BITS + CALIB_BITS + ID_BITS + SENS_BITS) - 1; // one less bit since GBL uses int!

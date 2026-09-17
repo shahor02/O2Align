@@ -30,15 +30,17 @@ using GlobalIDSet = std::array<GTrackID, GTrackID::NSources>;
 class Detector
 {
  public:
-  /// detector index, stored in the DET bits of the Millepede Label (only 4 values fit there!)
+  /// detector index, stored in the DET bits of the Millepede Label
   enum DetIdx : uint32_t {
-    DetITS = 0,
+    DetPVT = 0, // PVT is a virtual detector, used for the primary vertex
+    DetITS,
     DetTPC,
     DetTRD,
     DetTOF,
     NDetectors
   };
-  static constexpr const char* DetName[NDetectors] = {"ITS", "TPC", "TRD", "TOF"};
+  static constexpr const char* DetName[NDetectors] = {"PVT", "ITS", "TPC", "TRD", "TOF"};
+  static_assert(NDetectors <= Label::DET_MAX + 1, "Detector index does not fit the DET bits of the Label");
 
   explicit Detector(DetIdx det) : mDetIdx(det) {}
   virtual ~Detector() = default;
@@ -50,7 +52,7 @@ class Detector
   const char* getDetName() const noexcept { return DetName[mDetIdx]; }
 
  protected:
-  DetIdx mDetIdx{DetITS};
+  DetIdx mDetIdx{DetPVT};
 };
 
 } // namespace o2::alignrs
