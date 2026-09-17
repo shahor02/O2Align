@@ -108,13 +108,13 @@ bool DetectorTOF::prepareTrack(o2::globaltracking::RecoContainer* /*recoData*/, 
     return false;
   }
   const auto& pnt = mTOFPointsInfo[idx];
-  if (pnt.lr < 0) { // the strip of this cluster is not in the hierarchy
+  if (pnt.lr == FrameInfoExt::Invalid) { // the strip of this cluster is not in the hierarchy
     return false;
   }
   const size_t nPointsIni = resTrack.info.size();
   resTrack.info.push_back(pnt);
   // continue the fit of the seed prepared by the inner detectors outward, w/o resetting its cov.matrix
-  return continueFitOutward(resTrack, nPointsIni);
+  return resTrack.continueFitOutward(static_cast<int>(nPointsIni));
 }
 
 } // namespace o2::alignrs

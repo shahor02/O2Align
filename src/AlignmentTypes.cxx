@@ -12,7 +12,9 @@
 #include <string>
 #include <format>
 
+#include "DetectorsBase/Propagator.h"
 #include "O2Align/AlignmentTypes.h"
+#include "O2Align/Params.h"
 
 namespace o2::alignrs
 {
@@ -20,6 +22,65 @@ namespace o2::alignrs
 std::string FrameInfoExt::asString() const
 {
   return std::format("[{}] Sensor={} Layer={} X={} Alpha={} y={} z={}", label.asString(), cluster.getSensorID(), lr, x, alpha, cluster.getY(), cluster.getZ());
+}
+
+bool Track::fitTrack(int frameStart, int frameStop, bool cropOnFailure, bool reset)
+{
+  const int nFrames = static_cast<int>(info.size());
+  if (frameStart < 0 || frameStart >= nFrames || frameStop < 0 || frameStop >= nFrames) {
+    return false;
+  }
+  const auto& params = Params::Instance();
+  auto prop = o2::base::PropagatorD::Instance();
+  auto trFit = track; // fit a copy: the seed must be preserved if the fit fails
+  if (reset) {
+    trFit.resetCovariance();
+    trFit.setCov(trFit.getQ2Pt() * trFit.getQ2Pt() * trFit.getCov()[14], 14);
+  }
+  const int step = frameStart > frameStop ? -1 : 1;
+  const int frameEnd = frameStop + step; // 1st slot past the range
+  const bool crop = cropOnFailure && step > 0; // cropping is meaningful for the outward fit only
+  o2::track::TrackParD trkRef, *refLin = nullptr;
+  if (params.useStableRef) {
+    refLin = &(trkRef = trFit);
+  }
+  float chi2 = 0.f;
+  for (int i = frameStart; i != frameEnd; i += step) {
+    const auto& frame = info[i];
+    if (frame.lr == FrameInfoExt::Invalid) { // invalid point
+      continue;
+    }
+    if (!prop->propagateToAlphaX(trFit, refLin, frame.alpha, frame.x, false, params.maxSnp, params.maxStep, 1, params.corrType)) {
+      if (crop) {
+        info.resize(frameStart);
+      }
+      return false;
+    }
+    const auto& cluster = frame.cluster;
+    chi2 += static_cast<float>(trFit.getPredictedChi2Quiet(cluster));
+    if (!trFit.update(cluster)) {
+      if (crop) {
+        info.resize(frameStart);
+      }
+      return false;
+    }
+    if (refLin) { // displace the reference to the last updated cluster
+      refLin->setY(cluster.getY());
+      refLin->setZ(cluster.getZ());
+    }
+  }
+  track = trFit;
+  kfFit.chi2 = reset ? chi2 : kfFit.chi2 + chi2;
+  // RSTODO fill the ndf / chi2Ndf info during the inward refit
+  return true;
+}
+
+bool Track::continueFitOutward(int frameStart)
+{
+  if (frameStart >= static_cast<int>(info.size())) {
+    return true; // no new frames were appended: nothing to fit
+  }
+  return fitTrack(frameStart, static_cast<int>(info.size()) - 1, true, false);
 }
 
 // RSTODO temporary here

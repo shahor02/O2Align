@@ -326,7 +326,7 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     return a.x < b.x;
   });
   // continue the fit of the seed prepared in advance outward, w/o resetting its cov.matrix
-  return continueFitOutward(resTrack, nFramesIni);
+  return resTrack.continueFitOutward(static_cast<int>(nFramesIni));
 }
 
 

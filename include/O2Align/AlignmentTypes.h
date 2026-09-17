@@ -33,7 +33,11 @@ struct Measurement final {
 };
 
 struct FrameInfoExt final {
-  int8_t lr = -1;                 // detector-specific layer-like index, -1 = vtx (or invalid point)
+  enum {
+    Invalid = -2, // the point is not usable
+    Vertex = -1   // the point is the primary vertex
+  };
+  int8_t lr = Invalid;            // detector-specific layer-like index, -1 = vtx, -2 = invalid point
   Label label{};                  // label of the sensitive volume this point belongs to
   float x{-999.f};                // X of the measurement in the tracking frame
   float alpha{-999.f};            // rotation angle of the tracking frame
@@ -58,6 +62,23 @@ struct Track {
   FitInfo gblFit;                  // gbl fit information
   std::vector<Measurement> points; // measurment point
   std::vector<FrameInfoExt> info;  // frame info, owned by the track (detectors append to it)
+
+  /// KF refit over the frames in the inclusive [frameStart, frameStop] slot range of `info`,
+  /// starting from the state stored in `track` (which must be defined at the frameStart point).
+  /// The range is traversed inward if frameStart > frameStop, invalid frames are skipped.
+  /// The fit is done on a copy, hence `track` and `kfFit` are modified only on success:
+  /// on success `track` becomes the state at the frameStop point and the chi2 of the fitted
+  /// points is added to `kfFit.chi2`.
+  /// reset: reset the seed covariance and zero `kfFit.chi2` before the fit, otherwise the fit
+  ///        continues from the seed as is.
+  /// cropOnFailure: on a failure of an outward fit drop the frames from the frameStart slot on.
+  bool fitTrack(int frameStart, int frameStop, bool cropOnFailure = false, bool reset = false);
+
+  /// Continue the KF fit outward, using the frames appended by the caller to `info` starting
+  /// from the slot frameStart. The caller must append them in the outward direction. On failure
+  /// the new frames are dropped and both `track` and `kfFit` stay intact.
+  bool continueFitOutward(int frameStart);
+
   ClassDefNV(Track, 2)
 };
 
