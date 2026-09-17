@@ -122,6 +122,24 @@ class AlignmentSpec final : public Task
     void print() const;
   };
 
+  /// statistics of the GBL trajectories construction and fit
+  struct GBLStat {
+    int failedProp{0};       // tracks lost on the propagation between the points
+    int construct{0};        // trajectories which could not be constructed
+    int fit{0};              // successfully fitted trajectories
+    int fitFail{0};          // failed fits
+    int chi2Rej{0};          // fits rejected by the chi2/ndf cut
+    double chi2Sum{0};       // sum of the chi2 of the accepted fits
+    double lostWeightSum{0}; // sum of the lost weights of the accepted fits
+    int ndfSum{0};           // sum of the ndf of the accepted fits
+    void print() const
+    {
+      LOGP(info, "\tGBL SUMMARY: fitted {}, construction failed {}, fit failed {}, chi2Ndf rejected {}, propagation failed {}",
+           fit, construct, fitFail, chi2Rej, failedProp);
+      LOGP(info, "\t\tGBL Chi2/Ndf = {}, LostWeight = {}", ndfSum ? chi2Sum / ndfSum : -1., lostWeightSum);
+    }
+  };
+
 
   ~AlignmentSpec() final = default;
   AlignmentSpec(const AlignmentSpec&) = delete;
@@ -170,6 +188,10 @@ class AlignmentSpec final : public Task
   // Returns false if the vertex has too few refitted contributors or the refit failed.
   bool refitPV(const PVertex& vtxOrig, const std::vector<Track>& resTracks, PVertex& vtxRefit);
 
+  // build and fit the GBL trajectory of an already refitted track, accounting its frames from the
+  // ipStart slot outward, and store it to gblTraj if the Mille data is requested
+  bool buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj);
+
   // refit ITS track with inward/outward fit (opt. impose pv as additional constraint)
   // after this we have the refitted track at the innermost update point
   bool prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack, Track& resTrack);
@@ -203,7 +225,8 @@ class AlignmentSpec final : public Task
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
   std::unique_ptr<Volume> mHierarchy;   // tree-hiearchy
   Volume::SensorMapping mChip2Hiearchy; // global label mapping to leaves in the tree
-  ProcStat mStat{}; // processing statistics
+  ProcStat mStat{};     // processing statistics
+  GBLStat mGBLStat{};   // GBL construction and fit statistics
   bool mUseMC{false};
   bool mUsePVConstraint{false}; // use PV as additional constraint in a given track refit  //RSTODO: this should be a per-track decision, not global, should not be datamember
   GTrackID::mask_t mTracksSrcMask;
@@ -286,210 +309,6 @@ void AlignmentSpec::process() // collisions
   auto resetTrackCov = [](TrackD& trk) {
     trk.resetCovariance();
     trk.setCov(trk.getQ2Pt() * trk.getQ2Pt() * trk.getCov()[14], 14);
-  };
-
-  // Build and fit the GBL trajectory of an already refitted track, stepping outward over its frames
-  // starting from the ipStart slot (resTrack.track must be the state at this frame).
-  // The measurement residuals are stored in resTrack.points, the GBL fit result in resTrack.gblFit.
-  auto buildGBLTrack = [&](Track& resTrack, int ipStart) -> bool {
-    const int np = (int)resTrack.info.size();
-    auto wTrk = resTrack.track; // working copy, the seed must be preserved
-    o2::track::TrackParD trkRef, *refLin = nullptr;
-    if (mParams->useStableRef) {
-      refLin = &(trkRef = wTrk);
-    }
-    // the MC index of the ITS part, needed only by the MC-based misalignment simulation
-    const auto itsGID = mRecoData->getITSContributorGID(resTrack.gid);
-    const size_t iTrk = itsGID.isIndexSet() ? itsGID.getIndex() : 0;
-    std::vector<gbl::GblPoint> points;
-    points.reserve(np - ipStart);
-    resTrack.points.clear();
-    resTrack.points.reserve(np - ipStart);
-    track::TrackLTIntegral lt;
-    lt.setTimeNotNeeded();
-    constexpr int perm[5] = {4, 2, 3, 0, 1}; // ALICE->GBL: Q/Pt,Snp,Tgl,Y,Z
-    for (int ip = ipStart; ip < np; ++ip) {
-      const auto& frame = resTrack.info[ip];
-      if (!frame.isValid()) {
-        continue;
-      }
-      gbl::Matrix5d err = gbl::Matrix5d::Identity(), jacALICE = gbl::Matrix5d::Identity(), jacGBL = gbl::Matrix5d::Identity();
-      float msErr = 0.f;
-      if (!points.empty()) { // not the 1st accounted point: step to it
-        // numerically calculates the transport jacobian from prev. point to this point
-        // then we actually do the step to the point and accumulate the material
-        if (!getTransportJacobian(wTrk, frame.x, frame.alpha, jacALICE, err) ||
-            !prop->propagateToAlphaX(wTrk, refLin, frame.alpha, frame.x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt)) {
-          ++cFailedProp;
-          return false;
-        }
-        msErr = its::math_utils::MSangle(wTrk.getPID().getMass(), wTrk.getP(), lt.getX2X0());
-        // after computing jac, reorder to GBL convention
-        for (int i = 0; i < 5; i++) {
-          for (int j = 0; j < 5; j++) {
-            jacGBL(i, j) = jacALICE(perm[i], perm[j]);
-          }
-        }
-      }
-
-      // wTrk is now in the measurment frame
-      gbl::GblPoint point(jacGBL);
-      // measurement
-      const auto& cluster = frame.cluster;
-      Eigen::Vector2d res, prec;
-      res << cluster.getY() - wTrk.getY(), cluster.getZ() - wTrk.getZ();
-
-      // here we can apply some misalignment on the measurment
-      if (!applyMisalignment(res, frame, wTrk, iTrk)) {
-        return false;
-      }
-
-      prec << 1. / cluster.getSigmaY2(), 1. / cluster.getSigmaZ2();
-      // the projection matrix is in the tracking frame the idendity so no need to diagonalize it
-      point.addMeasurement(res, prec);
-      auto& meas = resTrack.points.emplace_back();
-      meas.dy = res[0];
-      meas.dz = res[1];
-      meas.sig2y = cluster.getSigmaY2();
-      meas.sig2z = cluster.getSigmaZ2();
-      meas.z = wTrk.getZ();
-      meas.phi = wTrk.getPhi();
-      o2::math_utils::bringTo02Pid(meas.phi);
-      if (msErr > mParams->minMS && ip < np - 1) {
-        Eigen::Vector2d scat(0., 0.), scatPrec = Eigen::Vector2d::Constant(1. / (msErr * msErr));
-        point.addScatterer(scat, scatPrec);
-        lt.clearFast(); // clear if accounted
-      }
-
-      if (!frame.isVertex()) { // the vertex point has no alignable volume behind it
-        const auto volIt = mChip2Hiearchy.find(frame.label);
-        if (volIt == mChip2Hiearchy.end()) {
-          LOGP(fatal, "Cannot find global label: {}", frame.label.asString());
-        }
-
-        // derivatives for all sensitive volumes and their parents
-        // this is the derivative in TRK but we want to align in LOC
-        // so dr/da_(LOC) = dr/da_(TRK) * da_(TRK)/da_(LOC)
-        const auto* tileVol = volIt->second;
-        const auto derCtx = makeDerivativeContext(frame, wTrk);
-        Matrix36 der = getRigidBodyBaseDerivatives(derCtx);
-
-        // count rigid body columns: only volumes with real DOFs (not DOFPseudo)
-        int nColRB{0};
-        for (const auto* v = tileVol; v && !v->isRoot(); v = v->getParent()) {
-          if (v->getRigidBody()) {
-            nColRB += v->getRigidBody()->nDOFs();
-          }
-        }
-
-        // count calibration columns
-        const auto* sensorVol = tileVol->getParent();
-        const auto* calibSet = sensorVol ? sensorVol->getCalib() : nullptr;
-        const int nCalib = calibSet ? calibSet->nDOFs() : 0;
-        const int nCol = nColRB + nCalib;
-
-        std::vector<int> gLabels;
-        gLabels.reserve(nCol);
-        Eigen::MatrixXd gDer(3, nCol);
-        gDer.setZero();
-        Eigen::Index curCol{0};
-
-        // 1) tile: TRK -> LOC via precomputed T2L and J_L2T
-        const double posTrk[3] = {frame.x, 0., 0.};
-        double posLoc[3];
-        tileVol->getT2L().LocalToMaster(posTrk, posLoc);
-        Matrix66 jacL2T;
-        tileVol->computeJacobianL2T(posLoc, jacL2T);
-        der *= jacL2T;
-        if (tileVol->getRigidBody()) {
-          const int nd = tileVol->getRigidBody()->nDOFs();
-          for (int iDOF = 0; iDOF < nd; ++iDOF) {
-            gLabels.push_back(tileVol->getLabel().rawGBL(iDOF));
-          }
-          gDer.middleCols(curCol, nd) = der;
-          curCol += nd;
-        }
-
-        // 2) chain through parents: child's J_L2P
-        for (const auto* child = tileVol; child->getParent() && !child->getParent()->isRoot(); child = child->getParent()) {
-          der *= child->getJL2P();
-          const auto* parent = child->getParent();
-          if (parent->getRigidBody()) {
-            const int nd = parent->getRigidBody()->nDOFs();
-            for (int iDOF = 0; iDOF < nd; ++iDOF) {
-              gLabels.push_back(parent->getLabel().rawGBL(iDOF));
-            }
-            gDer.middleCols(curCol, nd) = der;
-            curCol += nd;
-          }
-        }
-
-        // 3) calibration derivatives (apply directly on the whole sensor, not on individual tiles)
-        if (calibSet) {
-          const int nd = calibSet->nDOFs();
-          Eigen::MatrixXd calDer(3, nd);
-          calibSet->fillDerivatives(derCtx, calDer);
-          for (int iDOF = 0; iDOF < nd; ++iDOF) {
-            gLabels.push_back(sensorVol->getLabel().asCalib().rawGBL(iDOF));
-          }
-          gDer.middleCols(curCol, nd) = calDer;
-          curCol += nd;
-        }
-        point.addGlobals(gLabels, gDer);
-      }
-
-      if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
-        static Eigen::IOFormat fmt(4, 0, ", ", "\n", "[", "]");
-        LOGP(info, "WORKING-POINT {}", ip);
-        LOGP(info, "Track: {}", wTrk.asString());
-        LOGP(info, "FrameInfo: {}", frame.asString());
-        std::cout << "jacALICE:\n"
-                  << jacALICE.format(fmt) << '\n';
-        std::cout << "jacGBL:\n"
-                  << jacGBL.format(fmt) << '\n';
-        LOGP(info, "residual: dy={} dz={}", res[0], res[1]);
-        LOGP(info, "precision: precY={} precZ={}", prec[0], prec[1]);
-        point.printPoint(5);
-      }
-      points.push_back(point);
-      if (refLin) { // displace the reference to the measurement, as done in the KF refit
-        refLin->setY(cluster.getY());
-        refLin->setZ(cluster.getZ());
-      }
-    }
-    gbl::GblTrajectory traj(points, fieldON);
-    if (!traj.isValid()) {
-      ++cGBLConstruct;
-      return false;
-    }
-    double chi2 = NAN, lostWeight = NAN;
-    int ndf = 0;
-    if (auto ierr = traj.fit(chi2, ndf, lostWeight); ierr) {
-      ++cGBLFitFail;
-      return false;
-    }
-    if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
-      LOGP(info, "GBL FIT chi2 {} ndf {}", chi2, ndf);
-      traj.printTrajectory(5);
-    }
-    if (chi2 / ndf > mParams->maxChi2Ndf) {
-      if (cGBLChi2Rej++ < 10) {
-        LOGP(error, "GBL fit exceeded red chi2 {}", chi2 / ndf);
-        if (std::abs(resTrack.kfFit.chi2Ndf - 1) < 0.02) {
-          LOGP(error, "\tGBL is far away from good KF fit!!!!");
-        }
-      }
-      return false;
-    }
-    ++cGBLFit;
-    chi2Sum += chi2;
-    lostWeightSum += lostWeight;
-    ndfSum += ndf;
-    if (mOutOpt[o2::alignrs::OutputOpt::MilleData]) {
-      gblTraj.push_back(traj);
-    }
-    resTrack.gblFit = {.chi2Ndf = (float)(chi2 / ndf), .chi2 = (float)chi2, .ndf = ndf};
-    return true;
   };
 
   int nVtx = 0, nVtxAcc = 0, nTrc = 0, nTrcAcc = 0;
@@ -599,7 +418,7 @@ void AlignmentSpec::process() // collisions
           continue;
         }
         nTrc++;
-        if (buildGBLTrack(resTrack, 0)) {
+        if (buildGBLTrack(resTrack, 0, gblTraj)) {
           nTrcAcc++;
         }
       }
@@ -611,12 +430,13 @@ void AlignmentSpec::process() // collisions
         continue; // failed track or already accounted with the vertex constraint
       }
       nTrc++;
-      if (buildGBLTrack(resTrack, resTrack.info.front().isValid() ? 0 : 1)) {
+      if (buildGBLTrack(resTrack, resTrack.info.front().isValid() ? 0 : 1, gblTraj)) {
         nTrcAcc++;
       }
     }
   }
   LOGP(info, "Fitted {} of {} tracks of {} of {} vertices", nTrcAcc, nTrc, nVtxAcc, nVtx);
+  mGBLStat.print();
 
 /*
   // Data
@@ -1085,6 +905,212 @@ bool AlignmentSpec::refitPV(const PVertex& vtxOrig, const std::vector<Track>& re
     LOGP(debug, "Failed to refit {} with {} tracks", vtxOrig.asString(), tracks.size());
     return false;
   }
+  return true;
+}
+
+// Build and fit the GBL trajectory of an already refitted track, stepping outward over its frames
+// starting from the ipStart slot (resTrack.track must be the state at this frame).
+// The measurement residuals are stored in resTrack.points, the GBL fit result in resTrack.gblFit.
+bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj)
+{
+  auto prop = o2::base::PropagatorD::Instance();
+  const int np = (int)resTrack.info.size();
+  auto wTrk = resTrack.track; // working copy, the seed must be preserved
+  o2::track::TrackParD trkRef, *refLin = nullptr;
+  if (mParams->useStableRef) {
+    refLin = &(trkRef = wTrk);
+  }
+  // the MC index of the ITS part, needed only by the MC-based misalignment simulation
+  const auto itsGID = mRecoData->getITSContributorGID(resTrack.gid);
+  const size_t iTrk = itsGID.isIndexSet() ? itsGID.getIndex() : 0;
+  std::vector<gbl::GblPoint> points;
+  points.reserve(np - ipStart);
+  resTrack.points.clear();
+  resTrack.points.reserve(np - ipStart);
+  track::TrackLTIntegral lt;
+  lt.setTimeNotNeeded();
+  constexpr int perm[5] = {4, 2, 3, 0, 1}; // ALICE->GBL: Q/Pt,Snp,Tgl,Y,Z
+  for (int ip = ipStart; ip < np; ++ip) {
+    const auto& frame = resTrack.info[ip];
+    if (!frame.isValid()) {
+      continue;
+    }
+    gbl::Matrix5d err = gbl::Matrix5d::Identity(), jacALICE = gbl::Matrix5d::Identity(), jacGBL = gbl::Matrix5d::Identity();
+    float msErr = 0.f;
+    if (!points.empty()) { // not the 1st accounted point: step to it
+      // numerically calculates the transport jacobian from prev. point to this point
+      // then we actually do the step to the point and accumulate the material
+      if (!getTransportJacobian(wTrk, frame.x, frame.alpha, jacALICE, err) ||
+          !prop->propagateToAlphaX(wTrk, refLin, frame.alpha, frame.x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt)) {
+        ++mGBLStat.failedProp;
+        return false;
+      }
+      msErr = its::math_utils::MSangle(wTrk.getPID().getMass(), wTrk.getP(), lt.getX2X0());
+      // after computing jac, reorder to GBL convention
+      for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 5; j++) {
+          jacGBL(i, j) = jacALICE(perm[i], perm[j]);
+        }
+      }
+    }
+
+    // wTrk is now in the measurment frame
+    gbl::GblPoint point(jacGBL);
+    // measurement
+    const auto& cluster = frame.cluster;
+    Eigen::Vector2d res, prec;
+    res << cluster.getY() - wTrk.getY(), cluster.getZ() - wTrk.getZ();
+
+    // here we can apply some misalignment on the measurment
+    if (!applyMisalignment(res, frame, wTrk, iTrk)) {
+      return false;
+    }
+
+    prec << 1. / cluster.getSigmaY2(), 1. / cluster.getSigmaZ2();
+    // the projection matrix is in the tracking frame the idendity so no need to diagonalize it
+    point.addMeasurement(res, prec);
+    auto& meas = resTrack.points.emplace_back();
+    meas.dy = res[0];
+    meas.dz = res[1];
+    meas.sig2y = cluster.getSigmaY2();
+    meas.sig2z = cluster.getSigmaZ2();
+    meas.z = wTrk.getZ();
+    meas.phi = wTrk.getPhi();
+    o2::math_utils::bringTo02Pid(meas.phi);
+    if (msErr > mParams->minMS && ip < np - 1) {
+      Eigen::Vector2d scat(0., 0.), scatPrec = Eigen::Vector2d::Constant(1. / (msErr * msErr));
+      point.addScatterer(scat, scatPrec);
+      lt.clearFast(); // clear if accounted
+    }
+
+    if (!frame.isVertex()) { // the vertex point has no alignable volume behind it
+      const auto volIt = mChip2Hiearchy.find(frame.label);
+      if (volIt == mChip2Hiearchy.end()) {
+        LOGP(fatal, "Cannot find global label: {}", frame.label.asString());
+      }
+
+      // derivatives for all sensitive volumes and their parents
+      // this is the derivative in TRK but we want to align in LOC
+      // so dr/da_(LOC) = dr/da_(TRK) * da_(TRK)/da_(LOC)
+      const auto* tileVol = volIt->second;
+      const auto derCtx = makeDerivativeContext(frame, wTrk);
+      Matrix36 der = getRigidBodyBaseDerivatives(derCtx);
+
+      // count rigid body columns: only volumes with real DOFs (not DOFPseudo)
+      int nColRB{0};
+      for (const auto* v = tileVol; v && !v->isRoot(); v = v->getParent()) {
+        if (v->getRigidBody()) {
+          nColRB += v->getRigidBody()->nDOFs();
+        }
+      }
+
+      // count calibration columns
+      const auto* sensorVol = tileVol->getParent();
+      const auto* calibSet = sensorVol ? sensorVol->getCalib() : nullptr;
+      const int nCalib = calibSet ? calibSet->nDOFs() : 0;
+      const int nCol = nColRB + nCalib;
+
+      std::vector<int> gLabels;
+      gLabels.reserve(nCol);
+      Eigen::MatrixXd gDer(3, nCol);
+      gDer.setZero();
+      Eigen::Index curCol{0};
+
+      // 1) tile: TRK -> LOC via precomputed T2L and J_L2T
+      const double posTrk[3] = {frame.x, 0., 0.};
+      double posLoc[3];
+      tileVol->getT2L().LocalToMaster(posTrk, posLoc);
+      Matrix66 jacL2T;
+      tileVol->computeJacobianL2T(posLoc, jacL2T);
+      der *= jacL2T;
+      if (tileVol->getRigidBody()) {
+        const int nd = tileVol->getRigidBody()->nDOFs();
+        for (int iDOF = 0; iDOF < nd; ++iDOF) {
+          gLabels.push_back(tileVol->getLabel().rawGBL(iDOF));
+        }
+        gDer.middleCols(curCol, nd) = der;
+        curCol += nd;
+      }
+
+      // 2) chain through parents: child's J_L2P
+      for (const auto* child = tileVol; child->getParent() && !child->getParent()->isRoot(); child = child->getParent()) {
+        der *= child->getJL2P();
+        const auto* parent = child->getParent();
+        if (parent->getRigidBody()) {
+          const int nd = parent->getRigidBody()->nDOFs();
+          for (int iDOF = 0; iDOF < nd; ++iDOF) {
+            gLabels.push_back(parent->getLabel().rawGBL(iDOF));
+          }
+          gDer.middleCols(curCol, nd) = der;
+          curCol += nd;
+        }
+      }
+
+      // 3) calibration derivatives (apply directly on the whole sensor, not on individual tiles)
+      if (calibSet) {
+        const int nd = calibSet->nDOFs();
+        Eigen::MatrixXd calDer(3, nd);
+        calibSet->fillDerivatives(derCtx, calDer);
+        for (int iDOF = 0; iDOF < nd; ++iDOF) {
+          gLabels.push_back(sensorVol->getLabel().asCalib().rawGBL(iDOF));
+        }
+        gDer.middleCols(curCol, nd) = calDer;
+        curCol += nd;
+      }
+      point.addGlobals(gLabels, gDer);
+    }
+
+    if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
+      static Eigen::IOFormat fmt(4, 0, ", ", "\n", "[", "]");
+      LOGP(info, "WORKING-POINT {}", ip);
+      LOGP(info, "Track: {}", wTrk.asString());
+      LOGP(info, "FrameInfo: {}", frame.asString());
+      std::cout << "jacALICE:\n"
+                << jacALICE.format(fmt) << '\n';
+      std::cout << "jacGBL:\n"
+                << jacGBL.format(fmt) << '\n';
+      LOGP(info, "residual: dy={} dz={}", res[0], res[1]);
+      LOGP(info, "precision: precY={} precZ={}", prec[0], prec[1]);
+      point.printPoint(5);
+    }
+    points.push_back(point);
+    if (refLin) { // displace the reference to the measurement, as done in the KF refit
+      refLin->setY(cluster.getY());
+      refLin->setZ(cluster.getZ());
+    }
+  }
+  gbl::GblTrajectory traj(points, std::abs(prop->getNominalBz()) > 0.1);
+  if (!traj.isValid()) {
+    ++mGBLStat.construct;
+    return false;
+  }
+  double chi2 = NAN, lostWeight = NAN;
+  int ndf = 0;
+  if (auto ierr = traj.fit(chi2, ndf, lostWeight); ierr) {
+    ++mGBLStat.fitFail;
+    return false;
+  }
+  if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
+    LOGP(info, "GBL FIT chi2 {} ndf {}", chi2, ndf);
+    traj.printTrajectory(5);
+  }
+  if (chi2 / ndf > mParams->maxChi2Ndf) {
+    if (mGBLStat.chi2Rej++ < 10) {
+      LOGP(error, "GBL fit exceeded red chi2 {}", chi2 / ndf);
+      if (std::abs(resTrack.kfFit.chi2Ndf - 1) < 0.02) {
+        LOGP(error, "\tGBL is far away from good KF fit!!!!");
+      }
+    }
+    return false;
+  }
+  ++mGBLStat.fit;
+  mGBLStat.chi2Sum += chi2;
+  mGBLStat.lostWeightSum += lostWeight;
+  mGBLStat.ndfSum += ndf;
+  if (mOutOpt[o2::alignrs::OutputOpt::MilleData]) {
+    gblTraj.push_back(traj);
+  }
+  resTrack.gblFit = {.chi2Ndf = (float)(chi2 / ndf), .chi2 = (float)chi2, .ndf = ndf};
   return true;
 }
 
