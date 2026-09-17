@@ -188,9 +188,18 @@ class AlignmentSpec final : public Task
   // Returns false if the vertex has too few refitted contributors or the refit failed.
   bool refitPV(const PVertex& vtxOrig, const std::vector<Track>& resTracks, PVertex& vtxRefit);
 
-  // build and fit the GBL trajectory of an already refitted track, accounting its frames from the
-  // ipStart slot outward, and store it to gblTraj if the Mille data is requested
+  // fill the GBL points of the track frames from the ipStart slot outward
+  bool fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points);
+
+  // fit the constructed trajectory and store it to gblTraj if the Mille data is requested
+  bool fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, std::vector<gbl::GblTrajectory>& gblTraj, FitInfo& fitOut);
+
+  // build and fit the GBL trajectory of a single track, accounting its frames from the ipStart slot outward
   bool buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj);
+
+  // build and fit a single composed GBL trajectory for all tracks of one collision, with their
+  // common vertex position as parameters shared by all of them
+  bool buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj);
 
   // refit ITS track with inward/outward fit (opt. impose pv as additional constraint)
   // after this we have the refitted track at the innermost update point
@@ -413,14 +422,18 @@ void AlignmentSpec::process() // collisions
     // create the GBL input: 1st the tracks constrained by the refitted vertex, i.e. those whose
     // prebooked info[0] slot holds the vertex point
     if (useVertexConstraint) {
+      std::vector<Track*> contributors;
       for (auto& resTrack : resTracks) {
         if (!resTrack.gid.isIndexSet() || resTrack.info.empty() || !resTrack.info.front().isVertex()) {
           continue;
         }
-        nTrc++;
-        if (buildGBLTrack(resTrack, 0, gblTraj)) {
-          nTrcAcc++;
-        }
+        contributors.push_back(&resTrack);
+      }
+      nTrc += (int)contributors.size();
+      // all of them go to a single composed trajectory sharing the vertex position, hence the
+      // collision is a single Millepede local fit object
+      if (buildGBLVertex(contributors, gblTraj)) {
+        nTrcAcc += (int)contributors.size();
       }
     }
     // then the tracks w/o the vertex constraint: if a vertex slot was prebooked for them it was left
@@ -908,10 +921,11 @@ bool AlignmentSpec::refitPV(const PVertex& vtxOrig, const std::vector<Track>& re
   return true;
 }
 
-// Build and fit the GBL trajectory of an already refitted track, stepping outward over its frames
-// starting from the ipStart slot (resTrack.track must be the state at this frame).
-// The measurement residuals are stored in resTrack.points, the GBL fit result in resTrack.gblFit.
-bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj)
+// Fill the GBL points of the track frames from the ipStart slot outward (resTrack.track must be the
+// state at the ipStart frame). The measurement residuals are stored in resTrack.points.
+// skipFirstMeas: add no measurement on the 1st accounted point, used for the common vertex point of
+// a composed trajectory, whose position enters via the inner transformation instead.
+bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points)
 {
   auto prop = o2::base::PropagatorD::Instance();
   const int np = (int)resTrack.info.size();
@@ -923,7 +937,7 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
   // the MC index of the ITS part, needed only by the MC-based misalignment simulation
   const auto itsGID = mRecoData->getITSContributorGID(resTrack.gid);
   const size_t iTrk = itsGID.isIndexSet() ? itsGID.getIndex() : 0;
-  std::vector<gbl::GblPoint> points;
+  points.clear();
   points.reserve(np - ipStart);
   resTrack.points.clear();
   resTrack.points.reserve(np - ipStart);
@@ -958,25 +972,27 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
     gbl::GblPoint point(jacGBL);
     // measurement
     const auto& cluster = frame.cluster;
-    Eigen::Vector2d res, prec;
-    res << cluster.getY() - wTrk.getY(), cluster.getZ() - wTrk.getZ();
+    Eigen::Vector2d res = Eigen::Vector2d::Zero(), prec = Eigen::Vector2d::Zero();
+    if (!(skipFirstMeas && points.empty())) {
+      res << cluster.getY() - wTrk.getY(), cluster.getZ() - wTrk.getZ();
 
-    // here we can apply some misalignment on the measurment
-    if (!applyMisalignment(res, frame, wTrk, iTrk)) {
-      return false;
+      // here we can apply some misalignment on the measurment
+      if (!applyMisalignment(res, frame, wTrk, iTrk)) {
+        return false;
+      }
+
+      prec << 1. / cluster.getSigmaY2(), 1. / cluster.getSigmaZ2();
+      // the projection matrix is in the tracking frame the idendity so no need to diagonalize it
+      point.addMeasurement(res, prec);
+      auto& meas = resTrack.points.emplace_back();
+      meas.dy = res[0];
+      meas.dz = res[1];
+      meas.sig2y = cluster.getSigmaY2();
+      meas.sig2z = cluster.getSigmaZ2();
+      meas.z = wTrk.getZ();
+      meas.phi = wTrk.getPhi();
+      o2::math_utils::bringTo02Pid(meas.phi);
     }
-
-    prec << 1. / cluster.getSigmaY2(), 1. / cluster.getSigmaZ2();
-    // the projection matrix is in the tracking frame the idendity so no need to diagonalize it
-    point.addMeasurement(res, prec);
-    auto& meas = resTrack.points.emplace_back();
-    meas.dy = res[0];
-    meas.dz = res[1];
-    meas.sig2y = cluster.getSigmaY2();
-    meas.sig2z = cluster.getSigmaZ2();
-    meas.z = wTrk.getZ();
-    meas.phi = wTrk.getPhi();
-    o2::math_utils::bringTo02Pid(meas.phi);
     if (msErr > mParams->minMS && ip < np - 1) {
       Eigen::Vector2d scat(0., 0.), scatPrec = Eigen::Vector2d::Constant(1. / (msErr * msErr));
       point.addScatterer(scat, scatPrec);
@@ -1079,7 +1095,14 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
       refLin->setZ(cluster.getZ());
     }
   }
-  gbl::GblTrajectory traj(points, std::abs(prop->getNominalBz()) > 0.1);
+  return true;
+}
+
+// Fit the constructed trajectory, account the statistics and store it for the Mille output.
+// kfChi2Ndf (if >0) is the chi2/ndf of the KF refit of the same data, used for diagnostics only.
+// On success the fit result is put to fitOut.
+bool AlignmentSpec::fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, std::vector<gbl::GblTrajectory>& gblTraj, FitInfo& fitOut)
+{
   if (!traj.isValid()) {
     ++mGBLStat.construct;
     return false;
@@ -1094,10 +1117,10 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
     LOGP(info, "GBL FIT chi2 {} ndf {}", chi2, ndf);
     traj.printTrajectory(5);
   }
-  if (chi2 / ndf > mParams->maxChi2Ndf) {
+  if (!ndf || chi2 / ndf > mParams->maxChi2Ndf) {
     if (mGBLStat.chi2Rej++ < 10) {
-      LOGP(error, "GBL fit exceeded red chi2 {}", chi2 / ndf);
-      if (std::abs(resTrack.kfFit.chi2Ndf - 1) < 0.02) {
+      LOGP(error, "GBL fit exceeded red chi2 {} (ndf {})", ndf ? chi2 / ndf : -1., ndf);
+      if (kfChi2Ndf > 0 && std::abs(kfChi2Ndf - 1) < 0.02) {
         LOGP(error, "\tGBL is far away from good KF fit!!!!");
       }
     }
@@ -1110,7 +1133,69 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
   if (mOutOpt[o2::alignrs::OutputOpt::MilleData]) {
     gblTraj.push_back(traj);
   }
-  resTrack.gblFit = {.chi2Ndf = (float)(chi2 / ndf), .chi2 = (float)chi2, .ndf = ndf};
+  fitOut = {.chi2Ndf = (float)(chi2 / ndf), .chi2 = (float)chi2, .ndf = ndf};
+  return true;
+}
+
+// Build and fit the GBL trajectory of a single refitted track, accounting its frames from the
+// ipStart slot outward. The GBL fit result is stored in resTrack.gblFit.
+bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj)
+{
+  std::vector<gbl::GblPoint> points;
+  if (!fillGBLPoints(resTrack, ipStart, false, points)) {
+    return false;
+  }
+  gbl::GblTrajectory traj(points, std::abs(o2::base::PropagatorD::Instance()->getNominalBz()) > 0.1);
+  return fitGBLTrajectory(traj, resTrack.kfFit.chi2Ndf, gblTraj, resTrack.gblFit);
+}
+
+// Build and fit a single composed GBL trajectory for all tracks of one collision, with the 3
+// coordinates of their common vertex as parameters shared by all of them: the vertex constraint is
+// then exact by parameterization, while every track keeps its own curvature and scattering
+// parameters. Follows the GBL composed trajectory with geometric constraint (GBL exampleComposedGeo).
+// Every contributor must carry the vertex point in its info[0] slot, with its track state there,
+// as left by Track::updateWithVertex.
+bool AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj)
+{
+  std::vector<std::pair<std::vector<gbl::GblPoint>, Eigen::MatrixXd>> pointsAndTrans;
+  std::vector<Track*> used;
+  pointsAndTrans.reserve(contributors.size());
+  used.reserve(contributors.size());
+  for (auto* trc : contributors) {
+    std::vector<gbl::GblPoint> points;
+    // the vertex point is the 1st point of every sub-trajectory and carries no measurement of its
+    // own: the common vertex position enters via the inner transformation below
+    if (!fillGBLPoints(*trc, 0, true, points) || points.size() < 2) {
+      continue;
+    }
+    // d(offsets at the vertex point) / d(vertex position): the vertex is displaced in the global
+    // frame at fixed track direction and momentum, hence the offsets of the track in the tracking
+    // frame of the vertex point change by the displacement rotated to this frame, corrected for the
+    // shift of the reference X along the track
+    double ca{0}, sa{0};
+    o2::math_utils::sincosd(trc->info.front().alpha, sa, ca);
+    const auto slopes = TrackSlopes::computeTrackSlopes(trc->track.getSnp(), trc->track.getTgl());
+    Eigen::MatrixXd innerTrans(2, 3);
+    innerTrans(0, 0) = -sa - slopes.dydx * ca; // dY / dVx
+    innerTrans(0, 1) = ca - slopes.dydx * sa;  // dY / dVy
+    innerTrans(0, 2) = 0.;                     // dY / dVz
+    innerTrans(1, 0) = -slopes.dzdx * ca;      // dZ / dVx
+    innerTrans(1, 1) = -slopes.dzdx * sa;      // dZ / dVy
+    innerTrans(1, 2) = 1.;                     // dZ / dVz
+    pointsAndTrans.emplace_back(std::move(points), std::move(innerTrans));
+    used.push_back(trc);
+  }
+  if (used.size() < 2) { // a single track does not define the common vertex
+    return false;
+  }
+  gbl::GblTrajectory traj(pointsAndTrans);
+  FitInfo fit{};
+  if (!fitGBLTrajectory(traj, -1.f, gblTraj, fit)) {
+    return false;
+  }
+  for (auto* trc : used) { // the composed fit is common for all the tracks of the collision
+    trc->gblFit = fit;
+  }
   return true;
 }
 
