@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include "ReconstructionDataFormats/Track.h"
+#include "ReconstructionDataFormats/Vertex.h"
 #include "ReconstructionDataFormats/VtxTrackIndex.h"
 #include "DataFormatsITS/TrackITS.h"
 #include "O2Align/Label.h"
@@ -43,7 +44,8 @@ struct FrameInfoExt final {
   float alpha{-999.f};            // rotation angle of the tracking frame
   o2::BaseCluster<float> cluster; // cluster info
   std::string asString() const;
-
+  bool isValid() const { return lr > Invalid; }
+  bool isVertex() const { return lr == Vertex; }
   ClassDefNV(FrameInfoExt, 2)
 };
 
@@ -78,6 +80,12 @@ struct Track {
   /// from the slot frameStart. The caller must append them in the outward direction. On failure
   /// the new frames are dropped and both `track` and `kfFit` stay intact.
   bool continueFitOutward(int frameStart);
+
+  /// Update the track with the vertex point: the vertex is stored, in the frame of the track DCA
+  /// to it, in the frame prebooked by the caller in the info[0] slot, then the track is fitted to
+  /// it from the innermost measured point. On failure the info[0] slot is flagged as Invalid and
+  /// both `track` and `kfFit` stay intact.
+  bool updateWithVertex(const o2::dataformats::VertexBase& vtx);
 
   ClassDefNV(Track, 2)
 };

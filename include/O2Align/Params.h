@@ -55,7 +55,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // o2::base::PropagatorD::MatCorrType matCorrType = o2::base::PropagatorD::MatCorrType::USEMatCorrTGeo;
   o2::base::PropagatorD::MatCorrType corrType = o2::base::PropagatorD::MatCorrType::USEMatCorrLUT;
 
-  int usePVConstraintMinTrackes = 5; // minimum number of tracks to use PV constraint
+  int usePVConstraintMinTracks = 5; // minimum number of tracks to use PV constraint
 
   bool verbose = 0; // verbosity level
   bool useStableRef = true; // use input tracks as linearization point

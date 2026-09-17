@@ -13,6 +13,7 @@
 #include <format>
 
 #include "DetectorsBase/Propagator.h"
+#include "MathUtils/Utils.h"
 #include "O2Align/AlignmentTypes.h"
 #include "O2Align/Params.h"
 
@@ -47,7 +48,7 @@ bool Track::fitTrack(int frameStart, int frameStop, bool cropOnFailure, bool res
   float chi2 = 0.f;
   for (int i = frameStart; i != frameEnd; i += step) {
     const auto& frame = info[i];
-    if (frame.lr == FrameInfoExt::Invalid) { // invalid point
+    if (!frame.isValid()) { // invalid point
       continue;
     }
     if (!prop->propagateToAlphaX(trFit, refLin, frame.alpha, frame.x, false, params.maxSnp, params.maxStep, 1, params.corrType)) {
@@ -81,6 +82,34 @@ bool Track::continueFitOutward(int frameStart)
     return true; // no new frames were appended: nothing to fit
   }
   return fitTrack(frameStart, static_cast<int>(info.size()) - 1, true, false);
+}
+
+bool Track::updateWithVertex(const o2::dataformats::VertexBase& vtx)
+{
+  if (info.empty()) {
+    return false;
+  }
+  auto& frame = info.front(); // the slot prebooked for the vertex point
+  frame.lr = FrameInfoExt::Invalid; // flagged as valid only by a successful update
+  auto trDCA = track; // find the DCA on a copy, the fit itself starts from the innermost measured point
+  auto prop = o2::base::PropagatorD::Instance();
+  if (!prop->propagateToDCA(vtx, trDCA, prop->getNominalBz())) {
+    return false;
+  }
+  double ca{0}, sa{0};
+  frame.alpha = static_cast<float>(trDCA.getAlpha());
+  o2::math_utils::bringToPMPi(frame.alpha);
+  o2::math_utils::sincosd(frame.alpha, sa, ca);
+  frame.x = static_cast<float>(vtx.getX() * ca + vtx.getY() * sa); // the vertex position in the track frame
+  frame.cluster = o2::BaseCluster<float>(-1, frame.x, static_cast<float>(-vtx.getX() * sa + vtx.getY() * ca), vtx.getZ(),
+                                         0.5f * (vtx.getSigmaX2() + vtx.getSigmaY2()), // the vertex is round in the transverse plane
+                                         vtx.getSigmaZ2(), 0.f);
+  frame.lr = FrameInfoExt::Vertex;
+  if (!fitTrack(0, 0, false, false)) {
+    frame.lr = FrameInfoExt::Invalid;
+    return false;
+  }
+  return true;
 }
 
 // RSTODO temporary here
