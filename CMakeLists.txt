@@ -31,7 +31,7 @@ set(O2_ALIGN_PUBLIC_LIBRARIES
     nlohmann_json::nlohmann_json
     GBL::GBL)
 
-add_library(O2Align
+add_library(O2Align SHARED
             src/DOFSet.cxx
             src/Volume.cxx
             src/Constraint.cxx
@@ -48,11 +48,13 @@ add_library(O2Align
             src/SensorTOF.cxx
             src/MisalignmentUtils.cxx # tmp?
             src/AlignmentTypes.cxx
+            src/TimeSlotsSet.cxx
             src/AlignmentSpec.cxx)
 #add_library(O2::Align ALIAS O2Align)
 
 set_property(TARGET O2Align PROPERTY EXPORT_NAME O2Align)
 set_property(TARGET O2Align PROPERTY OUTPUT_NAME O2Align)
+set_property(TARGET O2Align PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(O2Align
                            PUBLIC
@@ -75,6 +77,7 @@ add_root_dictionary(O2Align
                             include/O2Align/Volume.h
                             include/O2Align/Constraint.h
                             include/O2Align/AlignmentTypes.h
+                            include/O2Align/TimeSlotsSet.h
 			    LINKDEF src/O2AlignLinkDef.h)
 
 add_executable(O2exe-alignment-workflow src/alignment-workflow.cxx)
@@ -98,6 +101,7 @@ install(TARGETS O2Align
 install(TARGETS O2exe-alignment-workflow
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY include/O2Align DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY macro/ DESTINATION ${CMAKE_INSTALL_DATADIR}/macro)
 
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/init.sh.in

@@ -100,14 +100,6 @@ struct TrackSlopes {
   ClassDefNV(TrackSlopes, 1)
 };
 
-struct CalibrationInterval {
-  int runNumber{-1};
-  int intervalID{-1};
-  uint64_t timeStampS{0};
-  uint64_t timeStampE{0};
-  ClassDefNV(CalibrationInterval, 1)
-};
-
 std::vector<double> legendrePols(int order, double x); // RSTODO temporary here
 
   

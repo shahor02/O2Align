@@ -77,8 +77,9 @@ TChain* loadTFIDChain(const char* inpData, const char* chName = "tfidTree")
 }
 
 //_________________________________________________________________
-void CreateTimeIntervals(const char* o2tfinfolist, const char* outName, int intervalSec, int startID = 0, int maxIntervalID = -1)
+void CreateTimeSlots(const char* o2tfinfolist, const char* outName, int intervalSec, int maxIntervalID = -1)
 {
+  const int startID = 0;
   if (intervalSec <= 0) {
     LOGP(error, "intervalSec must be positive, got {}", intervalSec);
     return;
