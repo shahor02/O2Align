@@ -29,6 +29,9 @@
 #pragma link C++ class o2::alignrs::Track + ;
 #pragma link C++ class o2::alignrs::TrackSlopes + ;
 
+#pragma link C++ class o2::alignrs::CalibrationInterval + ;
+#pragma link C++ class std::vector<o2::alignrs::CalibrationInterval > + ;
+
 #pragma link C++ class o2::alignrs::Params + ;
 #pragma link C++ class o2::conf::ConfigurableParamHelper < o2::alignrs::Params > + ;
 

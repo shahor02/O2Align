@@ -11,6 +11,9 @@
 #include <algorithm>
 #include "CommonDataFormat/TFIDInfo.h"
 #include "Framework/Logger.h"
+#include "CCDB/BasicCCDBManager.h"
+#include "DataFormatsParameters/AggregatedRunInfo.h"
+#include "CommonConstants/LHCConstants.h"
 #endif
 
 using TFIDInfo = o2::dataformats::TFIDInfo;
@@ -87,6 +90,16 @@ void CreateTimeIntervals(const char* o2tfinfolist, const char* outName, int inte
   }
   TFIDInfo* tfid = nullptr;
   chain->SetBranchAddress("tfidinfo", &tfid);
+  o2::parameters::AggregatedRunInfo curRunInfo;
+  auto& ccdb = o2::ccdb::BasicCCDBManager::instance();
+
+  auto setTimeStamp = [&](TFIDInfo& tfid) {
+    if (int(tfid.runNumber) != curRunInfo.runNumber) {
+      LOGP(info, "Processing run {} (run number changed from {})", tfid.runNumber, curRunInfo.runNumber);
+      curRunInfo = curRunInfo.buildAggregatedRunInfo(ccdb, tfid.runNumber);
+    }
+    tfid.creation = (curRunInfo.orbitReset + static_cast<int64_t>(tfid.firstTForbit * o2::constants::lhc::LHCOrbitMUS)) * 1e-3;
+  };
 
   std::vector<TFIDInfo> tfids;
   long nent = chain->GetEntries();
@@ -97,6 +110,7 @@ void CreateTimeIntervals(const char* o2tfinfolist, const char* outName, int inte
       continue;
     }
     tfids.push_back(*tfid);
+    setTimeStamp(tfids.back());
   }
   delete chain;
   if (tfids.empty()) {
@@ -112,6 +126,7 @@ void CreateTimeIntervals(const char* o2tfinfolist, const char* outName, int inte
   std::vector<std::pair<size_t, size_t>> intervals; // 1st / last index in tfids of each interval
   size_t iStart = 0;
   for (size_t i = 1; i < tfids.size(); i++) {
+
     // close the current interval if its duration would exceed intervalSec or if the run number changes
     if (tfids[i].creation - tfids[iStart].creation > intervalMS || tfids[i].runNumber != tfids[iStart].runNumber) {
       intervals.emplace_back(iStart, i - 1);
@@ -133,16 +148,12 @@ void CreateTimeIntervals(const char* o2tfinfolist, const char* outName, int inte
   for (size_t iint = 0; iint < intervals.size(); iint++) {
     const auto& tfS = tfids[intervals[iint].first];
     const auto& tfE = tfids[intervals[iint].second];
-    outf << "  {\n"
-         << "    \"creationS\": " << tfS.creation << ",\n"
-         << "    \"creationE\": " << tfE.creation << ",\n"
-         << "    \"tfOrbitS\": " << tfS.firstTForbit << ",\n"
-         << "    \"tfOrbitE\": " << tfE.firstTForbit << ",\n"
-         << "    \"tfCountS\": " << tfS.tfCounter << ",\n"
-         << "    \"tfCountE\": " << tfE.tfCounter << ",\n"
-         << "    \"run\": " << tfS.runNumber << ",\n"
-         << "    \"ID\": " << startID + int(iint) << "\n"
-         << "  }" << (iint + 1 < intervals.size() ? "," : "") << "\n";
+    outf << R"(  {)" << "\n"
+         << R"(    "run":)" << tfS.runNumber << ",\n"
+         << R"(    "ID":)" << startID + int(iint) << ",\n"
+         << R"(    "tsS":)" << tfS.creation << ",\n"
+         << R"(    "tsE":)" << tfE.creation + static_cast<int64_t>(curRunInfo.orbitsPerTF * o2::constants::lhc::LHCOrbitMUS * 1e-3) << "\n"
+         << R"(  })" << (iint + 1 < intervals.size() ? "," : "") << "\n";
   }
   outf << "]\n";
   outf.close();
