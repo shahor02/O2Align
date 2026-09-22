@@ -55,7 +55,10 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // o2::base::PropagatorD::MatCorrType matCorrType = o2::base::PropagatorD::MatCorrType::USEMatCorrTGeo;
   o2::base::PropagatorD::MatCorrType corrType = o2::base::PropagatorD::MatCorrType::USEMatCorrLUT;
 
+  // PV constraint
   int usePVConstraintMinTracks = 5; // minimum number of tracks to use PV constraint
+  bool useMultyTrackPVConstraint = true; // use multi-track PV constraint (otherwise use per-track PV constraint)
+  const std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
 
   bool verbose = 0; // verbosity level
   bool useStableRef = true; // use input tracks as linearization point

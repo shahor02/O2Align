@@ -45,8 +45,12 @@ class DetectorPVT final : public Detector
   /// Empty if the position is not a free parameter.
   std::vector<int> getPositionLabels() const;
 
+  int getMVSlotID() const { return mMVSlotID; }
+  void setMVSlotID(int slotID) { mMVSlotID = slotID; }
+
  private:
   Volume* mVertexVolume{nullptr}; // the dummy volume of the mean vertex
+  int mMVSlotID = 0; // the intervalID of the mean vertex calibration slot, 0 if no slots are defined
 };
 
 } // namespace o2::alignrs

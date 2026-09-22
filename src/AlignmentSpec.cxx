@@ -62,6 +62,7 @@
 #include "O2Align/DetectorTPC.h"
 #include "O2Align/DetectorTRD.h"
 #include "O2Align/DetectorTOF.h"
+#include "O2Align/TimeSlotsSet.h"
 
 namespace o2::alignrs
 {
@@ -222,6 +223,8 @@ class AlignmentSpec final : public Task
   // ITS3 acceptance so false is to discard track
   bool applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk);
 
+  std::unique_ptr<o2::alignrs::TimeSlotsSet> mMVTimeSlots; // mean vertex calibration intervals in ms
+  long mTimeStamp{0}; // current TF time stamp in ms
   o2::framework::TimingInfo mTimeInfo;
   o2::alignrs::OutputEnum mOutOpt;
   std::unique_ptr<o2::utils::TreeStreamRedirector> mDBGOut;
@@ -284,7 +287,6 @@ void AlignmentSpec::run(ProcessingContext& pc)
     updateTimeDependentParams(pc);
     Volume::writeMillepedeResults(mHierarchy.get(), mParams->milleResFile, mParams->milleResOutJson, mParams->misAlgJson); // RSTODO loop over possible top volumes (detectors)
   } else {
-    mTimeInfo = pc.services().get<o2::framework::TimingInfo>();
     o2::globaltracking::RecoContainer recoData;
     mRecoData = &recoData;
     mRecoData->collectData(pc, *mDataRequest);
@@ -738,7 +740,10 @@ void AlignmentSpec::process() // collisions
 
 void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
 {
-  o2::base::GRPGeomHelper::instance().checkUpdates(pc);  
+  o2::base::GRPGeomHelper::instance().checkUpdates(pc);
+  mTimeInfo = pc.services().get<o2::framework::TimingInfo>();
+  mTimeStamp = (o2::base::GRPGeomHelper::instance().getOrbitResetTimeMUS() +  static_cast<long>(mTimeInfo.firstTForbit * o2::constants::lhc::LHCOrbitMUS)) * 1e-3;
+
   if (static bool initOnce{false}; !initOnce) {
     initOnce = true;
     mParams = &Params::Instance();
@@ -751,6 +756,13 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
       o2::conf::ConfigurableParam::updateFromString("pvertexer.useTimeInChi2=false;"); // the PV refit does not use the track time
       mVertexer.setMeanVertex(&mMeanVtx);
       mVertexer.init();
+
+      if (mParams->useMultyTrackPVConstraint && !mParams->MVTimeSlotsJson.empty()) {
+        mMVTimeSlots = std::make_unique<o2::alignrs::TimeSlotsSet>();
+        if (mMVTimeSlots->readSlotsFromFile(mParams->MVTimeSlotsJson)<0) {
+          LOGP(fatal, "Failed to load time slots from {}", mParams->MVTimeSlotsJson);
+        }
+      }
     }
 
     if (mParams->doMisalignmentLeg || mParams->doMisalignmentRB || mParams->doMisalignmentInex) {
@@ -778,6 +790,14 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
       }
     }
   }
+  if (mParams->usePVConstraintMinTracks > 0 && mParams->useMultyTrackPVConstraint) {
+    int MVslotID = mMVTimeSlots ? mMVTimeSlots->getSlotID(mTimeStamp) : 0;
+    if (mPVT->getMVSlotID() != MVslotID) { // new calibration slot, update the mean vertex prior
+      mPVT->setMVSlotID(MVslotID);
+      LOGP(info, "Mean vertex prior: using time slot {} for timestamp {}", MVslotID, mTimeStamp);
+    }
+  }
+
 }
 
 void AlignmentSpec::buildHierarchy()
@@ -1696,7 +1716,7 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
     // the mean vertex is the prior of the primary vertex of every collision and the starting point
     // of the alignment of the virtual PVT detector
     dataRequest->inputs.emplace_back("meanvtx", "GLO", "MEANVERTEX", 0, Lifetime::Condition, ccdbParamSpec("GLO/Calib/MeanVertex", {}, 1));
-    ggRequest = std::make_shared<o2::base::GRPGeomRequest>(false,                             // orbitResetTime
+    ggRequest = std::make_shared<o2::base::GRPGeomRequest>(true,                              // orbitResetTime
                                                            false,                             // GRPECS=true
                                                            true,                              // GRPLHCIF
                                                            true,                              // GRPMagField
@@ -1707,7 +1727,7 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
                                                            true);                             // propagatorD
   } else {
     dataRequest->inputs.emplace_back("dummy", "GLO", "DUMMY_OUT", 0);
-    ggRequest = std::make_shared<o2::base::GRPGeomRequest>(false,                             // orbitResetTime
+    ggRequest = std::make_shared<o2::base::GRPGeomRequest>(true,                              // orbitResetTime
                                                            false,                             // GRPECS=true
                                                            false,                             // GRPLHCIF
                                                            false,                             // GRPMagField
