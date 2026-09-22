@@ -49,7 +49,9 @@ std::vector<int> DetectorPVT::getPositionLabels() const
   if (!dofs) {
     return labels;
   }
-  const auto lbl = mVertexVolume->getLabel();
+  // the free/fixed DOFs are those configured for the volume (built for the slot 0), but the labels
+  // are those of the current calibration slot, which has its own set of global parameters
+  const auto lbl = getVertexLabel(mMVSlotID);
   for (auto dof : {RigidBodyDOFSet::TX, RigidBodyDOFSet::TY, RigidBodyDOFSet::TZ}) {
     if (!dofs->isFree(dof)) { // a fixed position imposes the prior w/o being fitted
       return {};

@@ -290,7 +290,6 @@ void AlignmentSpec::run(ProcessingContext& pc)
     o2::globaltracking::RecoContainer recoData;
     mRecoData = &recoData;
     mRecoData->collectData(pc, *mDataRequest);
-    pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
     updateTimeDependentParams(pc);
     process();
   }
@@ -743,8 +742,8 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
   o2::base::GRPGeomHelper::instance().checkUpdates(pc);
   mTimeInfo = pc.services().get<o2::framework::TimingInfo>();
   mTimeStamp = (o2::base::GRPGeomHelper::instance().getOrbitResetTimeMUS() +  static_cast<long>(mTimeInfo.firstTForbit * o2::constants::lhc::LHCOrbitMUS)) * 1e-3;
-
-  if (static bool initOnce{false}; !initOnce) {
+  static bool initOnce{false};
+  if (!initOnce) {
     initOnce = true;
     mParams = &Params::Instance();
     mParams->printKeyValues(true, true);
@@ -753,6 +752,7 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
     o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
     buildHierarchy();
     if (mParams->usePVConstraintMinTracks > 0) {
+      pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
       o2::conf::ConfigurableParam::updateFromString("pvertexer.useTimeInChi2=false;"); // the PV refit does not use the track time
       mVertexer.setMeanVertex(&mMeanVtx);
       mVertexer.init();
@@ -792,8 +792,20 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
   }
   if (mParams->usePVConstraintMinTracks > 0 && mParams->useMultyTrackPVConstraint) {
     int MVslotID = mMVTimeSlots ? mMVTimeSlots->getSlotID(mTimeStamp) : 0;
+    if (MVslotID < 0) {
+      LOGP(fatal, "Timestamp {} is not covered by any mean vertex calibration slot of {}", mTimeStamp, mParams->MVTimeSlotsJson);
+    }
     if (mPVT->getMVSlotID() != MVslotID) { // new calibration slot, update the mean vertex prior
       mPVT->setMVSlotID(MVslotID);
+      // update mean vertex object
+      if (initOnce) {
+        pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
+        mVertexer.setMeanVertex(&mMeanVtx);
+        mVertexer.init();
+      }
+      if (mHierarchyPVT) { // the vertex of every slot is aligned via its own global parameters
+        mMeanVtxLabels = mPVT->getPositionLabels();
+      }
       LOGP(info, "Mean vertex prior: using time slot {} for timestamp {}", MVslotID, mTimeStamp);
     }
   }

@@ -37,12 +37,14 @@ class DetectorPVT final : public Detector
   bool prepareTrack(o2::globaltracking::RecoContainer* /*recoData*/, const GlobalIDSet& /*ids*/, Track& /*resTrack*/) final { return false; }
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
-  /// label of the mean vertex volume, its DOFs TX/TY/TZ are the global parameters of its position
-  static Label getVertexLabel() { return Label(DetPVT, 0, true); }
+  /// label of the mean vertex volume of a given mean vertex calibration slot, its DOFs TX/TY/TZ are
+  /// the global parameters of the vertex position in this slot: every slot is aligned independently,
+  /// hence the slot ID is used as the volume ID of the label
+  static Label getVertexLabel(int slotID = 0) { return Label(DetPVT, slotID, true); }
   Volume* getVertexVolume() const { return mVertexVolume; }
 
-  /// Millepede labels of the mean vertex position, ordered as (X, Y, Z) in the global frame.
-  /// Empty if the position is not a free parameter.
+  /// Millepede labels of the mean vertex position in the current calibration slot, ordered as
+  /// (X, Y, Z) in the global frame. Empty if the position is not a free parameter.
   std::vector<int> getPositionLabels() const;
 
   int getMVSlotID() const { return mMVSlotID; }
