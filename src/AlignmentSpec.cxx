@@ -236,8 +236,10 @@ class AlignmentSpec final : public Task
   o2::globaltracking::RecoContainer* mRecoData = nullptr;
   std::unique_ptr<steer::MCKinematicsReader> mcReader;
   o2::vertexing::PVertexer mVertexer;              // used to refit the PV with the tracks refitted in the current alignment
-  o2::dataformats::MeanVertexObject mMeanVtx{};    // mean vertex, the prior of the PV of every collision
-  bool mMeanVertexUpdated{false};                  // the mean vertex was updated from the CCDB
+  o2::dataformats::MeanVertexObject mMeanVtxCCDB{}; // last mean vertex object received from the CCDB
+  bool mMeanVtxCCDBUpdated{false};                  // the mean vertex was updated from the CCDB
+  o2::dataformats::MeanVertexObject mMeanVtxSlot{}; // prior of the PV of every collision: the CCDB mean
+                                                    // vertex frozen at the start of the current calibration slot
   std::vector<int> mMeanVtxLabels;                 // Millepede labels of the mean vertex position
 
   std::unique_ptr<DetectorPVT> mPVT; // virtual detector of the mean vertex
@@ -742,8 +744,12 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
   o2::base::GRPGeomHelper::instance().checkUpdates(pc);
   mTimeInfo = pc.services().get<o2::framework::TimingInfo>();
   mTimeStamp = (o2::base::GRPGeomHelper::instance().getOrbitResetTimeMUS() +  static_cast<long>(mTimeInfo.firstTForbit * o2::constants::lhc::LHCOrbitMUS)) * 1e-3;
-  static bool initOnce{false};
-  if (!initOnce) {
+  // must be read on every TF: the finaliseCCDB callback is invoked only from this call, and only when
+  // the delivered object differs from the cached one
+  if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes] && Params::Instance().usePVConstraintMinTracks > 0) {
+    pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
+  }
+  if (static bool initOnce{false}; !initOnce) {
     initOnce = true;
     mParams = &Params::Instance();
     mParams->printKeyValues(true, true);
@@ -752,9 +758,10 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
     o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
     buildHierarchy();
     if (mParams->usePVConstraintMinTracks > 0) {
-      pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
       o2::conf::ConfigurableParam::updateFromString("pvertexer.useTimeInChi2=false;"); // the PV refit does not use the track time
-      mVertexer.setMeanVertex(&mMeanVtx);
+      mMeanVtxSlot = mMeanVtxCCDB;                   // prior of the 1st slot, refreshed at every slot change
+      mMeanVtxCCDBUpdated = false;
+      mVertexer.setMeanVertex(&mMeanVtxSlot);
       mVertexer.init();
 
       if (mParams->useMultyTrackPVConstraint && !mParams->MVTimeSlotsJson.empty()) {
@@ -789,24 +796,32 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
         }
       }
     }
-  }
-  if (mParams->usePVConstraintMinTracks > 0 && mParams->useMultyTrackPVConstraint) {
+  }  
+  if (mParams->usePVConstraintMinTracks > 0) {
     int MVslotID = mMVTimeSlots ? mMVTimeSlots->getSlotID(mTimeStamp) : 0;
     if (MVslotID < 0) {
       LOGP(fatal, "Timestamp {} is not covered by any mean vertex calibration slot of {}", mTimeStamp, mParams->MVTimeSlotsJson);
     }
     if (mPVT->getMVSlotID() != MVslotID) { // new calibration slot, update the mean vertex prior
       mPVT->setMVSlotID(MVslotID);
-      // update mean vertex object
-      if (initOnce) {
-        pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
-        mVertexer.setMeanVertex(&mMeanVtx);
-        mVertexer.init();
-      }
-      if (mHierarchyPVT) { // the vertex of every slot is aligned via its own global parameters
+      // the slot is the unit of the mean vertex calibration: its prior is the CCDB object valid at the
+      // start of the slot, an eventual later CCDB update within the same slot is ignored
+      mMeanVtxSlot = mMeanVtxCCDB;
+      mMeanVtxCCDBUpdated = false;
+      mVertexer.setMeanVertex(&mMeanVtxSlot); // copies the object and re-inits the XY constraint, no init() needed
+      if (mHierarchyPVT) {                    // the vertex of every slot is aligned via its own global parameters
         mMeanVtxLabels = mPVT->getPositionLabels();
       }
-      LOGP(info, "Mean vertex prior: using time slot {} for timestamp {}", MVslotID, mTimeStamp);
+      LOGP(info, "Mean vertex prior for time slot {} at timestamp {}: {}", MVslotID, mTimeStamp, mMeanVtxSlot.asString());
+    } else if (mMeanVtxCCDBUpdated) {
+      mMeanVtxCCDBUpdated = false;
+      if (mMVTimeSlots) { // the prior of the ongoing slot is kept
+        LOGP(info, "Ignoring the new CCDB MeanVertex within the time slot {}, its prior stays {}", MVslotID, mMeanVtxSlot.asString());
+      } else { // w/o calibration slots the prior follows the CCDB object
+        mMeanVtxSlot = mMeanVtxCCDB;
+        mVertexer.setMeanVertex(&mMeanVtxSlot);
+        LOGP(info, "Mean vertex prior at timestamp {}: {}", mTimeStamp, mMeanVtxSlot.asString());
+      }
     }
   }
 
@@ -818,7 +833,7 @@ void AlignmentSpec::buildHierarchy()
   if (mPVT && mParams->usePVConstraintMinTracks > 0) {
     // the mean vertex is a top volume of its own: it is not a part of any real detector
     mHierarchyPVT = mPVT->buildHierarchy(mChip2Hiearchy);
-    LOGP(info, "Mean vertex prior: {}", mMeanVtx.asString());
+    LOGP(info, "Mean vertex prior: {}", mMeanVtxCCDB.asString());
   }
 
   if (!mParams->dofConfigJson.empty()) {
@@ -1232,21 +1247,21 @@ void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::Matri
   o2::math_utils::sincosd(frame.alpha, sa, ca);
   const auto slopes = TrackSlopes::computeTrackSlopes(resTrack.track.getSnp(), resTrack.track.getTgl());
   // the mean vertex in the tracking frame of the vertex point, brought to the plane of this point
-  const double muX = mMeanVtx.getX() * ca + mMeanVtx.getY() * sa; // along the local X
+  const double muX = mMeanVtxSlot.getX() * ca + mMeanVtxSlot.getY() * sa; // along the local X
   const double dX = muX - frame.x;
-  const double muY = -mMeanVtx.getX() * sa + mMeanVtx.getY() * ca - slopes.dydx * dX;
-  const double muZ = mMeanVtx.getZ() - slopes.dzdx * dX;
+  const double muY = -mMeanVtxSlot.getX() * sa + mMeanVtxSlot.getY() * ca - slopes.dydx * dX;
+  const double muZ = mMeanVtxSlot.getZ() - slopes.dzdx * dX;
   Eigen::Vector2d res;
   res << muY - resTrack.track.getY(), muZ - resTrack.track.getZ();
   // covariance of the luminous region rotated to this frame: the transformation of the vertex
   // position to the local offsets is the same as for the common parameters of the trajectory
   Eigen::Matrix3d covGlo = Eigen::Matrix3d::Zero();
-  covGlo(0, 0) = mMeanVtx.getSigmaX2();
-  covGlo(1, 1) = mMeanVtx.getSigmaY2();
-  covGlo(2, 2) = mMeanVtx.getSigmaZ2();
+  covGlo(0, 0) = mMeanVtxSlot.getSigmaX2();
+  covGlo(1, 1) = mMeanVtxSlot.getSigmaY2();
+  covGlo(2, 2) = mMeanVtxSlot.getSigmaZ2();
   const Eigen::Matrix2d cov = trans * covGlo * trans.transpose();
   if (cov.determinant() < 1e-16) {
-    LOGP(warn, "Skipping the mean vertex prior: singular projected covariance of {}", mMeanVtx.asString());
+    LOGP(warn, "Skipping the mean vertex prior: singular projected covariance of {}", mMeanVtxSlot.asString());
     return;
   }
   vtxPoint.addMeasurement(res, Eigen::Matrix2d(cov.inverse()));
@@ -1704,9 +1719,9 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
     return;
   }
   if (matcher == ConcreteDataMatcher("GLO", "MEANVERTEX", 0)) {
-    mMeanVtx = *(const o2::dataformats::MeanVertexObject*)obj;
-    mMeanVertexUpdated = true;
-    LOGP(info, "Imposing new MeanVertex: {}", mMeanVtx.asString());
+    mMeanVtxCCDB = *(const o2::dataformats::MeanVertexObject*)obj;
+    mMeanVtxCCDBUpdated = true;
+    LOGP(info, "New CCDB MeanVertex: {}", mMeanVtxCCDB.asString());
     return;
   }
 }
