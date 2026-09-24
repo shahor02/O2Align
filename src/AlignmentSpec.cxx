@@ -156,25 +156,22 @@ class AlignmentSpec final : public Task
   {
     if (dmask[DetID::ITS]) {
       mITS = std::make_unique<DetectorITS>(withITS3);
+      mDetectors.push_back(mITS.get());
     }
     if (dmask[DetID::TPC]) {
       mTPC = std::make_unique<DetectorTPC>();
+      mDetectors.push_back(mTPC.get());
     }
     if (dmask[DetID::TRD]) {
       mTRD = std::make_unique<DetectorTRD>();
+      mDetectors.push_back(mTRD.get());
     }
     if (dmask[DetID::TOF]) {
       mTOF = std::make_unique<DetectorTOF>();
-     }
-    mPVT = std::make_unique<DetectorPVT>(); // virtual, always created: it has no data of its own
-    // in the order of the detector index, which is also the order of the branches of the hierarchy
-    for (Detector* det : {static_cast<Detector*>(mPVT.get()), static_cast<Detector*>(mITS.get()),
-                          static_cast<Detector*>(mTPC.get()), static_cast<Detector*>(mTRD.get()),
-                          static_cast<Detector*>(mTOF.get())}) {
-      if (det) {
-        mDetectors.push_back(det);
-      }
+      mDetectors.push_back(mTOF.get());
     }
+    mPVT = std::make_unique<DetectorPVT>(); // virtual, always created: it has no data of its own
+    mDetectors.push_back(mPVT.get());
   }
 
   void init(InitContext& ic) final;
