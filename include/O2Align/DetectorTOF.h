@@ -28,9 +28,11 @@ class DetectorTOF final : public Detector
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
-  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
   const std::vector<FrameInfoExt>& getPointsInfo() const { return mTOFPointsInfo; }
+
+ protected:
+  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
  private:
   std::vector<FrameInfoExt> mTOFPointsInfo; // point per TOF cluster of the TF, lr<0 if unusable

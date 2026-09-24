@@ -50,6 +50,9 @@ class Label
   static constexpr int DET_SHIFT = DOF_BITS + CALIB_BITS + ID_BITS + SENS_BITS;
   static constexpr T DET_MAX = (T(1) << DET_BITS) - T(1);
   static constexpr T DET_MASK = DET_MAX << DET_SHIFT;
+  /// detector code reserved for the volumes which belong to no detector: the common root of the
+  /// hierarchy. Such volumes carry no DOFs, hence this code never appears in a Millepede label.
+  static constexpr T DET_GLOBAL = DET_MAX;
 
   Label() = default; // invalid/empty label
   Label(T det, T id, bool sens, bool calib = false)

@@ -57,6 +57,15 @@ void Volume::init()
   }
 }
 
+Volume::Ptr Volume::makeRoot(const char* symName)
+{
+  // the root belongs to no detector and is fictitious: its L2G is the identity of the global frame,
+  // left as provided by the default-constructed mL2G, since defineMatrixL2G() is a no-op here
+  auto root = std::make_unique<Volume>(symName, Label(Label::DET_GLOBAL, 0, false), true);
+  root->setRigidBodyAllowed(false);
+  return root;
+}
+
 const TGeoHMatrix& Volume::getMatrixL2G() const
 {
   // sensors may redefine the L2G matrix and fictitious volumes have no geometry to take it from,
@@ -84,6 +93,15 @@ void Volume::finalise(uint8_t level)
     LOGP(fatal, "Finalise should be called only from the root node!");
   }
   mLevel = level;
+  if (mRigidBody && !mRBAllowed) {
+    LOGP(fatal, "Volume {} is not rigid-body alignable but was assigned rigid-body DOFs", mSymName);
+  }
+  if (isLeaf() && !mLabel.sens() && !mVirtual) {
+    // being a leaf is what makes a volume define its own matrices instead of taking them from the
+    // geometry, hence a childless volume which is neither a sensor nor fictitious is a dead branch:
+    // its L2G would silently become the identity instead of the matrix of its alignable entry
+    LOGP(fatal, "Volume {} is childless but neither a sensor nor fictitious: dead branch of the hierarchy", mSymName);
+  }
   if (isLeaf()) {
     // for sensors we need also to define the transformation from the measurment (TRK) to the local frame (LOC)
     // need to it with including possible pre-alignment to allow for iterative convergence
@@ -142,8 +160,9 @@ void Volume::finalise(uint8_t level)
 
 void Volume::writeRigidBodyConstraints(std::ostream& os) const
 {
-  if (isLeaf() || !mRigidBody) {
-    // recurse even if this node has no RB DOFs
+  if (isLeaf() || !mRigidBody || !mRBAllowed) {
+    // recurse even if this node has no RB DOFs: a node which is not rigid-body alignable (the root
+    // of the hierarchy, a detector envelope) imposes no constraint on its branches
     for (const auto& c : mChildren) {
       c->writeRigidBodyConstraints(os);
     }
@@ -293,8 +312,13 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
       if (!matchPattern(pattern, sym)) {
         continue;
       }
-      // rigid body DOFs
-      if (rule.contains("rigidBody")) {
+      // rigid body DOFs: silently not applicable to the volumes which are not rigid-body alignable
+      // (the root of the hierarchy, the envelopes w/o own geometry), for which only the calibration
+      // DOFs can be configured. An explicitly named volume is likely a configuration mistake.
+      if (rule.contains("rigidBody") && !vol->isRigidBodyAllowed() && pattern.find('*') == std::string::npos) {
+        LOGP(warn, "Ignoring the rigidBody rule '{}': {} is not rigid-body alignable", pattern, sym);
+      }
+      if (rule.contains("rigidBody") && vol->isRigidBodyAllowed()) {
         const auto& rb = rule["rigidBody"];
         if (rb.is_string()) {
           auto s = rb.get<std::string>();

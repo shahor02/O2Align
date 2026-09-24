@@ -35,7 +35,6 @@ class DetectorPVT final : public Detector
   void prepareData(o2::globaltracking::RecoContainer* /*recoData*/) final {}
   /// the mean vertex contributes no measured point to an individual track
   bool prepareTrack(o2::globaltracking::RecoContainer* /*recoData*/, const GlobalIDSet& /*ids*/, Track& /*resTrack*/) final { return false; }
-  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
   /// label of the mean vertex volume of a given mean vertex calibration slot, its DOFs TX/TY/TZ are
   /// the global parameters of the vertex position in this slot: every slot is aligned independently,
@@ -49,6 +48,9 @@ class DetectorPVT final : public Detector
 
   int getMVSlotID() const { return mMVSlotID; }
   void setMVSlotID(int slotID) { mMVSlotID = slotID; }
+
+ protected:
+  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
  private:
   Volume* mVertexVolume{nullptr}; // the dummy volume of the mean vertex

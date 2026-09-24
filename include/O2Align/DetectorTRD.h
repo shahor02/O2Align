@@ -34,10 +34,12 @@ class DetectorTRD final : public Detector
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
-  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
   /// must be provided by the caller before the 1st prepareData call
   void setTransformer(const o2::trd::TrackletTransformer* tr) { mTransformer = tr; }
+
+ protected:
+  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
  private:
   const o2::trd::TrackletTransformer* mTransformer{nullptr};

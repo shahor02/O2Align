@@ -51,6 +51,8 @@ Volume::Ptr DetectorTPC::buildHierarchy(Volume::SensorMapping& sensorMap)
   uint32_t gLbl{0};
   const uint32_t det = mDetIdx;
   auto root = std::make_unique<Volume>("TPC_envelope", gLbl++, det, false, true);
+  // w/o a geometry counterpart the envelope cannot be shifted, but it may own calibration DOFs
+  root->setRigidBodyAllowed(false);
   mSensors.assign(o2::tpc::constants::MAXSECTOR, nullptr);
   for (int isec = 0; isec < o2::tpc::constants::MAXSECTOR; ++isec) {
     const Label lbl(det, isec, true);

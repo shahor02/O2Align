@@ -50,10 +50,14 @@ class Volume
   Volume(const char* symName, Label label, bool virt = false);
   virtual ~Volume() = default;
 
-  static void applyDOFConfig(Volume* root, const std::string& jsonPath);  
+  static void applyDOFConfig(Volume* root, const std::string& jsonPath);
   static void writeMillepedeResults(Volume* root, const std::string& milleResPath, const std::string& outJsonPath, const std::string& injectedJsonPath = "");
 
-  
+  /// create the common root of the whole hierarchy: a fictitious volume with the identity L2G, whose
+  /// children are the top volumes of the individual detectors. It is not rigid-body alignable, hence
+  /// the detector top volumes are not subjected to any automatic mutual constraint.
+  static Ptr makeRoot(const char* symName = "ALICE");
+
   void finalise(uint8_t level = 0);
 
   // steering file output
@@ -82,6 +86,9 @@ class Volume
     return setParent(std::move(c));
   }
 
+  /// graft an externally built subtree (e.g. the hierarchy of a single detector) under this volume
+  Volume* adoptChild(Ptr c) { return setParent(std::move(c)); }
+
   // bfs traversal
   void traverse(const std::function<void(Volume*)>& visitor)
   {
@@ -104,6 +111,12 @@ class Volume
   void setPseudo(bool p) noexcept { mIsPseudo = p; }
   bool isPseudo() const noexcept { return mIsPseudo; }
   bool isVirtual() const noexcept { return mVirtual; }
+  /// A volume which is not rigid-body alignable never receives rigid-body DOFs (a matching
+  /// rigidBody rule of the DOF config is ignored) and, having none, generates no rigid-body
+  /// constraint over its children: its branches are mutually unconstrained. Calibration DOFs are
+  /// not affected: an envelope w/o its own geometry may still own a calibration DOF set.
+  void setRigidBodyAllowed(bool v) noexcept { mRBAllowed = v; }
+  bool isRigidBodyAllowed() const noexcept { return mRBAllowed; }
   void setSensorId(int id) noexcept { mSensorId = id; }
   int getSensorId() const noexcept { return mSensorId; }
   // true if this volume participates in the hierarchy (has DOFs or is pseudo)
@@ -139,6 +152,7 @@ class Volume
   bool mVirtual{false}; // no counterpart in the geometry
   uint8_t mLevel{0};
   bool mIsPseudo{false};
+  bool mRBAllowed{true}; // rigid-body DOFs may be assigned to this volume
   int mSensorId{-1}; // RS check if needed
   std::unique_ptr<DOFSet> mRigidBody;
   std::unique_ptr<DOFSet> mCalib;

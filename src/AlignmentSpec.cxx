@@ -167,6 +167,14 @@ class AlignmentSpec final : public Task
       mTOF = std::make_unique<DetectorTOF>();
      }
     mPVT = std::make_unique<DetectorPVT>(); // virtual, always created: it has no data of its own
+    // in the order of the detector index, which is also the order of the branches of the hierarchy
+    for (Detector* det : {static_cast<Detector*>(mPVT.get()), static_cast<Detector*>(mITS.get()),
+                          static_cast<Detector*>(mTPC.get()), static_cast<Detector*>(mTRD.get()),
+                          static_cast<Detector*>(mTOF.get())}) {
+      if (det) {
+        mDetectors.push_back(det);
+      }
+    }
   }
 
   void init(InitContext& ic) final;
@@ -247,11 +255,11 @@ class AlignmentSpec final : public Task
   std::unique_ptr<DetectorTPC> mTPC;
   std::unique_ptr<DetectorTRD> mTRD;
   std::unique_ptr<DetectorTOF> mTOF;
+  std::vector<Detector*> mDetectors; // all created detectors, in the order of the detector index
 
   std::shared_ptr<DataRequest> mDataRequest;
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
-  std::unique_ptr<Volume> mHierarchy;    // tree-hiearchy
-  std::unique_ptr<Volume> mHierarchyPVT; // separate top volume of the virtual PVT detector
+  std::unique_ptr<Volume> mHierarchy; // single tree-hierarchy of all detectors, rooted in a virtual volume
   Volume::SensorMapping mChip2Hiearchy; // global label mapping to leaves in the tree
   ProcStat mStat{};     // processing statistics
   GBLStat mGBLStat{};   // GBL construction and fit statistics
@@ -287,7 +295,7 @@ void AlignmentSpec::run(ProcessingContext& pc)
 {
   if (mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
     updateTimeDependentParams(pc);
-    Volume::writeMillepedeResults(mHierarchy.get(), mParams->milleResFile, mParams->milleResOutJson, mParams->misAlgJson); // RSTODO loop over possible top volumes (detectors)
+    Volume::writeMillepedeResults(mHierarchy.get(), mParams->milleResFile, mParams->milleResOutJson, mParams->misAlgJson);
   } else {
     o2::globaltracking::RecoContainer recoData;
     mRecoData = &recoData;
@@ -584,7 +592,9 @@ void AlignmentSpec::process() // collisions
           const auto derCtx = makeDerivativeContext(frame, wTrk);
           Matrix36 der = getRigidBodyBaseDerivatives(derCtx);
 
-          // count rigid body columns: only volumes with real DOFs (not DOFPseudo)
+          // count rigid body columns: only volumes with real DOFs (not DOFPseudo).
+          // The chain walks up to the common root of all detectors, which owns no DOFs: the top
+          // volume of the detector is therefore included, its DOFs being free or fixed as configured.
           int nColRB{0};
           for (const auto* v = tileVol; v && !v->isRoot(); v = v->getParent()) {
             if (v->getRigidBody()) {
@@ -809,7 +819,7 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
       mMeanVtxSlot = mMeanVtxCCDB;
       mMeanVtxCCDBUpdated = false;
       mVertexer.setMeanVertex(&mMeanVtxSlot); // copies the object and re-inits the XY constraint, no init() needed
-      if (mHierarchyPVT) {                    // the vertex of every slot is aligned via its own global parameters
+      if (mPVT->getTopVolume()) {             // the vertex of every slot is aligned via its own global parameters
         mMeanVtxLabels = mPVT->getPositionLabels();
       }
       LOGP(info, "Mean vertex prior for time slot {} at timestamp {}: {}", MVslotID, mTimeStamp, mMeanVtxSlot.asString());
@@ -829,23 +839,29 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
 
 void AlignmentSpec::buildHierarchy()
 {
-  mHierarchy = mITS->buildHierarchy(mChip2Hiearchy);
-  if (mPVT && mParams->usePVConstraintMinTracks > 0) {
-    // the mean vertex is a top volume of its own: it is not a part of any real detector
-    mHierarchyPVT = mPVT->buildHierarchy(mChip2Hiearchy);
+  // all detectors share a single hierarchy: the top volume of every detector is a branch of a
+  // fictitious root. The root owns no rigid-body DOFs, hence the branches, which may belong to
+  // detectors as unrelated as the mean vertex and the TPC, are not mutually constrained.
+  mHierarchy = Volume::makeRoot();
+  for (auto* det : mDetectors) {
+    if (det->getDetIdx() == Detector::DetPVT && mParams->usePVConstraintMinTracks <= 0) {
+      continue; // w/o the PV constraint the mean vertex is neither used nor aligned
+    }
+    det->attachTo(mHierarchy.get(), mChip2Hiearchy);
+  }
+  const bool withPVT = mPVT->getTopVolume() != nullptr;
+  if (withPVT) {
     LOGP(info, "Mean vertex prior: {}", mMeanVtxCCDB.asString());
   }
 
   if (!mParams->dofConfigJson.empty()) {
-    Volume::applyDOFConfig(mHierarchy.get(), mParams->dofConfigJson); // RSTODO loop over detectors
-    if (mHierarchyPVT) { // a matching rule may fix the mean vertex position or free its rotations
-      Volume::applyDOFConfig(mHierarchyPVT.get(), mParams->dofConfigJson);
-    }
+    // a rule may e.g. fix the mean vertex position or free its rotations, as well as fix or free the
+    // top volume of any detector: no DOF is fixed or freed by the hierarchy construction itself
+    Volume::applyDOFConfig(mHierarchy.get(), mParams->dofConfigJson);
   }
 
   mHierarchy->finalise();
-  if (mHierarchyPVT) {
-    mHierarchyPVT->finalise();
+  if (withPVT) {
     mMeanVtxLabels = mPVT->getPositionLabels();
     if (mMeanVtxLabels.empty()) {
       LOGP(info, "Mean vertex position is fixed, it is imposed as a prior w/o being aligned");
@@ -858,10 +874,6 @@ void AlignmentSpec::buildHierarchy()
     mHierarchy->writeRigidBodyConstraints(cons);
     std::ofstream par(mParams->milleParamFile);
     mHierarchy->writeParameters(par);
-    if (mHierarchyPVT) { // its own Parameter block, the mean vertex has no constraints to write
-      mHierarchyPVT->writeTree(tree);
-      mHierarchyPVT->writeParameters(par);
-    }
   }
 }
 
@@ -1095,7 +1107,9 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       const auto derCtx = makeDerivativeContext(frame, wTrk);
       Matrix36 der = getRigidBodyBaseDerivatives(derCtx);
 
-      // count rigid body columns: only volumes with real DOFs (not DOFPseudo)
+      // count rigid body columns: only volumes with real DOFs (not DOFPseudo).
+      // The chain walks up to the common root of all detectors, which owns no DOFs: the top
+      // volume of the detector is therefore included, its DOFs being free or fixed as configured.
       int nColRB{0};
       for (const auto* v = tileVol; v && !v->isRoot(); v = v->getParent()) {
         if (v->getRigidBody()) {

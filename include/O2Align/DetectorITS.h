@@ -48,11 +48,6 @@ class DetectorITS : public Detector
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
 
-  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final 
-  {
-    return mIsITS3 ? buildHierarchyIT3(sensorMap) : buildHierarchyITS(sensorMap);
-  }
-
   void setTopologyDictionaries(const o2::itsmft::TopologyDictionary* itsDict, const o2::its3::TopologyDictionary* its3Dict)
   {
     mITSDict = itsDict;
@@ -61,10 +56,16 @@ class DetectorITS : public Detector
 
   const std::vector<FrameInfoExt>& getPointsInfo() const { return mITSPointsInfo; }
 
+ protected:
+  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final
+  {
+    return mIsITS3 ? buildHierarchyIT3(sensorMap) : buildHierarchyITS(sensorMap);
+  }
+
  private:
   Volume::Ptr buildHierarchyITS(Volume::SensorMapping& sensorMap);
   Volume::Ptr buildHierarchyIT3(Volume::SensorMapping& sensorMap);
- 
+
   bool mIsITS3{false};
   const o2::itsmft::TopologyDictionary* mITSDict{nullptr};
   const o2::its3::TopologyDictionary* mIT3Dict{nullptr};

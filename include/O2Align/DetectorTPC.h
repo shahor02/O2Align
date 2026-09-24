@@ -38,7 +38,6 @@ class DetectorTPC final : public Detector
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
-  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
   /// both must be provided by the caller before the 1st prepareTrack call
   void setCorrMaps(const o2::gpu::TPCFastTransformPOD* maps) { mCorrMaps = maps; }
@@ -64,6 +63,9 @@ class DetectorTPC final : public Detector
     }
     return std::min(padrow - sStackMinMaxRow[st].first, sStackMinMaxRow[st].second - padrow);
   }
+
+ protected:
+  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
  private:
   static constexpr std::array<std::pair<int, int>, NStacks> sStackMinMaxRow = {

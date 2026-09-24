@@ -45,6 +45,8 @@ Volume::Ptr DetectorTRD::buildHierarchy(Volume::SensorMapping& sensorMap)
   const uint32_t det = mDetIdx;
   // the TRD envelope has no alignable entry in the geometry
   auto root = std::make_unique<Volume>("TRD_envelope", gLbl++, det, false, true);
+  // w/o a geometry counterpart the envelope cannot be shifted, but it may own calibration DOFs
+  root->setRigidBodyAllowed(false);
   mSensors.assign(o2::trd::constants::MAXCHAMBER, nullptr);
 
   for (int isector = 0; isector < o2::trd::constants::NSECTOR; ++isector) {

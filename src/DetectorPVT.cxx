@@ -19,13 +19,12 @@ namespace o2::alignrs
 
 Volume::Ptr DetectorPVT::buildHierarchy(Volume::SensorMapping& sensorMap)
 {
-  const uint32_t det = mDetIdx;
-  // neither the envelope nor the mean vertex itself has an alignable entry in the geometry
-  auto root = std::make_unique<Volume>("PVT_envelope", 0, det, false, true);
   const auto lbl = getVertexLabel();
-  // the volume carries no geometry of its own: the frame in which the vertex is measured is defined
-  // by each track separately and the prior position is used directly by the fit, not via a matrix
-  auto* vtx = root->addChild("PVT/meanVertex", lbl, true);
+  // The mean vertex is the only volume of this detector, hence it is directly the top volume of its
+  // branch of the hierarchy, with no envelope above it. It has no alignable entry in the geometry
+  // and carries no geometry of its own: the frame in which the vertex is measured is defined by each
+  // track separately and the prior position is used directly by the fit, not via a matrix.
+  auto vtx = std::make_unique<Volume>("PVT/meanVertex", lbl, true);
   // only the position of the mean vertex is alignable: being a point, it has no orientation
   auto dofs = std::make_unique<RigidBodyDOFSet>();
   dofs->setAllFree(false);
@@ -34,9 +33,9 @@ Volume::Ptr DetectorPVT::buildHierarchy(Volume::SensorMapping& sensorMap)
   dofs->setFree(RigidBodyDOFSet::TZ, true);
   vtx->setRigidBody(std::move(dofs));
   vtx->setSensorId(0);
-  sensorMap[lbl] = vtx;
-  mVertexVolume = vtx;
-  return root;
+  sensorMap[lbl] = vtx.get();
+  mVertexVolume = vtx.get();
+  return vtx;
 }
 
 std::vector<int> DetectorPVT::getPositionLabels() const
