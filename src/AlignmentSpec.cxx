@@ -208,16 +208,16 @@ class AlignmentSpec final : public Task
   // build and fit the GBL trajectory of a single track, accounting its frames from the ipStart slot outward
   bool buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj);
 
+  // d(local offsets at the vertex point) / d(vertex position) of the track, which is at the same
+  // time the derivative of the local position of the mean vertex wrt its global position
+  static Eigen::MatrixXd computeVertexTransformation(const Track& resTrack);
+
   // impose the prior of the mean interaction point on the vertex point of one track of a collision
   void addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint);
 
   // build and fit a single composed GBL trajectory for all tracks of one collision, with their
   // common vertex position as parameters shared by all of them
   bool buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj);
-
-  // refit ITS track with inward/outward fit (opt. impose pv as additional constraint)
-  // after this we have the refitted track at the innermost update point
-  bool prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack, Track& resTrack);
 
   // prepare ITS measuremnt points
   // build track to vertex association
@@ -443,9 +443,12 @@ void AlignmentSpec::process() // collisions
         useVertexConstraint = false; // the tracks of this vertex are fitted w/o the vertex point
       }
     }
-    // create the GBL input: 1st the tracks constrained by the refitted vertex, i.e. those whose
-    // prebooked info[0] slot holds the vertex point
-    if (useVertexConstraint) {
+    // create the GBL input: 1st, if the common vertex constraint is requested, the tracks
+    // constrained by the refitted vertex, i.e. those whose prebooked info[0] slot holds the vertex
+    // point. Otherwise they are fitted separately below, with the vertex as an ordinary measured
+    // point of every track.
+    const bool useCommonVertex = useVertexConstraint && mParams->useMultyTrackPVConstraint;
+    if (useCommonVertex) {
       std::vector<Track*> contributors;
       for (auto& resTrack : resTracks) {
         if (!resTrack.gid.isIndexSet() || resTrack.info.empty() || !resTrack.info.front().isVertex()) {
@@ -460,11 +463,15 @@ void AlignmentSpec::process() // collisions
         nTrcAcc += (int)contributors.size();
       }
     }
-    // then the tracks w/o the vertex constraint: if a vertex slot was prebooked for them it was left
-    // invalid, hence the fit must start from the 1st measured point
+    // then the tracks not accounted in a composed trajectory: those carrying the vertex point are
+    // fitted from it on, treating it as an ordinary measured point of this track only. If a vertex
+    // slot was prebooked but left invalid, the fit must start from the 1st measured point
     for (auto& resTrack : resTracks) {
-      if (!resTrack.gid.isIndexSet() || resTrack.info.empty() || resTrack.info.front().isVertex()) {
-        continue; // failed track or already accounted with the vertex constraint
+      if (!resTrack.gid.isIndexSet() || resTrack.info.empty()) {
+        continue; // failed track
+      }
+      if (useCommonVertex && resTrack.info.front().isVertex()) {
+        continue; // already accounted with the common vertex constraint
       }
       nTrc++;
       if (buildGBLTrack(resTrack, resTrack.info.front().isValid() ? 0 : 1, gblTraj)) {
@@ -771,7 +778,7 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
       mVertexer.setMeanVertex(&mMeanVtxSlot);
       mVertexer.init();
 
-      if (mParams->useMultyTrackPVConstraint && !mParams->MVTimeSlotsJson.empty()) {
+      if (!mParams->MVTimeSlotsJson.empty()) { // the slots are used in both PV constraint modes
         mMVTimeSlots = std::make_unique<o2::alignrs::TimeSlotsSet>();
         if (mMVTimeSlots->readSlotsFromFile(mParams->MVTimeSlotsJson)<0) {
           LOGP(fatal, "Failed to load time slots from {}", mParams->MVTimeSlotsJson);
@@ -961,27 +968,6 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
   return true;
 }
 
-bool AlignmentSpec::processITSPart(Track& resTrack, const GlobalIDSet& contributorsGID)
-{
-  return true;
-}
-
-bool AlignmentSpec::processTPCPart(Track& resTrack, const GlobalIDSet& contributorsGID)
-{
-  return true;
-}
-
-
-bool AlignmentSpec::processTRDPart(Track& resTrack, const GlobalIDSet& contributorsGID)
-{
-  return true;
-}
-
-bool AlignmentSpec::processTOFPart(Track& resTrack, const GlobalIDSet& contributorsGID)
-{
-  return true;
-}
-
 bool AlignmentSpec::refitPV(const PVertex& vtxOrig, const std::vector<Track>& resTracks, PVertex& vtxRefit)
 {
   // Refit the vertex with the tracks refitted in the current alignment. Only the successfully refitted
@@ -1065,7 +1051,8 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
     // measurement
     const auto& cluster = frame.cluster;
     Eigen::Vector2d res = Eigen::Vector2d::Zero(), prec = Eigen::Vector2d::Zero();
-    if (!(skipFirstMeas && points.empty())) {
+    const bool addMeas = !(skipFirstMeas && points.empty());
+    if (addMeas) {
       res << cluster.getY() - wTrk.getY(), cluster.getZ() - wTrk.getZ();
 
       // here we can apply some misalignment on the measurment
@@ -1168,6 +1155,12 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
         curCol += nd;
       }
       point.addGlobals(gLabels, gDer);
+    } else if (addMeas && !mMeanVtxLabels.empty()) {
+      // the vertex measured by this track alone: its position follows the aligned mean vertex,
+      // hence the residual acquires the derivatives wrt the mean vertex position. In a composed
+      // trajectory the measurement is not here but on the shared vertex parameters, see
+      // addMeanVertexPrior, and this branch is not reached.
+      point.addGlobals(mMeanVtxLabels, computeVertexTransformation(resTrack));
     }
 
     if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
@@ -1243,6 +1236,25 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
   return fitGBLTrajectory(traj, resTrack.kfFit.chi2Ndf, gblTraj, resTrack.gblFit);
 }
 
+// d(offsets at the vertex point) / d(vertex position): the vertex is displaced in the global frame
+// at fixed track direction and momentum, hence the offsets of the track in the tracking frame of
+// the vertex point change by the displacement rotated to this frame, corrected for the shift of the
+// reference X along the track. The track state must be the one at the vertex point.
+Eigen::MatrixXd AlignmentSpec::computeVertexTransformation(const Track& resTrack)
+{
+  double ca{0}, sa{0};
+  o2::math_utils::sincosd(resTrack.info.front().alpha, sa, ca);
+  const auto slopes = TrackSlopes::computeTrackSlopes(resTrack.track.getSnp(), resTrack.track.getTgl());
+  Eigen::MatrixXd trans(2, 3);
+  trans(0, 0) = -sa - slopes.dydx * ca; // dY / dVx
+  trans(0, 1) = ca - slopes.dydx * sa;  // dY / dVy
+  trans(0, 2) = 0.;                     // dY / dVz
+  trans(1, 0) = -slopes.dzdx * ca;      // dZ / dVx
+  trans(1, 1) = -slopes.dzdx * sa;      // dZ / dVy
+  trans(1, 2) = 1.;                     // dZ / dVz
+  return trans;
+}
+
 // Impose the prior on the vertex of the collision: it must agree with the mean interaction point
 // within the sigmas of the luminous region. Being a property of the collision, the prior is
 // accounted only once, as a measurement on the vertex point of a single track of the composed
@@ -1300,20 +1312,7 @@ bool AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std:
     if (!fillGBLPoints(*trc, 0, true, points) || points.size() < 2) {
       continue;
     }
-    // d(offsets at the vertex point) / d(vertex position): the vertex is displaced in the global
-    // frame at fixed track direction and momentum, hence the offsets of the track in the tracking
-    // frame of the vertex point change by the displacement rotated to this frame, corrected for the
-    // shift of the reference X along the track
-    double ca{0}, sa{0};
-    o2::math_utils::sincosd(trc->info.front().alpha, sa, ca);
-    const auto slopes = TrackSlopes::computeTrackSlopes(trc->track.getSnp(), trc->track.getTgl());
-    Eigen::MatrixXd innerTrans(2, 3);
-    innerTrans(0, 0) = -sa - slopes.dydx * ca; // dY / dVx
-    innerTrans(0, 1) = ca - slopes.dydx * sa;  // dY / dVy
-    innerTrans(0, 2) = 0.;                     // dY / dVz
-    innerTrans(1, 0) = -slopes.dzdx * ca;      // dZ / dVx
-    innerTrans(1, 1) = -slopes.dzdx * sa;      // dZ / dVy
-    innerTrans(1, 2) = 1.;                     // dZ / dVz
+    Eigen::MatrixXd innerTrans = computeVertexTransformation(*trc);
     if (used.empty()) { // impose the prior on the vertex of this collision
       addMeanVertexPrior(*trc, innerTrans, points.front());
     }
@@ -1333,241 +1332,6 @@ bool AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std:
   }
   return true;
 }
-
-bool AlignmentSpec::prepareITSTrack(int iTrk, const o2::its::TrackITS& itsTrack, Track& resTrack)
-{
-  const auto itsClRefs = mRecoData->getITSTracksClusterRefs();
-  auto trFit = convertTrack<double>(itsTrack.getParamOut()); // take outer track fit as start of refit
-  auto prop = o2::base::PropagatorD::Instance();
-  auto geom = o2::its::GeometryTGeo::Instance();
-  const auto bz = prop->getNominalBz();
-  std::array<const FrameInfoExt*, 8> frameArr{};
-  o2::track::TrackParD trkOut, *refLin = nullptr;
-  if (mParams->useStableRef) {
-    refLin = &(trkOut = trFit);
-  }
-
-  auto accountCluster = [&](int i, TrackD& tr, float& chi2, Measurement& meas, o2::track::TrackParD* refLin) {
-    if (frameArr[i]) { // update with cluster
-      if (!prop->propagateToAlphaX(tr, refLin, frameArr[i]->alpha, frameArr[i]->x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType)) {
-        return 2;
-      }
-      const auto& cluster = frameArr[i]->cluster;
-      meas.dy = cluster.getY() - tr.getY();
-      meas.dz = cluster.getZ() - tr.getZ();
-      meas.sig2y = cluster.getSigmaY2();
-      meas.sig2z = cluster.getSigmaZ2();
-      meas.z = tr.getZ();
-      meas.phi = tr.getPhi();
-      o2::math_utils::bringTo02Pid(meas.phi);
-      chi2 += (float)tr.getPredictedChi2Quiet(cluster);
-      if (!tr.update(cluster)) {
-        return 2;
-      }
-      if (refLin) { // displace the reference to the last updated cluster
-        refLin->setY(cluster.getY());
-        refLin->setZ(cluster.getZ());
-      }
-      return 0;
-    }
-    return 1;
-  };
-
-  FrameInfoExt pvInfo;
-  if (mUsePVConstraint) { // add PV as constraint RSTODO: this should be a per-track decision, not global, should not be datamember
-    const int iPV = mT2PVMC[iTrk];
-    if (iPV < 0) {
-      return false;
-    }
-    const auto& pv = mPVMC[iPV];
-    auto tmp = convertTrack<double>(itsTrack.getParamIn());
-    if (!prop->propagateToDCA(pv, tmp, bz)) {
-      return false;
-    }
-    pvInfo.alpha = (float)tmp.getAlpha();
-    double ca{0}, sa{0};
-    o2::math_utils::bringToPMPi(pvInfo.alpha);
-    o2::math_utils::sincosd(pvInfo.alpha, sa, ca);
-    pvInfo.x = tmp.getX();
-    pvInfo.cluster = ClusterF(-1, 0.f, -pv.getX() * sa + pv.getY() * ca, pv.getZ(), 0.5 * (pv.getSigmaX2() + pv.getSigmaY2()), pv.getSigmaY2(), 0.);
-    pvInfo.lr = -1;
-    frameArr[0] = &pvInfo;
-  }
-
-  // collect all track clusters to array, placing them to layer+1 slot
-  int nCl = itsTrack.getNClusters();
-  for (int i = 0; i < nCl; i++) { // clusters are ordered from the outermost to the innermost
-    const auto& curInfo = mITS->getPointsInfo()[itsClRefs[itsTrack.getClusterEntry(i)]];
-    frameArr[1 + curInfo.lr] = &curInfo;
-  }
-
-  // start refit
-  resTrack.points.clear();
-  resTrack.info.clear();
-  trFit.resetCovariance();
-  trFit.setCov(trFit.getQ2Pt() * trFit.getQ2Pt() * trFit.getCov()[14], 14);
-  float chi2{0};
-  for (int i{7}; i >= 0; --i) {
-    Measurement point;
-    int res = accountCluster(i, trFit, chi2, point, refLin);
-    if (res == 2) {
-      return false;
-    } else if (res == 0) {
-      resTrack.points.push_back(point);
-      resTrack.info.push_back(*frameArr[i]);
-      resTrack.track = trFit; // put track to whatever the IU is
-    }
-  }
-  // reverse inserted points so they are in the same order as the track
-  std::reverse(resTrack.info.begin(), resTrack.info.end());
-  std::reverse(resTrack.points.begin(), resTrack.points.end());
-  resTrack.kfFit.chi2 = chi2;
-  resTrack.kfFit.ndf = (int)resTrack.info.size() * 2 - 5;
-  resTrack.kfFit.chi2Ndf = chi2 / (float)resTrack.kfFit.ndf;
-
-  return true;
-}
-
-#if 0
-void AlignmentSpec::prepareITSPoints()
-{
-  // prepare TF ITS data for processing: convert clusters and build overlap info. // RSTODO At the moment it is not ITS3/staggering compatible!
-  const auto clusITS = mRecoData->getITSClusters();
-  const auto clusITSROF = mRecoData->getITSClustersROFRecords();
-  const auto patterns = mRecoData->getITSClustersPatterns();
-  auto pattIt = patterns.begin();
-  mITSPointsInfo.clear();
-  mITSPointsInfo.reserve(clusITS.size());
-  if (mParams->ITSOverlapMargin > 0) {
-    mITSOvlClusRef.clear();
-    mITSOvlClusRef.resize(clusITS.size(), -1);
-    mITSOvlCandidateID.clear();
-    mITSOvlCandidateID.reserve(clusITS.size());
-  }
-  auto geom = its::GeometryTGeo::Instance();
-  std::vector<int> edgeClusters;
-  int ROFCount = 0, curSensID = -1;
-  struct ROFChipEntry {
-    int rofCount = -1;
-    int chipFirstEntry = -1;
-  };
-  std::array<ROFChipEntry, o2::itsmft::ChipMappingITS::getNChips()> chipROFStart{}; // fill only for clusters with overlaps
-
-  for (const auto& rof : clusITSROF) {
-    int maxic = rof.getFirstEntry() + rof.getNEntries();
-    edgeClusters.clear();
-    for (int ic = rof.getFirstEntry(); ic < maxic; ic++) {
-      const auto& cls = clusITS[ic];
-      const auto sensID = cls.getSensorID();
-      const auto lay = geom->getLayer(sensID);
-      float sigmaY2{0.}, sigmaZ2{0.};
-      math_utils::Point3D<float> locXYZ;
-      if (mIsITS3) {
-        locXYZ = o2::its3::ioutils::extractClusterData(cls, pattIt, mIT3Dict, sigmaY2, sigmaZ2);
-      } else {
-        locXYZ = o2::its::ioutils::extractClusterData(cls, pattIt, mITSDict, sigmaY2, sigmaZ2);
-      }
-      sigmaY2 += mParams->extraClsErrYITS[lay] * mParams->extraClsErrYITS[lay];
-      sigmaZ2 += mParams->extraClsErrZITS[lay] * mParams->extraClsErrZITS[lay];
-      const auto gloXYZ = geom->getMatrixL2G(sensID) * locXYZ; // local --> global
-      auto trkXYZ = geom->getMatrixT2L(sensID) ^ locXYZ; // local --> tracking
-      // Tracking alpha angle: We want that each cluster rotates its tracking frame to the clusters phi
-      // that way the track linearization around the measurement is less biases to the arc
-      // this means automatically that the measurement on the arc is at 0 for the curved layers
-      double alpha = geom->getSensorRefAlpha(sensID); // RSTODO: what is this for ITS3 IB?
-      double x = geom->getSensorRefX(sensID);
-      if (mIsITS3 && o2::its3::constants::detID::isDetITS3(sensID)) {
-        trkXYZ.SetY(0.f);
-        x = std::hypot(gloXYZ.x(), gloXYZ.y());  // alpha, x always have to be defined wrt to the global Z axis!
-        trkXYZ.SetX(x);
-        alpha = std::atan2(gloXYZ.y(), gloXYZ.x());
-      }
-      math_utils::bringToPMPid(alpha);
-      o2::BaseCluster<float> clus(sensID, trkXYZ, sigmaY2, sigmaZ2, 0.f);
-      auto& pointInfo = mITSPointsInfo.emplace_back(lay, x, alpha, clus, {});
-      if (mParams->ITSOverlapMargin > 0 && (!mIsITS3 || lay > 2)) {
-        // fill chips overlaps info for clusters whose center is within of the mParams->ITSOverlapMargin distance from the chip min or max row edge
-        // but the pixel closest to this edge has distance of at least mParams->ITSOverlapEdgeRows from the edge
-        int row = 0, col = 0; // effective row/col of the cluster center
-        o2::itsmft::SegmentationAlpide::localToDetectorUnchecked(locXYZ.X(), locXYZ.Z(), row, col);
-        int drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? row : o2::itsmft::SegmentationAlpide::NRows - row - 1; // distance to the edge
-        if (drow * o2::itsmft::SegmentationAlpide::PitchRow < mParams->ITSOverlapMargin) {                                   // rough check is passed, check if the edge cluster is indeed good
-          pointInfo.cluster.setBit(row < o2::itsmft::SegmentationAlpide::NRows / 2 ? EdgeFlags::LowRow : EdgeFlags::HighRow);            // flag that this is an edge cluster and indicate the low/high row side
-          // check if it is not too close to the edge (to be biased)
-          if (mParams->ITSOverlapEdgeRows > 0) { // is there a restriction?
-            auto pattID = cls.getPatternID();
-            drow = cls.getRow();
-            if (pattID != itsmft::CompCluster::InvalidPatternID) {
-              if (!mITSDict->isGroup(pattID)) {
-                const auto& patt = mITSDict->getPattern(pattID); // reference pixel is min row/col corner
-                if (row > o2::itsmft::SegmentationAlpide::NRows / 2) {
-                  drow = o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() - 1);
-                }
-              } else { // group: reference pixel is the one containing the COG
-                o2::itsmft::ClusterPattern patt(pattItCopy);
-                drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? drow - patt.getRowSpan() / 2 : o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() / 2 - 1);
-              }
-            } else {
-              o2::itsmft::ClusterPattern patt(pattItCopy); // reference pixel is min row/col corner
-              if (row > o2::itsmft::SegmentationAlpide::NRows / 2) {
-                drow = o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() - 1);
-              }
-            }
-            if (drow < mParams->ITSOverlapEdgeRows) { // too close to the edge, flag this
-              pointInfo.cluster.setBit(EdgeFlags::Biased);
-            }
-          }
-          if (!pointInfo.cluster.isBitSet(EdgeFlags::Biased)) {
-            if (chipROFStart[sensID].rofCount != ROFCount) { // remember 1st entry
-              chipROFStart[sensID].rofCount = ROFCount;
-              chipROFStart[sensID].chipFirstEntry = edgeClusters.size(); // remember 1st entry of edge cluster for this chip
-            }
-            edgeClusters.push_back(ic);
-          }
-        }
-      }
-    } // clusters of ROF
-    // relate edge clusters of ROF to each other
-    int prevSensID = -1;
-    for (auto ic : edgeClusters) {
-      auto& cl = mITSPointsInfo[ic].cluster;
-        int sensID = cl.getSensorID();
-        auto ovl = mOverlaps[sensID];
-        int ovlCount = 0;
-        for (int ir = 0; ir < OVL::NSides; ir++) {
-          if (ovl.rowSide[ir] == OVL::NONE) { // no overlap from this row side
-            continue;
-        }
-        int chipOvl = ovl.rowSide[ir]; // look for overlaps with this chip
-        // are there clusters with overlaps on chipOvl?
-        if (chipROFStart[chipOvl].rofCount == ROFCount) {
-          auto oClusID = edgeClusters[chipROFStart[chipOvl].chipFirstEntry];
-          while (oClusID < int(mITSPointsInfo.size())) {
-            auto oClus = mITSPointsInfo[oClusID].cluster;
-            if (oClus.getSensorID() != sensID) {
-              break; // no more clusters on the overlapping chip
-            }
-            if (oClus.isBitSet(ovl.rowSideOverlap[ir]) &&                       // make sure that the edge cluster is on the right side of the row
-                !oClus.isBitSet(EdgeFlags::Biased) &&                           // not too close to the edge
-                std::abs(oClus.getZ() - cl.getZ()) < mParams->ITSOverlapMaxDZ) { // apply fiducial cut on Z distance of 2 clusters
-              // register overlaping cluster
-              if (!ovlCount) { // 1st overlap
-                mITSOvlClusRef[ic] = mITSOvlCandidateID.size();
-              }
-              mITSOvlCandidateID.push_back(oClusID);
-              ovlCount++;
-            }
-            oClusID++;
-          }
-        }
-      }
-      cl.setCount(std::min(127, ovlCount));
-    }
-    ROFCount++;
-  } // loop over ROFs
-}
-
-#endif
 
 void AlignmentSpec::buildT2V()
 {
