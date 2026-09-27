@@ -58,9 +58,14 @@ void RigidBodyDOFSet::fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<E
 {
   validateDerivativeOutput(out);
 
-  const double csp = 1. / std::sqrt(1. + (ctx.tgl * ctx.tgl));
-  const double uP = ctx.snp * csp;
-  const double vP = ctx.tgl * csp;
+  // We need the slopes of the locally straight track wrt the normal to the sensor, y' = dy/dx and
+  // z' = dz/dx, while the version below computes dy/ds and dz/ds (s = path length), underestimating
+  // e.g. the z-row derivatives wrt TX and RY by a factor 1/sqrt(1+tgl^2), ~0.7 at tgl = 1:
+  // const double csp = 1. / std::sqrt(1. + (ctx.tgl * ctx.tgl));
+  // const double uP = ctx.snp * csp;
+  // const double vP = ctx.tgl * csp;
+  const double uP = ctx.dydx; // snp / sqrt(1 - snp^2)
+  const double vP = ctx.dzdx; // tgl / sqrt(1 - snp^2)
 
   out(0, TX) = uP;
   out(0, TY) = -1.;

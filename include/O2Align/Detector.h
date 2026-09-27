@@ -14,7 +14,10 @@
 
 #include <array>
 #include <cstdint>
+#include <map>
+#include <vector>
 
+#include "DetectorsCommonDataFormats/AlignParam.h"
 #include "O2Align/Volume.h"
 #include "DataFormatsGlobalTracking/RecoContainer.h"
 #include "ReconstructionDataFormats/GlobalTrackID.h"
@@ -55,6 +58,23 @@ class Detector
 
   DetIdx getDetIdx() const noexcept { return mDetIdx; }
   const char* getDetName() const noexcept { return DetName[mDetIdx]; }
+
+  /// Convert the rigid-body corrections fitted by Millepede for the branch of this detector into
+  /// the AlignParam objects to be applied to the IDEAL geometry (GeometryManager::applyAlignment),
+  /// i.e. the fitted corrections combined with the initial alignment the fit started from.
+  /// \param labelToValue fitted values of the free parameters, see Volume::readMillepedeResults
+  /// \param initial      alignment of this detector only, as provided by the CCDB, whose
+  ///                     application to the ideal geometry gave the geometry the fit was done on.
+  ///                     Its objects may be in the global or in the local delta convention.
+  /// \param writeLocal   write all output objects as local deltas (true) or as global ones (false),
+  ///                     whatever the convention of the initial objects
+  /// \return             updated alignment of this detector: every initial object rewritten (a new
+  ///                     correction of a parent changes the global delta of all its daughters),
+  ///                     plus the volumes which were not in the initial vector but are moved by the
+  ///                     fit, ordered by the geometry level.
+  /// Must be called after attachTo, with the geometry the fit was done on loaded; the ideal geometry
+  /// itself is not needed. The derivation (thesis A.7, A.8) is documented in Detector.cxx.
+  virtual std::vector<o2::detectors::AlignParam> MP2AlignParams(const std::map<uint32_t, double>& labelToValue, const std::vector<o2::detectors::AlignParam>& initial, bool writeLocal) const;
 
  protected:
   /// create the stand-alone hierarchy of this detector, its top volume being its own root.

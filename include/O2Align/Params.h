@@ -25,7 +25,9 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   int minITSCls = 7;         // minimum number of ITS clusters
   float maxITSChi2Ndf = 1.2; // maximum ITS track chi2
 
-  std::string detectors = "ITS"; // detectors participating in the track fit
+  std::string detectors = "ITS"; // comma-separated detectors participating in the track fit (ITS,TPC,TRD,TOF)
+
+  bool writeLocalAlignParams = true; // create output AlignParams in local convention.
 
   // ITS overlap handling
   float ITSOverlapMargin = 0.15;     // consider for overlaps only clusters within this marging from the chip edge (in cm)
@@ -99,6 +101,10 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   std::string milleTreeFile = "mp2tree.txt";
   std::string milleResFile = "millepede.res";
   std::string milleResOutJson = "result.json";
+
+  // conversion of the fitted rigid-body corrections to o2::detectors::AlignParam (MilleRes stage)
+  std::string algParamsInitial; // comma-separated DET:file (e.g. ITS:ITSalg.root,TRD:TRDalg.root) with the CCDB std::vector<o2::detectors::AlignParam> ("ccdb_object") the fit started from, a detector w/o entry is assumed ideal
+  std::string algParamsOutFile; // if not empty, write the combined alignment of each detector to <DET>_<algParamsOutFile>, to be applied to the ideal geometry
 
   O2ParamDef(Params, "AlignParams");
 };

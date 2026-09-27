@@ -11,6 +11,7 @@
 
 #include <cmath>
 #include <chrono>
+#include <format>
 #include <fstream>
 #include <memory>
 
@@ -25,6 +26,7 @@
 #include <GblMeasurement.h>
 #include <MilleBinary.h>
 #include <nlohmann/json.hpp>
+#include <TFile.h>
 
 #include "Framework/CCDBParamSpec.h"
 #include "Framework/ConfigParamRegistry.h"
@@ -42,6 +44,7 @@
 #include "ReconstructionDataFormats/VtxTrackIndex.h"
 #include "Steer/MCKinematicsReader.h"
 #include "CommonUtils/TreeStreamRedirector.h"
+#include "CommonUtils/StringUtils.h"
 #include "ReconstructionDataFormats/VtxTrackRef.h"
 #include "ITS3Reconstruction/TopologyDictionary.h"
 #include "DataFormatsITSMFT/TopologyDictionary.h"
@@ -228,6 +231,9 @@ class AlignmentSpec final : public Task
   // ITS3 acceptance so false is to discard track
   bool applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk);
 
+  // combine the fitted rigid-body corrections with the initial alignment and write them as AlignParam vector
+  void writeAlignParams(const std::map<uint32_t, double>& labelToValue) const;
+
   std::unique_ptr<o2::alignrs::TimeSlotsSet> mMVTimeSlots; // mean vertex calibration intervals in ms
   long mTimeStamp{0}; // current TF time stamp in ms
   o2::framework::TimingInfo mTimeInfo;
@@ -292,7 +298,11 @@ void AlignmentSpec::run(ProcessingContext& pc)
 {
   if (mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
     updateTimeDependentParams(pc);
-    Volume::writeMillepedeResults(mHierarchy.get(), mParams->milleResFile, mParams->milleResOutJson, mParams->misAlgJson);
+    const auto fitted = Volume::readMillepedeResults(mParams->milleResFile);
+    Volume::writeMillepedeResults(mHierarchy.get(), fitted, mParams->milleResOutJson, mParams->misAlgJson);
+    if (!mParams->algParamsOutFile.empty()) {
+      writeAlignParams(fitted);
+    }
   } else {
     o2::globaltracking::RecoContainer recoData;
     mRecoData = &recoData;
@@ -1470,6 +1480,49 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
   }
 
   return true;
+}
+
+// For every attached detector with a geometry counterpart: read its initial alignment (the CCDB
+// object the fit started from, given as DET:file in algParamsInitial), combine it with the fitted
+// rigid-body corrections of its branch (Detector::MP2AlignParams) and write the result, in the CCDB
+// format, to <DET>_<algParamsOutFile>. A detector without initial file is assumed to have been ideal.
+void AlignmentSpec::writeAlignParams(const std::map<uint32_t, double>& labelToValue) const
+{
+  using AlgParVec = std::vector<o2::detectors::AlignParam>;
+  std::map<std::string, std::string> initialFiles; // detector name -> file
+  for (const auto& item : o2::utils::Str::tokenize(mParams->algParamsInitial, ',')) {
+    const auto pos = item.find(':');
+    if (pos == std::string::npos) {
+      LOGP(fatal, "algParamsInitial entry '{}' is not of the form DET:file", item);
+    }
+    initialFiles[item.substr(0, pos)] = item.substr(pos + 1);
+  }
+
+  for (const auto* det : mDetectors) {
+    if (det->getTopVolume() == nullptr) {
+      continue; // branch discarded
+    }
+    AlgParVec initial;
+    if (auto it = initialFiles.find(det->getDetName()); it != initialFiles.end()) {
+      TFile fin(it->second.c_str());
+      std::unique_ptr<AlgParVec> pars{fin.IsZombie() ? nullptr : fin.Get<AlgParVec>("ccdb_object")};
+      if (pars == nullptr) {
+        LOGP(fatal, "Failed to read the initial alignment of {} from {}", det->getDetName(), it->second);
+      }
+      initial = std::move(*pars);
+      LOGP(info, "Read {} initial AlignParam objects of {} from {}", initial.size(), det->getDetName(), it->second);
+    } else {
+      LOGP(warn, "No initial alignment provided for {}: the geometry the fit was done on is assumed to be the ideal one", det->getDetName());
+    }
+    auto result = det->MP2AlignParams(labelToValue, initial, mParams->writeLocalAlignParams);
+    if (result.empty()) {
+      continue; // nothing to align, e.g. a detector made only of virtual volumes and never aligned
+    }
+    const auto outName = std::format("{}_{}", det->getDetName(), mParams->algParamsOutFile);
+    TFile fout(outName.c_str(), "RECREATE");
+    fout.WriteObjectAny(&result, "std::vector<o2::detectors::AlignParam>", "ccdb_object");
+    LOGP(info, "Wrote {} AlignParam objects of {} to {}", result.size(), det->getDetName(), outName);
+  }
 }
 
 void AlignmentSpec::endOfStream(EndOfStreamContext& /*ec*/)

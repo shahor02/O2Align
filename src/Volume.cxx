@@ -521,10 +521,8 @@ bool Volume::MP2ROOT_Calib(const std::map<uint32_t, double>&, const InjectedMisa
   return false;
 }
 
-void Volume::writeMillepedeResults(Volume* root, const std::string& milleResPath, const std::string& outJsonPath, const std::string& injectedJsonPath)
+std::map<uint32_t, double> Volume::readMillepedeResults(const std::string& milleResPath)
 {
-  using json = nlohmann::json;
-
   // parse millepede.res: label fittedValue presigma [...]
   std::ifstream fin(milleResPath);
   if (!fin.is_open()) {
@@ -551,6 +549,12 @@ void Volume::writeMillepedeResults(Volume* root, const std::string& milleResPath
   }
   fin.close();
   LOGP(info, "Parsed {} not fixed parameters from {}", labelToValue.size(), milleResPath);
+  return labelToValue;
+}
+
+void Volume::writeMillepedeResults(Volume* root, const std::map<uint32_t, double>& labelToValue, const std::string& outJsonPath, const std::string& injectedJsonPath)
+{
+  using json = nlohmann::json;
 
   // load injected misalignment if provided (same format as closure test input), indexed by sensorID.
   // Its use is optional: an empty injectedJsonPath yields an empty struct, and MP2JSON_RB/Calib then

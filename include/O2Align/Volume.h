@@ -69,7 +69,9 @@ class Volume
   virtual ~Volume() = default;
 
   static void applyDOFConfig(Volume* root, const std::string& jsonPath);
-  static void writeMillepedeResults(Volume* root, const std::string& milleResPath, const std::string& outJsonPath, const std::string& injectedJsonPath = "");
+  /// parse millepede.res into label -> fitted value, skipping the fixed parameters
+  static std::map<uint32_t, double> readMillepedeResults(const std::string& milleResPath);
+  static void writeMillepedeResults(Volume* root, const std::map<uint32_t, double>& labelToValue, const std::string& outJsonPath, const std::string& injectedJsonPath = "");
 
   /// create the common root of the whole hierarchy: a fictitious volume with the identity L2G, whose
   /// children are the top volumes of the individual detectors. It is not rigid-body alignable, hence
