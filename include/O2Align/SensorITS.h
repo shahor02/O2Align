@@ -12,6 +12,10 @@
 #ifndef O2_ALIGN_SENSORITS_H
 #define O2_ALIGN_SENSORITS_H
 
+#include <map>
+#include <cstdint>
+#include <nlohmann/json_fwd.hpp>
+
 #include "O2Align/Volume.h"
 
 namespace o2::alignrs
@@ -24,6 +28,9 @@ class SensorITS final : public Volume
   void defineMatrixL2G() final;
   void defineMatrixT2L() final;
   void computeJacobianL2T(const double* pos, Matrix66& jac) const final;
+  /// writes the Legendre or Inextensional calibration block, moved here from
+  /// Volume::writeMillepedeResults since the calibration DOFSet layout is detector-specific
+  bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const final;
 };
 
 class SensorIT3 final : public Volume

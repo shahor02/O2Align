@@ -22,6 +22,7 @@
 #include <algorithm>
 
 #include <Eigen/Dense>
+#include <nlohmann/json_fwd.hpp>
 
 #include <TGeoMatrix.h>
 #include <TGeoPhysicalNode.h>
@@ -36,6 +37,22 @@ using Matrix66 = Eigen::Matrix<double, 6, 6>;
 
 class Volume
 {
+ protected:
+  /// injected misalignment loaded from a closure-test JSON, indexed by sensor ID; used by
+  /// writeMillepedeResults to subtract the known input from the fitted values. Protected (rather
+  /// than private) so the type is nameable in the MP2JSON_Calib/MP2ROOT_Calib overrides. Declared
+  /// first since it must be visible when used as a parameter type by the public methods below.
+  struct InjectedMisalignment {
+    std::map<int, std::vector<double>> rigidBody;
+    std::map<int, std::vector<std::vector<double>>> matrix;
+    struct Inextensional {
+      std::map<int, std::array<double, 4>> modes;
+      double alpha{0.};
+      double beta{0.};
+    };
+    std::map<int, Inextensional> inextensional;
+  };
+
  public:
   using Ptr = std::unique_ptr<Volume>;
   using SensorMapping = std::map<Label, Volume*>;
@@ -136,6 +153,21 @@ class Volume
   const Matrix66& getJL2P() const { return mJL2P; }
   const Matrix66& getJP2L() const { return mJP2L; }
 
+  /// write the rigid-body block of the closure-test JSON output for this volume, subtracting the
+  /// injected reference value (if inj is not nullptr) from the fitted one. Generic over any
+  /// RigidBodyDOFSet layout, hence implemented once in the base class. The caller
+  /// (writeMillepedeResults) only calls this when the volume has free rigid-body DOFs.
+  virtual bool MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, const std::vector<double>* inj, nlohmann::json& entry) const;
+  /// write the calibration block of the closure-test JSON output for this volume. Detector-specific
+  /// (the layout of the calibration DOFSet varies), hence the base implementation only warns that
+  /// it is not implemented for this volume. inj may be nullptr if no misalignment was injected. The
+  /// caller only calls this when the volume has free calibration DOFs.
+  virtual bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const;
+
+  /// ROOT-output counterparts of MP2JSON_RB/MP2JSON_Calib, same signature, not yet implemented.
+  virtual bool MP2ROOT_RB(const std::map<uint32_t, double>& labelToValue, const std::vector<double>* inj, nlohmann::json& entry) const;
+  virtual bool MP2ROOT_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const;
+
  protected:
   /// matrices
   Volume* mParent{nullptr}; // parent
@@ -148,18 +180,6 @@ class Volume
   TGeoHMatrix mT2L;                  // (TRK) -> (LOC)
 
  private:
-  /// injected misalignment loaded from a closure-test JSON, indexed by sensor ID; used by
-  /// writeMillepedeResults to subtract the known input from the fitted values
-  struct InjectedMisalignment {
-    std::map<int, std::vector<double>> rigidBody;
-    std::map<int, std::vector<std::vector<double>>> matrix;
-    struct Inextensional {
-      std::map<int, std::array<double, 4>> modes;
-      double alpha{0.};
-      double beta{0.};
-    };
-    std::map<int, Inextensional> inextensional;
-  };
   static InjectedMisalignment loadInjectedMisalignment(const std::string& injectedJsonPath);
 
   std::string mSymName;

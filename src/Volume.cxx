@@ -485,6 +485,42 @@ Volume::InjectedMisalignment Volume::loadInjectedMisalignment(const std::string&
   return inj;
 }
 
+// The caller (writeMillepedeResults) only invokes this when getRigidBody() has free DOFs.
+bool Volume::MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, const std::vector<double>* inj, nlohmann::json& entry) const
+{
+  using json = nlohmann::json;
+  const auto* rb = getRigidBody();
+  json rbArr = json::array();
+  for (int i = 0; i < rb->nDOFs(); ++i) {
+    uint32_t raw = getLabel().raw(i);
+    auto it = labelToValue.find(raw);
+    double fitted = it != labelToValue.end() ? it->second : 0.0;
+    double ref = (inj && i < static_cast<int>(inj->size())) ? (*inj)[i] : 0.0;
+    rbArr.push_back(fitted - ref);
+  }
+  entry["rigidBody"] = rbArr;
+  return true;
+}
+
+// The caller (writeMillepedeResults) only invokes this when getCalib() has free DOFs.
+bool Volume::MP2JSON_Calib(const std::map<uint32_t, double>&, const InjectedMisalignment*, nlohmann::json&) const
+{
+  LOGP(warn, "MP2JSON_Calib is not implemented for volume {} (calib type {})", getSymName(), static_cast<int>(getCalib()->type()));
+  return false;
+}
+
+bool Volume::MP2ROOT_RB(const std::map<uint32_t, double>&, const std::vector<double>*, nlohmann::json&) const
+{
+  LOGP(warn, "MP2ROOT_RB is not implemented for volume {}", getSymName());
+  return false;
+}
+
+bool Volume::MP2ROOT_Calib(const std::map<uint32_t, double>&, const InjectedMisalignment*, nlohmann::json&) const
+{
+  LOGP(warn, "MP2ROOT_Calib is not implemented for volume {} (calib type {})", getSymName(), static_cast<int>(getCalib()->type()));
+  return false;
+}
+
 void Volume::writeMillepedeResults(Volume* root, const std::string& milleResPath, const std::string& outJsonPath, const std::string& injectedJsonPath)
 {
   using json = nlohmann::json;
@@ -516,98 +552,31 @@ void Volume::writeMillepedeResults(Volume* root, const std::string& milleResPath
   fin.close();
   LOGP(info, "Parsed {} not fixed parameters from {}", labelToValue.size(), milleResPath);
 
-  // load injected misalignment if provided (same format as closure test input), indexed by sensorID
-  auto [injRB, injMatrix, injInex] = loadInjectedMisalignment(injectedJsonPath);
+  // load injected misalignment if provided (same format as closure test input), indexed by sensorID.
+  // Its use is optional: an empty injectedJsonPath yields an empty struct, and MP2JSON_RB/Calib then
+  // write the absolute fitted values (nullptr inj pointers below).
+  const InjectedMisalignment injMisal = loadInjectedMisalignment(injectedJsonPath);
+  const bool haveInj = !injectedJsonPath.empty();
 
   // collect results per volume that has RB or calib DOFs
   json output = json::array();
   root->traverse([&](Volume* vol) {
-    auto* rb = vol->getRigidBody();
-    auto* cal = vol->getCalib();
-    if ((!rb && !cal) || vol->isPseudo()) {
-      return;
-    }
-    int id = vol->getSensorId();
+    const int id = vol->getSensorId();
     json entry;
     entry["symName"] = vol->getSymName();
     entry["id"] = id;
+
     bool write = false;
-
-    // rigid body parameters
-    if (rb && rb->nFreeDOFs()) {
-      write = true;
-      json rbArr = json::array();
-      const auto& inj = injRB.contains(id) ? injRB[id] : std::vector<double>{};
-      for (int i = 0; i < rb->nDOFs(); ++i) {
-        uint32_t raw = vol->getLabel().raw(i);
-        auto it = labelToValue.find(raw);
-        double fitted = it != labelToValue.end() ? it->second : 0.0;
-        double ref = i < static_cast<int>(inj.size()) ? inj[i] : 0.0;
-        rbArr.push_back(fitted - ref);
-      }
-      entry["rigidBody"] = rbArr;
+    if (vol->getRigidBody() && vol->getRigidBody()->nFreeDOFs()) {
+      const auto itRB = injMisal.rigidBody.find(id);
+      const std::vector<double>* injRBPtr = (haveInj && itRB != injMisal.rigidBody.end()) ? &itRB->second : nullptr;
+      write |= vol->MP2JSON_RB(labelToValue, injRBPtr, entry);
+    }
+    if (vol->getCalib() && vol->getCalib()->nFreeDOFs()) {
+      const InjectedMisalignment* injPtr = haveInj ? &injMisal : nullptr;
+      write |= vol->MP2JSON_Calib(labelToValue, injPtr, entry);
     }
 
-    // calibration (Legendre) parameters
-    if (cal && cal->nFreeDOFs() && cal->type() == DOFSet::Type::Legendre) {
-      write = true;
-      auto* leg = dynamic_cast<const LegendreDOFSet*>(cal);
-      int order = leg->order();
-      auto calibLbl = vol->getLabel().asCalib();
-      const auto& inj = injMatrix.contains(id) ? injMatrix[id] : std::vector<std::vector<double>>{};
-      json matrix = json::array();
-      int idx = 0;
-      for (int i = 0; i <= order; ++i) {
-        json row = json::array();
-        for (int j = 0; j <= i; ++j) {
-          uint32_t raw = calibLbl.raw(idx);
-          auto it = labelToValue.find(raw);
-          double fitted = it != labelToValue.end() ? it->second : 0.0;
-          double ref = (i < static_cast<int>(inj.size()) && j < static_cast<int>(inj[i].size())) ? inj[i][j] : 0.0;
-          row.push_back(fitted - ref);
-          ++idx;
-        }
-        matrix.push_back(row);
-      }
-      entry["matrix"] = matrix;
-    } else if (cal && cal->nFreeDOFs() && cal->type() == DOFSet::Type::Inextensional) {
-      write = true;
-      auto* inexSet = static_cast<const InextensionalDOFSet*>(cal);
-      int maxN = inexSet->maxOrder();
-      auto calibLbl = vol->getLabel().asCalib();
-      const auto& inj = injInex.contains(id) ? injInex[id] : InjectedMisalignment::Inextensional{};
-
-      json inexEntry;
-      json modesObj = json::object();
-      for (int n = 2; n <= maxN; ++n) {
-        int off = InextensionalDOFSet::modeOffset(n);
-        std::array<double, 4> injCoeffs = {0., 0., 0., 0.};
-        if (inj.modes.contains(n)) {
-          injCoeffs = inj.modes.at(n);
-        }
-        json modeArr = json::array();
-        for (int k = 0; k < 4; ++k) {
-          uint32_t raw = calibLbl.raw(off + k);
-          auto it = labelToValue.find(raw);
-          double fitted = it != labelToValue.end() ? it->second : 0.0;
-          modeArr.push_back(fitted - injCoeffs[k]);
-        }
-        modesObj[std::to_string(n)] = modeArr;
-      }
-      inexEntry["modes"] = modesObj;
-
-      // alpha
-      uint32_t rawAlpha = calibLbl.raw(inexSet->alphaIdx());
-      auto itA = labelToValue.find(rawAlpha);
-      inexEntry["alpha"] = (itA != labelToValue.end() ? itA->second : 0.0) - inj.alpha;
-
-      // beta
-      uint32_t rawBeta = calibLbl.raw(inexSet->betaIdx());
-      auto itB = labelToValue.find(rawBeta);
-      inexEntry["beta"] = (itB != labelToValue.end() ? itB->second : 0.0) - inj.beta;
-
-      entry["inextensional"] = inexEntry;
-    }
     if (write) {
       output.push_back(entry);
     }
