@@ -39,9 +39,11 @@ Three-stage workflow, the same executable each time:
 `--output` is a comma-separated `EnumFlags` list: `VerboseGBL, MilleData, MilleSteer, MilleRes,
 MisRes, Debug` ([AlignmentSpec.h](include/O2Align/AlignmentSpec.h)).
 
-Which `Detector` objects exist is decided by `--cluster-sources`, not `--track-sources`: the spec
-derives `detMask` from the cluster sources, and the workflow allows only `ITS` there. So TPC/TRD/TOF
-contribute measurements to tracks but currently get no `Detector` instance and no hierarchy branch.
+## Coding preferences
+
+Prefer readability over efficiency, except in code marked as performance-critical 
+(e.g. per-hit / per-track loops), where avoiding allocations and virtual calls matters more.
+Prefer splitting large functions to logically self-consistent helper methods.
 
 ## Architecture
 
