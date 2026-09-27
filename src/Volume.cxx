@@ -443,6 +443,48 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
   });
 }
 
+Volume::InjectedMisalignment Volume::loadInjectedMisalignment(const std::string& injectedJsonPath)
+{
+  using json = nlohmann::json;
+  InjectedMisalignment inj;
+  if (injectedJsonPath.empty()) {
+    return inj;
+  }
+  std::ifstream injFile(injectedJsonPath);
+  if (!injFile.is_open()) {
+    LOGP(warn, "Cannot open injected misalignment file: {}, writing absolute values", injectedJsonPath);
+    return inj;
+  }
+  json injData = json::parse(injFile);
+  for (const auto& item : injData) {
+    int id = item["id"].get<int>();
+    if (item.contains("rigidBody")) {
+      inj.rigidBody[id] = item["rigidBody"].get<std::vector<double>>();
+    }
+    if (item.contains("matrix")) {
+      inj.matrix[id] = item["matrix"].get<std::vector<std::vector<double>>>();
+    }
+    if (item.contains("inextensional")) {
+      InjectedMisalignment::Inextensional ii;
+      const auto& inex = item["inextensional"];
+      if (inex.contains("modes")) {
+        for (auto& [key, val] : inex["modes"].items()) {
+          ii.modes[std::stoi(key)] = val.get<std::array<double, 4>>();
+        }
+      }
+      if (inex.contains("alpha")) {
+        ii.alpha = inex["alpha"].get<double>();
+      }
+      if (inex.contains("beta")) {
+        ii.beta = inex["beta"].get<double>();
+      }
+      inj.inextensional[id] = ii;
+    }
+  }
+  LOGP(info, "Loaded injected misalignment for {} sensors", injData.size());
+  return inj;
+}
+
 void Volume::writeMillepedeResults(Volume* root, const std::string& milleResPath, const std::string& outJsonPath, const std::string& injectedJsonPath)
 {
   using json = nlohmann::json;
@@ -474,50 +516,8 @@ void Volume::writeMillepedeResults(Volume* root, const std::string& milleResPath
   fin.close();
   LOGP(info, "Parsed {} not fixed parameters from {}", labelToValue.size(), milleResPath);
 
-  // load injected misalignment if provided (same format as closure test input)
-  // indexed by sensorID
-  std::map<int, std::vector<double>> injRB;
-  std::map<int, std::vector<std::vector<double>>> injMatrix;
-  struct InjInex {
-    std::map<int, std::array<double, 4>> modes;
-    double alpha{0.};
-    double beta{0.};
-  };
-  std::map<int, InjInex> injInex;
-  if (!injectedJsonPath.empty()) {
-    std::ifstream injFile(injectedJsonPath);
-    if (injFile.is_open()) {
-      json injData = json::parse(injFile);
-      for (const auto& item : injData) {
-        int id = item["id"].get<int>();
-        if (item.contains("rigidBody")) {
-          injRB[id] = item["rigidBody"].get<std::vector<double>>();
-        }
-        if (item.contains("matrix")) {
-          injMatrix[id] = item["matrix"].get<std::vector<std::vector<double>>>();
-        }
-        if (item.contains("inextensional")) {
-          InjInex ii;
-          const auto& inex = item["inextensional"];
-          if (inex.contains("modes")) {
-            for (auto& [key, val] : inex["modes"].items()) {
-              ii.modes[std::stoi(key)] = val.get<std::array<double, 4>>();
-            }
-          }
-          if (inex.contains("alpha")) {
-            ii.alpha = inex["alpha"].get<double>();
-          }
-          if (inex.contains("beta")) {
-            ii.beta = inex["beta"].get<double>();
-          }
-          injInex[id] = ii;
-        }
-      }
-      LOGP(info, "Loaded injected misalignment for {} sensors", injData.size());
-    } else {
-      LOGP(warn, "Cannot open injected misalignment file: {}, writing absolute values", injectedJsonPath);
-    }
-  }
+  // load injected misalignment if provided (same format as closure test input), indexed by sensorID
+  auto [injRB, injMatrix, injInex] = loadInjectedMisalignment(injectedJsonPath);
 
   // collect results per volume that has RB or calib DOFs
   json output = json::array();
@@ -575,7 +575,7 @@ void Volume::writeMillepedeResults(Volume* root, const std::string& milleResPath
       auto* inexSet = static_cast<const InextensionalDOFSet*>(cal);
       int maxN = inexSet->maxOrder();
       auto calibLbl = vol->getLabel().asCalib();
-      const auto& inj = injInex.contains(id) ? injInex[id] : InjInex{};
+      const auto& inj = injInex.contains(id) ? injInex[id] : InjectedMisalignment::Inextensional{};
 
       json inexEntry;
       json modesObj = json::object();

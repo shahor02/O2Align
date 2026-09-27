@@ -18,6 +18,7 @@
 #include <ostream>
 #include <string>
 #include <map>
+#include <array>
 #include <algorithm>
 
 #include <Eigen/Dense>
@@ -147,6 +148,20 @@ class Volume
   TGeoHMatrix mT2L;                  // (TRK) -> (LOC)
 
  private:
+  /// injected misalignment loaded from a closure-test JSON, indexed by sensor ID; used by
+  /// writeMillepedeResults to subtract the known input from the fitted values
+  struct InjectedMisalignment {
+    std::map<int, std::vector<double>> rigidBody;
+    std::map<int, std::vector<std::vector<double>>> matrix;
+    struct Inextensional {
+      std::map<int, std::array<double, 4>> modes;
+      double alpha{0.};
+      double beta{0.};
+    };
+    std::map<int, Inextensional> inextensional;
+  };
+  static InjectedMisalignment loadInjectedMisalignment(const std::string& injectedJsonPath);
+
   std::string mSymName;
   Label mLabel;
   bool mVirtual{false}; // no counterpart in the geometry
