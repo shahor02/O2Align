@@ -1542,7 +1542,7 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
   }
 }
 
-DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withITS3, o2::alignrs::OutputEnum out)
+DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withITS3, bool requestCTPLumi, o2::alignrs::OutputEnum out)
 {
   auto dataRequest = std::make_shared<DataRequest>();
   std::shared_ptr<o2::base::GRPGeomRequest> ggRequest{nullptr};
@@ -1555,6 +1555,10 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
     } else {
       dataRequest->requestClusters(srcClusters, useMC);
     }
+    if (requestCTPLumi) {
+      dataRequest->inputs.emplace_back("lumiCTP", o2::header::gDataOriginCTP, "LUMICTP", 0, Lifetime::Timeframe);
+    }
+
     dataRequest->requestPrimaryVertices(useMC);
     // the mean vertex is the prior of the primary vertex of every collision and the starting point
     // of the alignment of the virtual PVT detector

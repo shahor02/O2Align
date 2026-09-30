@@ -87,7 +87,7 @@ set_property(TARGET O2exe-alignment-workflow
 target_include_directories(O2exe-alignment-workflow
                            PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include)
 target_link_libraries(O2exe-alignment-workflow
-                      PUBLIC O2Align ROOT::XMLIO)
+                      PUBLIC O2Align O2::TPCWorkflow ROOT::XMLIO)
 
 if(TARGET O2::fpu_support)
   target_link_libraries(O2exe-alignment-workflow PUBLIC O2::fpu_support)

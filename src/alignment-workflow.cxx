@@ -17,6 +17,8 @@
 #include "DetectorsRaw/HBFUtilsInitializer.h"
 #include "DataFormatsITSMFT/DPLAlpideParamInitializer.h"
 #include "O2Align/AlignmentSpec.h"
+#include "TPCCalibration/CorrectionMapsOptions.h"
+#include "TPCWorkflow/TPCScalerSpec.h"
 
 using namespace o2::framework;
 using GID = o2::dataformats::GlobalTrackID;
@@ -31,12 +33,13 @@ void customize(std::vector<ConfigParamSpec>& workflowOptions)
   std::vector<o2::framework::ConfigParamSpec> options{
     {"disable-mc", o2::framework::VariantType::Bool, false, {"enable MC propagation"}},
     {"track-sources", VariantType::String, std::string{GID::ALL}, {"comma-separated list of track sources to use"}},
-    {"cluster-sources", VariantType::String, "ITS", {"comma-separated list of cluster sources to use"}},
+    {"cluster-sources", VariantType::String, "ITS", {"comma-separated list of detectors in the alignment"}},
     {"with-its3", VariantType::Bool, false, {"ITS3 alignment mode"}},
     {"output", VariantType::String, "", {"output steering"}},
     {"disable-root-input", VariantType::Bool, false, {"disable root-files input reader"}},
     {"configKeyValues", VariantType::String, "", {"Semicolon separated key=value strings ..."}}};
   o2::raw::HBFUtilsInitializer::addConfigOption(options);
+  o2::tpc::CorrectionMapsOptions::addGlobalOptions(options);
   o2::itsmft::DPLAlpideParamInitializer::addITSConfigOption(options);
   std::swap(workflowOptions, options);
 }
@@ -46,22 +49,31 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
 {
   o2::conf::ConfigurableParam::updateFromString(cfg.options().get<std::string>("configKeyValues"));
   const GID::mask_t allowedSourcesTrc = GID::getSourcesMask("ITS,TPC,ITS-TPC,ITS-TPC-TRD,ITS-TPC-TOF,ITS-TPC-TRD-TOF");
-  const GID::mask_t allowedSourcesClus = GID::getSourcesMask("ITS");
-  const GID::mask_t srcTrc = allowedSourcesTrc & GID::getSourcesMask(cfg.options().get<std::string>("track-sources"));
-  const GID::mask_t srcCls = allowedSourcesClus & GID::getSourcesMask(cfg.options().get<std::string>("cluster-sources"));
+  const GID::mask_t allowedSourcesClus = GID::getSourcesMask("ITS,TPC,TRD,TOF");
+  GID::mask_t srcTrc = allowedSourcesTrc & GID::getSourcesMask(cfg.options().get<std::string>("track-sources"));
+  GID::mask_t srcCls = allowedSourcesClus & GID::getSourcesMask(cfg.options().get<std::string>("cluster-sources"));
   const auto useMC = !cfg.options().get<bool>("disable-mc");
   const auto withITS3 = cfg.options().get<bool>("with-its3");
   const o2::alignrs::OutputEnum output(cfg.options().get<std::string>("output"));
 
   WorkflowSpec specs;
+
+  bool requestCTPLumi = false;
+  
   if (!output[o2::alignrs::OutputOpt::MilleRes]) {
+    if (allowedSourcesClus[GID::TPC]) {
+      auto sclOpt = o2::tpc::CorrectionMapsOptions::parseGlobalOptions(cfg.options());
+      requestCTPLumi = sclOpt.requestCTPLumi;
+      srcTrc = srcTrc | GID::getSourcesMask("CTP");
+      specs.emplace_back(o2::tpc::getTPCScalerSpec(sclOpt));
+    }    
     o2::globaltracking::InputHelper::addInputSpecs(cfg, specs, srcCls, srcTrc, srcTrc, useMC);
     o2::globaltracking::InputHelper::addInputSpecsPVertex(cfg, specs, useMC);
   } else {
     specs.emplace_back(o2::globaltracking::getNoInpDummyOutSpec(0));
   }
-
-  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, srcCls, useMC, withITS3, output));
+  
+  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, srcCls, useMC, withITS3, requestCTPLumi, output));
 
   o2::raw::HBFUtilsInitializer hbfIni(cfg, specs);
   return std::move(specs);
