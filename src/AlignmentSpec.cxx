@@ -11,8 +11,10 @@
 
 #include <cmath>
 #include <chrono>
+#include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <memory>
 
 #ifdef WITH_OPENMP
@@ -26,7 +28,12 @@
 #include <GblMeasurement.h>
 #include <MilleBinary.h>
 #include <nlohmann/json.hpp>
+#include <boost/interprocess/sync/named_semaphore.hpp>
 #include <TFile.h>
+#include <TMethodCall.h>
+#include <TROOT.h>
+#include <TString.h>
+#include <TSystem.h>
 
 #include "Headers/DataHeader.h"
 #include "Framework/CCDBParamSpec.h"
@@ -255,6 +262,8 @@ class AlignmentSpec final : public Task
   void initMisalignment();
   void updateCalibrationSlots();
   void updateTPCCalibration(ProcessingContext& pc);
+  void loadConfigMacro();
+  void executeConfigMacro();
 
   long mTimeStamp{0}; // current TF time stamp in ms
   o2::framework::TimingInfo mTimeInfo;
@@ -291,6 +300,8 @@ class AlignmentSpec final : public Task
   GTrackID::mask_t mTracksSrcMask;
   std::vector<int> mTrackSources;
   int mNThreads{1};
+  std::string mConfMacro{};                  // optional user macro configuring the detectors
+  std::unique_ptr<TMethodCall> mUsrConfMethod; // its entry point, loaded by init
   const Params* mParams{nullptr};
   MisalignmentModel mMisalignment;
   std::array<Eigen::Matrix<double, 6, 1>, 6> mRigidBodyParams; // (dx,dy,dz,rx,ry,rz) in LOC per sensorID
@@ -311,6 +322,69 @@ void AlignmentSpec::init(InitContext& ic)
     if (mTracksSrcMask[src]) {
       mTrackSources.push_back(src);
     }
+  }
+  mConfMacro = ic.options().get<std::string>("config-macro");
+  if (!mConfMacro.empty()) {
+    loadConfigMacro();
+  }
+}
+
+// Compile and load the user configuration macro, whose entry point is the function named after the
+// macro file. It is executed later, once the hierarchy is built, see executeConfigMacro.
+void AlignmentSpec::loadConfigMacro()
+{
+  if (!std::filesystem::exists(mConfMacro)) {
+    LOGP(fatal, "Requested user macro {} does not exist", mConfMacro);
+  }
+  const std::string tmpMacro = mConfMacro + "+";
+  TString cmd = gSystem->GetMakeSharedLib();
+  cmd += " -O0 -g -ggdb";
+  { // protect the compilation by a semaphore, to avoid clashes between the pipelined devices
+    const auto semName = "align_macro_" + std::to_string(std::hash<std::string>{}(mConfMacro)).substr(0, 16);
+    std::unique_ptr<boost::interprocess::named_semaphore> sem;
+    try {
+      sem = std::make_unique<boost::interprocess::named_semaphore>(boost::interprocess::open_or_create_t{}, semName.c_str(), 1);
+    } catch (const std::exception& e) {
+      LOGP(error, "Exception {} during the compilation semaphore setup of {}", e.what(), tmpMacro);
+    }
+    if (sem) {
+      sem->wait(); // wait until we can enter (no one else there)
+    }
+    gSystem->SetMakeSharedLib(cmd.Data());
+    const auto res = gROOT->LoadMacro(tmpMacro.c_str());
+    if (sem) {
+      sem->post();
+      if (sem->try_wait()) { // nobody else is waiting: remove the semaphore resource
+        sem->post();
+        sem.reset();
+        boost::interprocess::named_semaphore::remove(semName.c_str());
+      }
+    }
+    if (res) {
+      LOGP(fatal, "Failed to load the user macro {}", tmpMacro);
+    }
+  }
+  const auto funcName = std::filesystem::path(mConfMacro).stem().native();
+  mUsrConfMethod = std::make_unique<TMethodCall>();
+  mUsrConfMethod->InitWithPrototype(funcName.c_str(), "std::vector<o2::alignrs::Detector*>*, int");
+  if (!mUsrConfMethod->IsValid()) {
+    LOGP(fatal, "Did not find {}(std::vector<o2::alignrs::Detector*>*, int) in the user macro {}", funcName, mConfMacro);
+  }
+}
+
+// Hand the created detectors to the user macro, if any. Called once the hierarchy is built and
+// configured, so that the macro has the last word on the setup.
+void AlignmentSpec::executeConfigMacro()
+{
+  if (!mUsrConfMethod) {
+    return;
+  }
+  int dummyPar = 0, ret = -1;
+  auto* detectors = &mDetectors;
+  const void* args[2] = {&detectors, &dummyPar};
+  mUsrConfMethod->Execute(nullptr, args, 2, &ret);
+  if (ret != 0) {
+    LOGP(fatal, "Execution of the user config macro {} failed with {}", mConfMacro, ret);
   }
 }
 
@@ -933,6 +1007,7 @@ void AlignmentSpec::buildHierarchy()
     // top volume of any detector: no DOF is fixed or freed by the hierarchy construction itself
     Volume::applyDOFConfig(mHierarchy.get(), mParams->dofConfigJson);
   }
+  executeConfigMacro(); // the user macro overrides whatever the JSON configuration has set
 
   mHierarchy->finalise();
   if (withPVT) {
@@ -1591,6 +1666,7 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
 
   Options opts{
     {"nthreads", VariantType::Int, 1, {"number of threads"}},
+    {"config-macro", VariantType::String, "", {"configuration macro with signature (std::vector<o2::alignrs::Detector*>*, int) to execute from init"}},
   };
 
   return DataProcessorSpec{

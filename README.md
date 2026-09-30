@@ -96,3 +96,21 @@ The fitted correction is relative to the drift calibration already accounted for
 maps: whenever TPC clusters are requested, the workflow asks for the per-TF `TPC/TPCCORRMAP` input
 (produced upstream by `o2-tpc-scaler`, as for any other TPC cluster consumer) and for the drift
 CCDB objects, and builds the `GPUParam` used for the cluster errors from the current field.
+
+
+## User configuration macro
+
+`--config-macro mySetup.C` compiles the macro with ACLiC in `init` and executes the function named
+after the file:
+
+```cpp
+int mySetup(std::vector<o2::alignrs::Detector*>* dets, int)
+{
+  for (auto* det : *dets) { /* ... */ }
+  return 0; // anything else is fatal
+}
+```
+
+The call happens at the end of `buildHierarchy`, right after `dofConfigJson` has been applied and
+before `finalise()`, so the macro sees the volumes of every detector (`Detector::getTopVolume`) and
+has the last word on their DOFs. A non-zero return value aborts the workflow.
