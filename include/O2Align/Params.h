@@ -25,8 +25,6 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   int minITSCls = 7;         // minimum number of ITS clusters
   float maxITSChi2Ndf = 1.2; // maximum ITS track chi2
 
-  std::string detectors = "ITS"; // comma-separated detectors participating in the track fit (ITS,TPC,TRD,TOF)
-
   bool writeLocalAlignParams = true; // create output AlignParams in local convention.
 
   // ITS overlap handling
