@@ -417,7 +417,9 @@ void AlignmentSpec::process() // collisions
     mcLbls = mRecoData->getITSTracksMCLabels();
   }
   // prepare detector data
-  mITS->prepareData(mRecoData);
+  for (auto det : mDetectors) {
+    det->prepareData(mRecoData);
+  }
 
   if (mParams->usePVConstraintMinTracks > 0) {
     buildT2V(); // RSTODO for data
@@ -536,11 +538,13 @@ void AlignmentSpec::process() // collisions
 #endif
         for (int itr = 0; itr < (int)resTracks.size(); itr++) {
           auto& track = resTracks[itr];
-          if (track.gid.isPVContributor() && !track.updateWithVertex(vtxRefit)) {
-            LOGP(debug, "Failed to update track {} with {}", track.gid.asString(), vtxRefit.asString());
-            continue;
+          if (track.gid.isPVContributor()) {
+            if (!track.updateWithVertex(vtxRefit)) {
+              LOGP(debug, "Failed to update track {} with {}", track.gid.asString(), vtxRefit.asString());
+              continue;
+            }
+            nTrcWithPV++;
           }
-          nTrcWithPV++;
         }
         mStat.data[ProcStat::kAccepted][ProcStat::kTracksWithVertex] += nTrcWithPV;
       } else {
@@ -832,8 +836,10 @@ void AlignmentSpec::initOnFirstTF()
 {
   mParams = &Params::Instance();
   mParams->printKeyValues(true, true);
-  mITS->setTopologyDictionaries(mITSDict, mIT3Dict);
-  o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
+  if (mITS) {
+    mITS->setTopologyDictionaries(mITSDict, mIT3Dict);
+    o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
+  }
   buildHierarchy();
   if (mTPC) {
     mTPC->finaliseCalib(); // the drift calibration DOFs need the geometry of the correction maps
@@ -1227,10 +1233,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       const auto globals = buildPointGlobals(frame, wTrk);
       point.addGlobals(globals.labels, globals.der);
     } else if (addMeas && !mPVT->getPositionLabels().empty()) {
-      // the vertex measured by this track alone: its position follows the aligned mean vertex,
-      // hence the residual acquires the derivatives wrt the mean vertex position. In a composed
-      // trajectory the measurement is not here but on the shared vertex parameters, see
-      // addMeanVertexPrior, and this branch is not reached.
+      // add the refitted vertex as an extra measured point for this track only
       point.addGlobals(mPVT->getPositionLabels(), computeVertexTransformation(resTrack));
     }
 
@@ -1530,7 +1533,7 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
     res[1] += shift.dz;
   }
 
-  if (mOutOpt[o2::alignrs::OutputOpt::MisRes]) {
+  if (mOutOpt[o2::alignrs::OutputOpt::MisRes] && mDBGOut) {    
     (*mDBGOut) << "mis"
                << "dy=" << res[0]
                << "dz=" << res[1]
@@ -1589,8 +1592,10 @@ void AlignmentSpec::writeAlignParams(const std::map<uint32_t, double>& labelToVa
 
 void AlignmentSpec::endOfStream(EndOfStreamContext& /*ec*/)
 {
-  mDBGOut->Close();
-  mDBGOut.reset();
+  if (mDBGOut) {
+    mDBGOut->Close();
+    mDBGOut.reset();
+  }
 }
 
 void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)

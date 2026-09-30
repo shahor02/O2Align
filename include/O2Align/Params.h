@@ -42,6 +42,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   float discardSectorEdgeDepth = 2.5; // discard clusters too close to the sector edge
 
   // TRD
+  bool applyXORTRD = false;           // apply XOR in TRD tranfformer
   int minTRDTracklets = 3;         // min TRD tracklets to accept the track
   float TRDCorrDVT = 0.f;          // correction to Vdrift*t (equivalent to a shift in X at which Y is evaluated)
   float TRDNonRCCorrDzDtgl = 0.f;  // correction in Z proportional to tgl for non-row-crossing tracklets

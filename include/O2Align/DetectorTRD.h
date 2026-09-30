@@ -15,14 +15,10 @@
 #include <vector>
 
 #include "DataFormatsTRD/CalibratedTracklet.h"
+#include "TRDBase/TrackletTransformer.h"
 #include "GPUTRDRecoParam.h"
 #include "O2Align/Detector.h"
 #include "O2Align/Volume.h"
-
-namespace o2::trd
-{
-class TrackletTransformer;
-}
 
 namespace o2::alignrs
 {
@@ -35,14 +31,11 @@ class DetectorTRD final : public Detector
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
 
-  /// must be provided by the caller before the 1st prepareData call
-  void setTransformer(const o2::trd::TrackletTransformer* tr) { mTransformer = tr; }
-
  protected:
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
  private:
-  const o2::trd::TrackletTransformer* mTransformer{nullptr};
+  std::unique_ptr<o2::trd::TrackletTransformer> mTransformer;
   o2::gpu::GPUTRDRecoParam mRecoParam; // parameters required for the tracklet covariance
   bool mRecoParamInit{false};
   std::vector<o2::trd::CalibratedTracklet> mTrackletsLoc; // calibrated tracklets of the TF in the LOCAL frame

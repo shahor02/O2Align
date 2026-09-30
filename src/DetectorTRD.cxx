@@ -30,7 +30,6 @@
 #include "O2Align/SensorTRD.h"
 #include "O2Align/TrackFit.h"
 #include "TRDBase/Geometry.h"
-#include "TRDBase/TrackletTransformer.h"
 
 namespace o2::alignrs
 {
@@ -81,8 +80,18 @@ void DetectorTRD::prepareData(o2::globaltracking::RecoContainer* recoData)
   // The transformation of the raw tracklet to the calibrated LOCAL frame position does not depend
   // on the track, hence it is done once per TF. The tilt correction and the covariance depend on
   // the track and are applied in prepareTrack.
+  const auto& params = Params::Instance();
   if (!mTransformer) {
-    LOGP(fatal, "TRD tracklet transformer must be set before processing TRD data");
+    mTransformer.reset(new o2::trd::TrackletTransformer);
+    if (params.applyXORTRD) {
+      mTransformer->setApplyXOR();
+    }
+    auto prevShift = mTransformer->isShiftApplied();
+    if (getenv("ALIEN_JDL_LPMPRODUCTIONTYPE") && std::strcmp(getenv("ALIEN_JDL_LPMPRODUCTIONTYPE"), "MC") == 0) {
+      // apply artificial pad shift in case non-ideal alignment is used to compensate for shift in current alignment from real data
+      mTransformer->setApplyShift(false);
+    }
+    mTransformer->init();
   }
   const auto trackletsRaw = recoData->getTRDTracklets();
   mTrackletsLoc.clear();
