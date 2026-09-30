@@ -62,3 +62,32 @@ dofSet.json:
   }
 ]
 ```
+
+
+## TPC drift calibration
+
+The TPC envelope owns the drift calibration DOFs: `VDRIFT`, a relative correction to the drift
+velocity, and `DRIFTOFF`, an offset of the drift length in cm (the equivalent of a t0 shift). The
+cluster Z being reconstructed as `z = s * (Lz - l)` with `l = (t - T0 - tOffset) * vDrift` and
+`s = +1 (-1)` on the A (C) side, the two displace the measurement along Z by
+`dz = -s * l * VDRIFT - s * DRIFTOFF`, and are separated by the lever arm in `l`.
+
+```json
+{
+  "defaults": { "rigidBody": "fixed" },
+  "rules": [
+    { "match": "TPC_envelope", "calib": { "type": "tpcvdrift" } }
+  ]
+}
+```
+
+`"free": ["VDRIFT"]` (or `"fix": ["DRIFTOFF"]`) fits the drift velocity alone.
+
+The drift is calibrated independently in consecutive time intervals, declared in
+`AlignParams.VDTimeSlotsJson` in the same format as `AlignParams.MVTimeSlotsJson` (see
+`macro/CreateTimeSlots.C`): every slot gets its own set of global parameters, the slot ID being
+encoded in the volume ID of the Millepede label. Without the file the whole run is a single slot.
+Stage 3 writes one record per slot under `tpcDrift` in `result.json`.
+
+Note that `DRIFTOFF` is degenerate with a common Z shift of the TPC sectors, and would also become
+degenerate with a `TZ` DOF of the envelope should the latter be made rigid-body alignable.

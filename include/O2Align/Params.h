@@ -62,6 +62,9 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   bool useMultyTrackPVConstraint = true; // use multi-track PV constraint (otherwise use per-track PV constraint)
   const std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
 
+  // TPC drift calibration
+  const std::string VDTimeSlotsJson = ""; // json file with TPC drift calibration intervals in ms
+
   bool verbose = 0; // verbosity level
   bool useStableRef = true; // use input tracks as linearization point
   float minMS = 1e-6f;      //  minimum scattering to account for

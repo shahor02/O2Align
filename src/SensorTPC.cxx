@@ -12,7 +12,10 @@
 #include <TGeoMatrix.h>
 #include <TMath.h>
 
+#include <nlohmann/json.hpp>
+
 #include "DataFormatsTPC/Constants.h"
+#include "Framework/Logger.h"
 #include "MathUtils/Utils.h"
 #include "O2Align/SensorTPC.h"
 
@@ -32,6 +35,48 @@ void SensorTPC::defineMatrixL2G()
 void SensorTPC::defineMatrixT2L()
 {
   mT2L = TGeoHMatrix(); // the tracking and local frames of a TPC sector coincide
+}
+
+// One record per calibration time slot, with the validity of the slot: the drift parameters are
+// fitted independently in each of them. The drift is not part of the injected misalignment, hence
+// the fitted values are always absolute.
+bool EnvelopeTPC::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* /*inj*/, nlohmann::json& entry) const
+{
+  using json = nlohmann::json;
+  const auto* calib = dynamic_cast<const TPCVDriftDOFSet*>(getCalib());
+  if (!calib) {
+    LOGP(warn, "Calibration DOFs of {} are not the TPC drift ones, no result written", getSymName());
+    return false;
+  }
+  json slotArr = json::array();
+  for (const auto& lbl : getCalibLabels()) {
+    const int slotID = static_cast<int>(lbl.id());
+    json rec;
+    rec["slot"] = slotID;
+    if (mTimeSlots) {
+      const auto& slot = mTimeSlots->getSlotByID(slotID);
+      rec["run"] = slot.runNumber;
+      rec["tsS"] = slot.timeStampS;
+      rec["tsE"] = slot.timeStampE;
+    }
+    bool anyFitted = false;
+    for (int i = 0; i < calib->nDOFs(); ++i) {
+      if (!calib->isFree(i)) {
+        continue;
+      }
+      const auto it = labelToValue.find(lbl.raw(i));
+      rec[calib->dofName(i)] = it != labelToValue.end() ? it->second : 0.0;
+      anyFitted = anyFitted || it != labelToValue.end();
+    }
+    if (anyFitted) {
+      slotArr.push_back(std::move(rec));
+    }
+  }
+  if (slotArr.empty()) {
+    return false;
+  }
+  entry["tpcDrift"] = std::move(slotArr);
+  return true;
 }
 
 } // namespace o2::alignrs

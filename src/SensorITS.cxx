@@ -58,7 +58,7 @@ bool SensorITS::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, co
   using json = nlohmann::json;
   const auto* cal = getCalib();
   const int id = getSensorId();
-  const auto calibLbl = getLabel().asCalib();
+  const auto calibLbl = getCalibLabels().front(); // the ITS3 deformations are not time-sliced
 
   if (cal->type() == DOFSet::Type::Legendre) {
     const auto* leg = dynamic_cast<const LegendreDOFSet*>(cal);

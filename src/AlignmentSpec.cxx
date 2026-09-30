@@ -65,7 +65,6 @@
 #include "O2Align/DetectorTPC.h"
 #include "O2Align/DetectorTRD.h"
 #include "O2Align/DetectorTOF.h"
-#include "O2Align/TimeSlotsSet.h"
 
 namespace o2::alignrs
 {
@@ -87,7 +86,9 @@ DerivativeContext makeDerivativeContext(const FrameInfoExt& frame, const TrackD&
 {
   const auto slopes = TrackSlopes::computeTrackSlopes(trk.getSnp(), trk.getTgl());
   const bool isITS3 = o2::its3::constants::detID::isDetITS3(frame.cluster.getSensorID());
-  return {.sensorID = isITS3 ? o2::its3::constants::detID::getSensorID(frame.cluster.getSensorID()) : -1,
+  return {.detID = static_cast<int>(frame.label.det()),
+          .volID = static_cast<int>(frame.label.id()),
+          .sensorID = isITS3 ? o2::its3::constants::detID::getSensorID(frame.cluster.getSensorID()) : -1,
           .layerID = isITS3 ? o2::its3::constants::detID::getDetID2Layer(frame.cluster.getSensorID()) : -1,
           .measX = frame.x,
           .measAlpha = frame.alpha,
@@ -234,7 +235,19 @@ class AlignmentSpec final : public Task
   // combine the fitted rigid-body corrections with the initial alignment and write them as AlignParam vector
   void writeAlignParams(const std::map<uint32_t, double>& labelToValue) const;
 
-  std::unique_ptr<o2::alignrs::TimeSlotsSet> mMVTimeSlots; // mean vertex calibration intervals in ms
+  /// global (alignment + calibration) derivatives of one measured point, with their labels
+  struct PointGlobals {
+    std::vector<int> labels;
+    Eigen::MatrixXd der;
+  };
+  PointGlobals buildPointGlobals(const FrameInfoExt& frame, const TrackD& wTrk) const;
+
+  // steps of updateTimeDependentParams
+  void initOnFirstTF();
+  void initVertexer();
+  void initMisalignment();
+  void updateCalibrationSlots();
+
   long mTimeStamp{0}; // current TF time stamp in ms
   o2::framework::TimingInfo mTimeInfo;
   o2::alignrs::OutputEnum mOutOpt;
@@ -246,14 +259,9 @@ class AlignmentSpec final : public Task
   const o2::its3::TopologyDictionary* mIT3Dict{nullptr};
   o2::globaltracking::RecoContainer* mRecoData = nullptr;
   std::unique_ptr<steer::MCKinematicsReader> mcReader;
-  o2::vertexing::PVertexer mVertexer;              // used to refit the PV with the tracks refitted in the current alignment
-  o2::dataformats::MeanVertexObject mMeanVtxCCDB{}; // last mean vertex object received from the CCDB
-  bool mMeanVtxCCDBUpdated{false};                  // the mean vertex was updated from the CCDB
-  o2::dataformats::MeanVertexObject mMeanVtxSlot{}; // prior of the PV of every collision: the CCDB mean
-                                                    // vertex frozen at the start of the current calibration slot
-  std::vector<int> mMeanVtxLabels;                 // Millepede labels of the mean vertex position
+  o2::vertexing::PVertexer mVertexer; // used to refit the PV with the tracks refitted in the current alignment
 
-  std::unique_ptr<DetectorPVT> mPVT; // virtual detector of the mean vertex
+  std::unique_ptr<DetectorPVT> mPVT; // virtual detector of the mean vertex, owner of its calibration state
   std::unique_ptr<DetectorITS> mITS;
   std::unique_ptr<DetectorTPC> mTPC;
   std::unique_ptr<DetectorTRD> mTRD;
@@ -594,82 +602,8 @@ void AlignmentSpec::process() // collisions
         }
 
         if (frame.lr >= 0) {
-          const auto& lbl = frame.label; // as assigned by the detector owning the frame
-          if (mChip2Hiearchy.find(lbl) == mChip2Hiearchy.end()) {
-            LOGP(fatal, "Cannot find global label: {}", lbl.asString());
-          }
-
-          // derivatives for all sensitive volumes and their parents
-          // this is the derivative in TRK but we want to align in LOC
-          // so dr/da_(LOC) = dr/da_(TRK) * da_(TRK)/da_(LOC)
-          const auto* tileVol = mChip2Hiearchy.at(lbl);
-          const auto derCtx = makeDerivativeContext(frame, wTrk);
-          Matrix36 der = getRigidBodyBaseDerivatives(derCtx);
-
-          // count rigid body columns: only volumes with real DOFs (not DOFPseudo).
-          // The chain walks up to the common root of all detectors, which owns no DOFs: the top
-          // volume of the detector is therefore included, its DOFs being free or fixed as configured.
-          int nColRB{0};
-          for (const auto* v = tileVol; v && !v->isRoot(); v = v->getParent()) {
-            if (v->getRigidBody()) {
-              nColRB += v->getRigidBody()->nDOFs();
-            }
-          }
-
-          // count calibration columns
-          const auto* sensorVol = tileVol->getParent();
-          const auto* calibSet = sensorVol ? sensorVol->getCalib() : nullptr;
-          const int nCalib = calibSet ? calibSet->nDOFs() : 0;
-          const int nCol = nColRB + nCalib;
-
-          std::vector<int> gLabels;
-          gLabels.reserve(nCol);
-          Eigen::MatrixXd gDer(3, nCol);
-          gDer.setZero();
-          Eigen::Index curCol{0};
-
-          // 1) tile: TRK -> LOC via precomputed T2L and J_L2T
-          const double posTrk[3] = {frame.x, 0., 0.};
-          double posLoc[3];
-          tileVol->getT2L().LocalToMaster(posTrk, posLoc);
-          Matrix66 jacL2T;
-          tileVol->computeJacobianL2T(posLoc, jacL2T);
-          der *= jacL2T;
-          if (tileVol->getRigidBody()) {
-            const int nd = tileVol->getRigidBody()->nDOFs();
-            for (int iDOF = 0; iDOF < nd; ++iDOF) {
-              gLabels.push_back(tileVol->getLabel().rawGBL(iDOF));
-            }
-            gDer.middleCols(curCol, nd) = der;
-            curCol += nd;
-          }
-
-          // 2) chain through parents: child's J_L2P
-          for (const auto* child = tileVol; child->getParent() && !child->getParent()->isRoot(); child = child->getParent()) {
-            der *= child->getJL2P();
-            const auto* parent = child->getParent();
-            if (parent->getRigidBody()) {
-              const int nd = parent->getRigidBody()->nDOFs();
-              for (int iDOF = 0; iDOF < nd; ++iDOF) {
-                gLabels.push_back(parent->getLabel().rawGBL(iDOF));
-              }
-              gDer.middleCols(curCol, nd) = der;
-              curCol += nd;
-            }
-          }
-
-          // 3) calibration derivatives (apply directly on the whole sensor, not on individual tiles)
-          if (calibSet) {
-            const int nd = calibSet->nDOFs();
-            Eigen::MatrixXd calDer(3, nd);
-            calibSet->fillDerivatives(derCtx, calDer);
-            for (int iDOF = 0; iDOF < nd; ++iDOF) {
-              gLabels.push_back(sensorVol->getLabel().asCalib().rawGBL(iDOF));
-            }
-            gDer.middleCols(curCol, nd) = calDer;
-            curCol += nd;
-          }
-          point.addGlobals(gLabels, gDer);
+          const auto globals = buildPointGlobals(frame, wTrk);
+          point.addGlobals(globals.labels, globals.der);
         }
 
         if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
@@ -775,80 +709,164 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
   }
   if (static bool initOnce{false}; !initOnce) {
     initOnce = true;
-    mParams = &Params::Instance();
-    mParams->printKeyValues(true, true);
-    mITS->setTopologyDictionaries(mITSDict, mIT3Dict);
-    auto geom = o2::its::GeometryTGeo::Instance();
-    o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
-    buildHierarchy();
-    if (mParams->usePVConstraintMinTracks > 0) {
-      o2::conf::ConfigurableParam::updateFromString("pvertexer.useTimeInChi2=false;"); // the PV refit does not use the track time
-      mMeanVtxSlot = mMeanVtxCCDB;                   // prior of the 1st slot, refreshed at every slot change
-      mMeanVtxCCDBUpdated = false;
-      mVertexer.setMeanVertex(&mMeanVtxSlot);
-      mVertexer.init();
+    initOnFirstTF();
+  }
+  updateCalibrationSlots();
+}
 
-      if (!mParams->MVTimeSlotsJson.empty()) { // the slots are used in both PV constraint modes
-        mMVTimeSlots = std::make_unique<o2::alignrs::TimeSlotsSet>();
-        if (mMVTimeSlots->readSlotsFromFile(mParams->MVTimeSlotsJson)<0) {
-          LOGP(fatal, "Failed to load time slots from {}", mParams->MVTimeSlotsJson);
-        }
-      }
-    }
+// One-time initialisation, deferred to the 1st TF since it needs the geometry and the conditions
+void AlignmentSpec::initOnFirstTF()
+{
+  mParams = &Params::Instance();
+  mParams->printKeyValues(true, true);
+  mITS->setTopologyDictionaries(mITSDict, mIT3Dict);
+  o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
+  buildHierarchy();
+  if (mTPC) {
+    mTPC->finaliseCalib(); // the drift calibration DOFs need the geometry of the correction maps
+  }
+  initVertexer();
+  initMisalignment();
+}
 
-    if (mParams->doMisalignmentLeg || mParams->doMisalignmentRB || mParams->doMisalignmentInex) {
-      mMisalignment = {};
-      for (auto& rb : mRigidBodyParams) {
-        rb.setZero();
-      }
-      if (!mParams->misAlgJson.empty()) {
-        mMisalignment = loadMisalignmentModel(mParams->misAlgJson);
-        if (mParams->doMisalignmentRB) {
-          using json = nlohmann::json;
-          std::ifstream f(mParams->misAlgJson);
-          auto data = json::parse(f);
-          for (const auto& item : data) {
-            int id = item["id"].get<int>();
-            if (!item.contains("rigidBody")) {
-              continue;
-            }
-            auto rb = item["rigidBody"].get<std::vector<double>>();
-            for (int k = 0; k < 6 && k < static_cast<int>(rb.size()); ++k) {
-              mRigidBodyParams[id](k) = rb[k];
-            }
-          }
-        }
-      }
+void AlignmentSpec::initVertexer()
+{
+  if (mParams->usePVConstraintMinTracks <= 0) {
+    return;
+  }
+  o2::conf::ConfigurableParam::updateFromString("pvertexer.useTimeInChi2=false;"); // the PV refit does not use the track time
+  // prior of the 1st slot, refreshed by DetectorPVT at every slot change
+  mVertexer.setMeanVertex(&mPVT->getMeanVertexPrior());
+  mVertexer.init();
+}
+
+void AlignmentSpec::initMisalignment()
+{
+  if (!(mParams->doMisalignmentLeg || mParams->doMisalignmentRB || mParams->doMisalignmentInex)) {
+    return;
+  }
+  mMisalignment = {};
+  for (auto& rb : mRigidBodyParams) {
+    rb.setZero();
+  }
+  if (mParams->misAlgJson.empty()) {
+    return;
+  }
+  mMisalignment = loadMisalignmentModel(mParams->misAlgJson);
+  if (!mParams->doMisalignmentRB) {
+    return;
+  }
+  using json = nlohmann::json;
+  std::ifstream f(mParams->misAlgJson);
+  auto data = json::parse(f);
+  for (const auto& item : data) {
+    int id = item["id"].get<int>();
+    if (!item.contains("rigidBody")) {
+      continue;
     }
-  }  
-  if (mParams->usePVConstraintMinTracks > 0) {
-    int MVslotID = mMVTimeSlots ? mMVTimeSlots->getSlotID(mTimeStamp) : 0;
-    if (MVslotID < 0) {
-      LOGP(fatal, "Timestamp {} is not covered by any mean vertex calibration slot of {}", mTimeStamp, mParams->MVTimeSlotsJson);
+    auto rb = item["rigidBody"].get<std::vector<double>>();
+    for (int k = 0; k < 6 && k < static_cast<int>(rb.size()); ++k) {
+      mRigidBodyParams[id](k) = rb[k];
     }
-    if (mPVT->getMVSlotID() != MVslotID) { // new calibration slot, update the mean vertex prior
-      mPVT->setMVSlotID(MVslotID);
-      // the slot is the unit of the mean vertex calibration: its prior is the CCDB object valid at the
-      // start of the slot, an eventual later CCDB update within the same slot is ignored
-      mMeanVtxSlot = mMeanVtxCCDB;
-      mMeanVtxCCDBUpdated = false;
-      mVertexer.setMeanVertex(&mMeanVtxSlot); // copies the object and re-inits the XY constraint, no init() needed
-      if (mPVT->getTopVolume()) {             // the vertex of every slot is aligned via its own global parameters
-        mMeanVtxLabels = mPVT->getPositionLabels();
-      }
-      LOGP(info, "Mean vertex prior for time slot {} at timestamp {}: {}", MVslotID, mTimeStamp, mMeanVtxSlot.asString());
-    } else if (mMeanVtxCCDBUpdated) {
-      mMeanVtxCCDBUpdated = false;
-      if (mMVTimeSlots) { // the prior of the ongoing slot is kept
-        LOGP(info, "Ignoring the new CCDB MeanVertex within the time slot {}, its prior stays {}", MVslotID, mMeanVtxSlot.asString());
-      } else { // w/o calibration slots the prior follows the CCDB object
-        mMeanVtxSlot = mMeanVtxCCDB;
-        mVertexer.setMeanVertex(&mMeanVtxSlot);
-        LOGP(info, "Mean vertex prior at timestamp {}: {}", mTimeStamp, mMeanVtxSlot.asString());
-      }
+  }
+}
+
+// Assign every detector with a time-sliced calibration to the slot covering this TF. The detectors
+// re-point their own slot-dependent labels and priors; only the mean vertex has an effect outside
+// of its own state, the prior of the PV refit having to be re-imposed on the vertexer.
+void AlignmentSpec::updateCalibrationSlots()
+{
+  for (auto* det : mDetectors) {
+    if (!det->setTimeStamp(mTimeStamp)) { // nothing changed for this detector
+      continue;
+    }
+    if (det == mPVT.get()) {
+      // copies the object and re-inits the XY constraint, no init() needed
+      mVertexer.setMeanVertex(&mPVT->getMeanVertexPrior());
+    }
+  }
+}
+
+// Derivatives of the residual of one measured point wrt all the global parameters it depends on:
+// the rigid-body DOFs of the measurement leaf and of all its ancestors up to (excluding) the common
+// root, followed by the calibration DOFs of the direct parent of the leaf.
+// The base derivative is computed in the tracking frame while the alignment is done in the local
+// one, dr/da_(LOC) = dr/da_(TRK) * da_(TRK)/da_(LOC), and is then transported level by level with
+// the local-to-parent jacobian of each child.
+AlignmentSpec::PointGlobals AlignmentSpec::buildPointGlobals(const FrameInfoExt& frame, const TrackD& wTrk) const
+{
+  const auto volIt = mChip2Hiearchy.find(frame.label); // as assigned by the detector owning the frame
+  if (volIt == mChip2Hiearchy.end()) {
+    LOGP(fatal, "Cannot find global label: {}", frame.label.asString());
+  }
+  const auto* tileVol = volIt->second;
+  const auto derCtx = makeDerivativeContext(frame, wTrk);
+  Matrix36 der = getRigidBodyBaseDerivatives(derCtx);
+
+  // count rigid body columns: only volumes with real DOFs (not DOFPseudo).
+  // The chain walks up to the common root of all detectors, which owns no DOFs: the top
+  // volume of the detector is therefore included, its DOFs being free or fixed as configured.
+  int nColRB{0};
+  for (const auto* v = tileVol; v && !v->isRoot(); v = v->getParent()) {
+    if (v->getRigidBody()) {
+      nColRB += v->getRigidBody()->nDOFs();
     }
   }
 
+  // count calibration columns
+  const auto* sensorVol = tileVol->getParent();
+  const auto* calibSet = sensorVol ? sensorVol->getCalib() : nullptr;
+  const int nCalib = calibSet ? calibSet->nDOFs() : 0;
+
+  PointGlobals globals{{}, Eigen::MatrixXd::Zero(3, nColRB + nCalib)};
+  globals.labels.reserve(nColRB + nCalib);
+  Eigen::Index curCol{0};
+
+  // 1) tile: TRK -> LOC via precomputed T2L and J_L2T
+  const double posTrk[3] = {frame.x, 0., 0.};
+  double posLoc[3];
+  tileVol->getT2L().LocalToMaster(posTrk, posLoc);
+  Matrix66 jacL2T;
+  tileVol->computeJacobianL2T(posLoc, jacL2T);
+  der *= jacL2T;
+  if (tileVol->getRigidBody()) {
+    const int nd = tileVol->getRigidBody()->nDOFs();
+    for (int iDOF = 0; iDOF < nd; ++iDOF) {
+      globals.labels.push_back(tileVol->getLabel().rawGBL(iDOF));
+    }
+    globals.der.middleCols(curCol, nd) = der;
+    curCol += nd;
+  }
+
+  // 2) chain through parents: child's J_L2P
+  for (const auto* child = tileVol; child->getParent() && !child->getParent()->isRoot(); child = child->getParent()) {
+    der *= child->getJL2P();
+    const auto* parent = child->getParent();
+    if (parent->getRigidBody()) {
+      const int nd = parent->getRigidBody()->nDOFs();
+      for (int iDOF = 0; iDOF < nd; ++iDOF) {
+        globals.labels.push_back(parent->getLabel().rawGBL(iDOF));
+      }
+      globals.der.middleCols(curCol, nd) = der;
+      curCol += nd;
+    }
+  }
+
+  // 3) calibration derivatives (apply directly on the whole sensor, not on individual tiles).
+  // The label is that of the calibration time slot of the processed TF, the DOFs of every slot
+  // being independent parameters of the fit.
+  if (calibSet) {
+    const int nd = calibSet->nDOFs();
+    Eigen::MatrixXd calDer(3, nd);
+    calibSet->fillDerivatives(derCtx, calDer);
+    const auto& calibLbl = sensorVol->getActiveCalibLabel();
+    for (int iDOF = 0; iDOF < nd; ++iDOF) {
+      globals.labels.push_back(calibLbl.rawGBL(iDOF));
+    }
+    globals.der.middleCols(curCol, nd) = calDer;
+    curCol += nd;
+  }
+  return globals;
 }
 
 void AlignmentSpec::buildHierarchy()
@@ -861,11 +879,14 @@ void AlignmentSpec::buildHierarchy()
     if (det->getDetIdx() == Detector::DetPVT && mParams->usePVConstraintMinTracks <= 0) {
       continue; // w/o the PV constraint the mean vertex is neither used nor aligned
     }
+    // the calibration slots must be known before the hierarchy is built: a detector calibrated per
+    // time slot prepares the labels of all its slots on the volume owning the DOFs
+    det->loadTimeSlots();
     det->attachTo(mHierarchy.get(), mChip2Hiearchy);
   }
   const bool withPVT = mPVT->getTopVolume() != nullptr;
   if (withPVT) {
-    LOGP(info, "Mean vertex prior: {}", mMeanVtxCCDB.asString());
+    LOGP(info, "Mean vertex prior: {}", mPVT->getMeanVertexCCDB().asString());
   }
 
   if (!mParams->dofConfigJson.empty()) {
@@ -876,8 +897,8 @@ void AlignmentSpec::buildHierarchy()
 
   mHierarchy->finalise();
   if (withPVT) {
-    mMeanVtxLabels = mPVT->getPositionLabels();
-    if (mMeanVtxLabels.empty()) {
+    mPVT->updatePositionLabels();
+    if (mPVT->getPositionLabels().empty()) {
       LOGP(info, "Mean vertex position is fixed, it is imposed as a prior w/o being aligned");
     }
   }
@@ -1089,88 +1110,14 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
     }
 
     if (!frame.isVertex()) { // the vertex point has no alignable volume behind it
-      const auto volIt = mChip2Hiearchy.find(frame.label);
-      if (volIt == mChip2Hiearchy.end()) {
-        LOGP(fatal, "Cannot find global label: {}", frame.label.asString());
-      }
-
-      // derivatives for all sensitive volumes and their parents
-      // this is the derivative in TRK but we want to align in LOC
-      // so dr/da_(LOC) = dr/da_(TRK) * da_(TRK)/da_(LOC)
-      const auto* tileVol = volIt->second;
-      const auto derCtx = makeDerivativeContext(frame, wTrk);
-      Matrix36 der = getRigidBodyBaseDerivatives(derCtx);
-
-      // count rigid body columns: only volumes with real DOFs (not DOFPseudo).
-      // The chain walks up to the common root of all detectors, which owns no DOFs: the top
-      // volume of the detector is therefore included, its DOFs being free or fixed as configured.
-      int nColRB{0};
-      for (const auto* v = tileVol; v && !v->isRoot(); v = v->getParent()) {
-        if (v->getRigidBody()) {
-          nColRB += v->getRigidBody()->nDOFs();
-        }
-      }
-
-      // count calibration columns
-      const auto* sensorVol = tileVol->getParent();
-      const auto* calibSet = sensorVol ? sensorVol->getCalib() : nullptr;
-      const int nCalib = calibSet ? calibSet->nDOFs() : 0;
-      const int nCol = nColRB + nCalib;
-
-      std::vector<int> gLabels;
-      gLabels.reserve(nCol);
-      Eigen::MatrixXd gDer(3, nCol);
-      gDer.setZero();
-      Eigen::Index curCol{0};
-
-      // 1) tile: TRK -> LOC via precomputed T2L and J_L2T
-      const double posTrk[3] = {frame.x, 0., 0.};
-      double posLoc[3];
-      tileVol->getT2L().LocalToMaster(posTrk, posLoc);
-      Matrix66 jacL2T;
-      tileVol->computeJacobianL2T(posLoc, jacL2T);
-      der *= jacL2T;
-      if (tileVol->getRigidBody()) {
-        const int nd = tileVol->getRigidBody()->nDOFs();
-        for (int iDOF = 0; iDOF < nd; ++iDOF) {
-          gLabels.push_back(tileVol->getLabel().rawGBL(iDOF));
-        }
-        gDer.middleCols(curCol, nd) = der;
-        curCol += nd;
-      }
-
-      // 2) chain through parents: child's J_L2P
-      for (const auto* child = tileVol; child->getParent() && !child->getParent()->isRoot(); child = child->getParent()) {
-        der *= child->getJL2P();
-        const auto* parent = child->getParent();
-        if (parent->getRigidBody()) {
-          const int nd = parent->getRigidBody()->nDOFs();
-          for (int iDOF = 0; iDOF < nd; ++iDOF) {
-            gLabels.push_back(parent->getLabel().rawGBL(iDOF));
-          }
-          gDer.middleCols(curCol, nd) = der;
-          curCol += nd;
-        }
-      }
-
-      // 3) calibration derivatives (apply directly on the whole sensor, not on individual tiles)
-      if (calibSet) {
-        const int nd = calibSet->nDOFs();
-        Eigen::MatrixXd calDer(3, nd);
-        calibSet->fillDerivatives(derCtx, calDer);
-        for (int iDOF = 0; iDOF < nd; ++iDOF) {
-          gLabels.push_back(sensorVol->getLabel().asCalib().rawGBL(iDOF));
-        }
-        gDer.middleCols(curCol, nd) = calDer;
-        curCol += nd;
-      }
-      point.addGlobals(gLabels, gDer);
-    } else if (addMeas && !mMeanVtxLabels.empty()) {
+      const auto globals = buildPointGlobals(frame, wTrk);
+      point.addGlobals(globals.labels, globals.der);
+    } else if (addMeas && !mPVT->getPositionLabels().empty()) {
       // the vertex measured by this track alone: its position follows the aligned mean vertex,
       // hence the residual acquires the derivatives wrt the mean vertex position. In a composed
       // trajectory the measurement is not here but on the shared vertex parameters, see
       // addMeanVertexPrior, and this branch is not reached.
-      point.addGlobals(mMeanVtxLabels, computeVertexTransformation(resTrack));
+      point.addGlobals(mPVT->getPositionLabels(), computeVertexTransformation(resTrack));
     }
 
     if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
@@ -1279,27 +1226,28 @@ void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::Matri
   double ca{0}, sa{0};
   o2::math_utils::sincosd(frame.alpha, sa, ca);
   const auto slopes = TrackSlopes::computeTrackSlopes(resTrack.track.getSnp(), resTrack.track.getTgl());
+  const auto& mvPrior = mPVT->getMeanVertexPrior(); // frozen for the whole calibration slot
   // the mean vertex in the tracking frame of the vertex point, brought to the plane of this point
-  const double muX = mMeanVtxSlot.getX() * ca + mMeanVtxSlot.getY() * sa; // along the local X
+  const double muX = mvPrior.getX() * ca + mvPrior.getY() * sa; // along the local X
   const double dX = muX - frame.x;
-  const double muY = -mMeanVtxSlot.getX() * sa + mMeanVtxSlot.getY() * ca - slopes.dydx * dX;
-  const double muZ = mMeanVtxSlot.getZ() - slopes.dzdx * dX;
+  const double muY = -mvPrior.getX() * sa + mvPrior.getY() * ca - slopes.dydx * dX;
+  const double muZ = mvPrior.getZ() - slopes.dzdx * dX;
   Eigen::Vector2d res;
   res << muY - resTrack.track.getY(), muZ - resTrack.track.getZ();
   // covariance of the luminous region rotated to this frame: the transformation of the vertex
   // position to the local offsets is the same as for the common parameters of the trajectory
   Eigen::Matrix3d covGlo = Eigen::Matrix3d::Zero();
-  covGlo(0, 0) = mMeanVtxSlot.getSigmaX2();
-  covGlo(1, 1) = mMeanVtxSlot.getSigmaY2();
-  covGlo(2, 2) = mMeanVtxSlot.getSigmaZ2();
+  covGlo(0, 0) = mvPrior.getSigmaX2();
+  covGlo(1, 1) = mvPrior.getSigmaY2();
+  covGlo(2, 2) = mvPrior.getSigmaZ2();
   const Eigen::Matrix2d cov = trans * covGlo * trans.transpose();
   if (cov.determinant() < 1e-16) {
-    LOGP(warn, "Skipping the mean vertex prior: singular projected covariance of {}", mMeanVtxSlot.asString());
+    LOGP(warn, "Skipping the mean vertex prior: singular projected covariance of {}", mvPrior.asString());
     return;
   }
   vtxPoint.addMeasurement(res, Eigen::Matrix2d(cov.inverse()));
-  if (!mMeanVtxLabels.empty()) { // the mean vertex position is aligned as well
-    vtxPoint.addGlobals(mMeanVtxLabels, trans);
+  if (!mPVT->getPositionLabels().empty()) { // the mean vertex position is aligned as well
+    vtxPoint.addGlobals(mPVT->getPositionLabels(), trans);
   }
 }
 
@@ -1547,9 +1495,7 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
     return;
   }
   if (matcher == ConcreteDataMatcher("GLO", "MEANVERTEX", 0)) {
-    mMeanVtxCCDB = *(const o2::dataformats::MeanVertexObject*)obj;
-    mMeanVtxCCDBUpdated = true;
-    LOGP(info, "New CCDB MeanVertex: {}", mMeanVtxCCDB.asString());
+    mPVT->setMeanVertexCCDB(*(const o2::dataformats::MeanVertexObject*)obj);
     return;
   }
 }

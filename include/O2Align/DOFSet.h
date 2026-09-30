@@ -23,8 +23,10 @@ namespace o2::alignrs
 {
 
 struct DerivativeContext {
-  int sensorID{-1};
-  int layerID{-1};
+  int detID{-1};    // Detector::DetIdx of the measurement
+  int volID{-1};    // ID of the measured volume within its detector (TPC: sector)
+  int sensorID{-1}; // ITS3 sensor ID, -1 for any other detector
+  int layerID{-1};  // ITS3 layer ID, -1 for any other detector
   double measX{0.};
   double measAlpha{0.};
   double measZ{0.};
@@ -45,7 +47,8 @@ class DOFSet
   enum class Type : uint8_t {
     RigidBody,
     Legendre,
-    Inextensional
+    Inextensional,
+    TPCVDrift
   };
   
   virtual ~DOFSet() = default;
@@ -180,6 +183,35 @@ class InextensionalDOFSet final : public DOFSet
  private:
   int mMaxOrder;
   ClassDefOverride(InextensionalDOFSet,1);
+};
+
+/// Calibration of the TPC drift, owned by the TPC envelope volume. The cluster Z is reconstructed
+/// from the drift time as z = s * (Lz - l), l = (t - T0 - tOffset) * vDrift being the drift length
+/// and s = +1 (-1) on the A (C) side, hence a relative correction d of vDrift and an offset o of
+/// the drift length displace the measurement along the local (= tracking frame) Z by
+///     dz = -s * l * d - s * o,      l = Lz - s * z
+/// The two are separated by the lever arm in l. Being a pure Z shift of the measurement, the
+/// derivatives need no transformation to the local frame and are scaled with the same convention
+/// as the TZ column of RigidBodyDOFSet.
+class TPCVDriftDOFSet final : public DOFSet
+{
+ public:
+  enum VDriftDOF : uint8_t { VDRIFT = 0, DRIFTOFF, NDOF }; // relative vDrift correction, drift length offset [cm]
+  static constexpr const char* VDriftDOFNames[VDriftDOF::NDOF] = {"VDRIFT", "DRIFTOFF"};
+
+  TPCVDriftDOFSet() : DOFSet(NDOF) {}
+  Type type() const override { return Type::TPCVDrift; }
+  std::string dofName(int idx) const override { return VDriftDOFNames[idx]; }
+  void fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<Eigen::MatrixXd> out) const override;
+
+  /// length of the TPC drift volume, TPCFastTransformGeo::getTPCzLength(). Known only once the
+  /// correction maps are delivered, i.e. after the DOF set is created by the DOF configuration.
+  void setZLength(double zLength) { mZLength = zLength; }
+  double getZLength() const { return mZLength; }
+
+ private:
+  double mZLength{-1.}; // negative until set from the correction maps
+  ClassDefOverride(TPCVDriftDOFSet, 1);
 };
 
 } // namespace o2::alignrs

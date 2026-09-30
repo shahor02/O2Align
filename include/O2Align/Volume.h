@@ -128,6 +128,21 @@ class Volume
   void setCalib(std::unique_ptr<DOFSet> cal) { mCalib = std::move(cal); }
   DOFSet* getRigidBody() const { return mRigidBody.get(); }
   DOFSet* getCalib() const { return mCalib.get(); }
+
+  /// \name Time-sliced calibration DOFs
+  /// The calibration DOF set is configured once, but its parameters may be fitted independently in
+  /// consecutive time slots, the slot ID being encoded in the volume ID of the calibration label
+  /// (see Detector::setTimeStamp). By default a volume has the single label of the slot 0.
+  ///@{
+  /// declare the calibration slots of this volume, in the order of their intervalID
+  void setCalibSlots(const std::vector<int>& slotIDs);
+  /// select the slot the processed TF belongs to. Fatal if the slot was not declared.
+  void setActiveCalibSlot(int slotID);
+  /// calibration label of the processed TF, the one the derivatives are attributed to
+  const Label& getActiveCalibLabel() const { return mCalibLabels[mActiveCalibSlot]; }
+  /// calibration labels of all the declared slots, for the steering file output
+  const std::vector<Label>& getCalibLabels() const { return mCalibLabels; }
+  ///@}
   void setPseudo(bool p) noexcept { mIsPseudo = p; }
   bool isPseudo() const noexcept { return mIsPseudo; }
   bool isVirtual() const noexcept { return mVirtual; }
@@ -183,6 +198,8 @@ class Volume
 
  private:
   static InjectedMisalignment loadInjectedMisalignment(const std::string& injectedJsonPath);
+  /// apply the "fixed"/"free"/"fix" clauses of a calib rule, common to all calibration DOF types
+  static void applyFreeFixConfig(DOFSet& dofSet, const nlohmann::json& cal);
 
   std::string mSymName;
   Label mLabel;
@@ -193,6 +210,8 @@ class Volume
   int mSensorId{-1}; // RS check if needed
   std::unique_ptr<DOFSet> mRigidBody;
   std::unique_ptr<DOFSet> mCalib;
+  std::vector<Label> mCalibLabels{}; // calibration label per time slot, filled with the slot 0 in the ctor
+  size_t mActiveCalibSlot{0};        // index in mCalibLabels of the slot being processed
 
   Volume* setParent(Ptr c)
   {

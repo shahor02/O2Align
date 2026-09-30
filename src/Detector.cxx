@@ -307,6 +307,42 @@ Volume* Detector::attachTo(Volume* root, Volume::SensorMapping& sensorMap)
   return mTopVolume;
 }
 
+const std::string& Detector::getTimeSlotsJson() const
+{
+  static const std::string noSlots{}; // a detector without time-sliced calibration
+  return noSlots;
+}
+
+void Detector::loadTimeSlots()
+{
+  const auto& jsonPath = getTimeSlotsJson();
+  if (jsonPath.empty()) {
+    return;
+  }
+  mTimeSlots = std::make_unique<TimeSlotsSet>();
+  if (mTimeSlots->readSlotsFromFile(jsonPath) < 0) {
+    LOGP(fatal, "Failed to load the calibration time slots of {} from {}", getDetName(), jsonPath);
+  }
+  LOGP(info, "{} will be calibrated in {} time slots of {}", getDetName(), mTimeSlots->slots.size(), jsonPath);
+}
+
+bool Detector::setTimeStamp(long tsMS)
+{
+  if (!mTimeSlots) { // no slots: everything belongs to the single slot 0
+    return false;
+  }
+  const int slotID = mTimeSlots->getSlotID(tsMS);
+  if (slotID < 0) {
+    LOGP(fatal, "Timestamp {} is not covered by any calibration slot of {} from {}", tsMS, getDetName(), getTimeSlotsJson());
+  }
+  if (slotID == mSlotID) {
+    return false;
+  }
+  mSlotID = slotID;
+  onSlotChange(slotID);
+  return true;
+}
+
 // The KF (re)fit of the prepared track moved to Track::fitTrack / Track::continueFitOutward
 
 } // namespace o2::alignrs

@@ -12,8 +12,10 @@
 #ifndef O2_ALIGN_DETECTORPVT_H
 #define O2_ALIGN_DETECTORPVT_H
 
+#include <string>
 #include <vector>
 
+#include "DataFormatsCalibration/MeanVertexObject.h"
 #include "O2Align/AlignmentTypes.h"
 #include "O2Align/Detector.h"
 #include "O2Align/Volume.h"
@@ -26,6 +28,8 @@ namespace o2::alignrs
 /// alignment parameter. The prior value of this position, as well as the sigmas of the luminous
 /// region constraining the vertex of every collision to it, are those of the MeanVertexObject and
 /// are used directly by the track fit.
+/// The detector owns the whole mean-vertex calibration state: the prior of the current calibration
+/// slot, the last object delivered by the CCDB and the Millepede labels of the slot being aligned.
 class DetectorPVT final : public Detector
 {
  public:
@@ -42,19 +46,35 @@ class DetectorPVT final : public Detector
   static Label getVertexLabel(int slotID = 0) { return Label(DetPVT, slotID, true); }
   Volume* getVertexVolume() const { return mVertexVolume; }
 
+  const std::string& getTimeSlotsJson() const final;
+  /// A CCDB update within an ongoing calibration slot is ignored, the slot being the unit of the
+  /// calibration; w/o slots the prior follows the CCDB object. Reports whether the prior changed.
+  bool setTimeStamp(long tsMS) final;
+
+  /// hand over a MeanVertexObject delivered by the CCDB. It becomes the prior of the next
+  /// calibration slot, or immediately the prior if no slots are defined (see setTimeStamp)
+  void setMeanVertexCCDB(const o2::dataformats::MeanVertexObject& mv);
+  const o2::dataformats::MeanVertexObject& getMeanVertexCCDB() const { return mMeanVtxCCDB; }
+  /// prior of the primary vertex of every collision of the current calibration slot: the CCDB
+  /// object valid at the start of the slot, frozen for its whole duration
+  const o2::dataformats::MeanVertexObject& getMeanVertexPrior() const { return mMeanVtxSlot; }
+
   /// Millepede labels of the mean vertex position in the current calibration slot, ordered as
   /// (X, Y, Z) in the global frame. Empty if the position is not a free parameter.
-  std::vector<int> getPositionLabels() const;
-
-  int getMVSlotID() const { return mMVSlotID; }
-  void setMVSlotID(int slotID) { mMVSlotID = slotID; }
+  const std::vector<int>& getPositionLabels() const { return mPositionLabels; }
+  /// (re)build the labels of the current slot; call once the DOF configuration is applied
+  void updatePositionLabels();
 
  protected:
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
+  void onSlotChange(int slotID) final;
 
  private:
-  Volume* mVertexVolume{nullptr}; // the dummy volume of the mean vertex
-  int mMVSlotID = 0; // the intervalID of the mean vertex calibration slot, 0 if no slots are defined
+  Volume* mVertexVolume{nullptr};                   // the dummy volume of the mean vertex
+  o2::dataformats::MeanVertexObject mMeanVtxCCDB{}; // last mean vertex object received from the CCDB
+  o2::dataformats::MeanVertexObject mMeanVtxSlot{}; // prior of the current calibration slot
+  bool mMeanVtxCCDBUpdated{false};                  // a CCDB object arrived and was not consumed yet
+  std::vector<int> mPositionLabels;                 // labels of the vertex position in the current slot
 };
 
 } // namespace o2::alignrs

@@ -11,8 +11,10 @@
 
 #include "O2Align/DOFSet.h"
 #include "O2Align/AlignmentTypes.h" // RSTODO this is just for legendrePols, get rid of it
+#include "O2Align/Detector.h"       // for the detector index of the derivative context
 #include "ITS3Base/SpecsV2.h" // RSTODO try to get rid of this dependence
 #include "CommonConstants/MathConstants.h"
+#include "DataFormatsTPC/Constants.h"
 #include <format>
 
 namespace o2::alignrs
@@ -183,5 +185,24 @@ void InextensionalDOFSet::fillDerivatives(const DerivativeContext& ctx, Eigen::R
   out(0, betaIdx()) = -phi - ctx.dydx;
   out(1, betaIdx()) = -ctx.dzdx;
 }
-  
+
+void TPCVDriftDOFSet::fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<Eigen::MatrixXd> out) const
+{
+  validateDerivativeOutput(out);
+  if (ctx.detID != Detector::DetTPC || ctx.volID < 0) {
+    throw std::invalid_argument(std::format("TPCVDriftDOFSet requires a TPC measurement context, got det {} vol {}", ctx.detID, ctx.volID));
+  }
+  if (mZLength <= 0.) {
+    throw std::invalid_argument("TPCVDriftDOFSet was not given the TPC drift length, see setZLength");
+  }
+  // the side is defined by the sector, not by the sign of the cluster Z, which for a cluster
+  // reconstructed with a wrong track time may end up on the wrong side of the central electrode
+  const double side = (ctx.volID < o2::tpc::constants::MAXSECTOR / 2) ? 1. : -1.;
+  const double driftLength = mZLength - side * ctx.measZ;
+  // only the Z row: the drift affects neither the pad direction nor, to 1st order, the
+  // space-charge correction of the cluster
+  out(1, VDRIFT) = side * driftLength;
+  out(1, DRIFTOFF) = side;
+}
+
 }  // namespace o2::alignrs

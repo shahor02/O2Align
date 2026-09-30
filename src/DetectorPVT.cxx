@@ -13,6 +13,7 @@
 
 #include "Framework/Logger.h"
 #include "O2Align/DetectorPVT.h"
+#include "O2Align/Params.h"
 
 namespace o2::alignrs
 {
@@ -38,26 +39,63 @@ Volume::Ptr DetectorPVT::buildHierarchy(Volume::SensorMapping& sensorMap)
   return vtx;
 }
 
-std::vector<int> DetectorPVT::getPositionLabels() const
+void DetectorPVT::updatePositionLabels()
 {
-  std::vector<int> labels;
-  if (!mVertexVolume) {
-    return labels;
-  }
-  const auto* dofs = mVertexVolume->getRigidBody();
+  mPositionLabels.clear();
+  const auto* dofs = mVertexVolume ? mVertexVolume->getRigidBody() : nullptr;
   if (!dofs) {
-    return labels;
+    return;
   }
   // the free/fixed DOFs are those configured for the volume (built for the slot 0), but the labels
   // are those of the current calibration slot, which has its own set of global parameters
-  const auto lbl = getVertexLabel(mMVSlotID);
+  const auto lbl = getVertexLabel(mSlotID);
   for (auto dof : {RigidBodyDOFSet::TX, RigidBodyDOFSet::TY, RigidBodyDOFSet::TZ}) {
     if (!dofs->isFree(dof)) { // a fixed position imposes the prior w/o being fitted
-      return {};
+      mPositionLabels.clear();
+      return;
     }
-    labels.push_back(lbl.rawGBL(dof));
+    mPositionLabels.push_back(lbl.rawGBL(dof));
   }
-  return labels;
+}
+
+const std::string& DetectorPVT::getTimeSlotsJson() const
+{
+  return Params::Instance().MVTimeSlotsJson;
+}
+
+void DetectorPVT::setMeanVertexCCDB(const o2::dataformats::MeanVertexObject& mv)
+{
+  mMeanVtxCCDB = mv;
+  mMeanVtxCCDBUpdated = true;
+  LOGP(info, "New CCDB MeanVertex: {}", mMeanVtxCCDB.asString());
+}
+
+void DetectorPVT::onSlotChange(int slotID)
+{
+  // the slot is the unit of the mean vertex calibration: its prior is the CCDB object valid at the
+  // start of the slot, an eventual later CCDB update within the same slot is ignored
+  mMeanVtxSlot = mMeanVtxCCDB;
+  mMeanVtxCCDBUpdated = false;
+  updatePositionLabels(); // the vertex of every slot is aligned via its own global parameters
+  LOGP(info, "Mean vertex prior for time slot {}: {}", slotID, mMeanVtxSlot.asString());
+}
+
+bool DetectorPVT::setTimeStamp(long tsMS)
+{
+  if (Detector::setTimeStamp(tsMS)) { // onSlotChange has refreshed the prior and the labels
+    return true;
+  }
+  if (!mMeanVtxCCDBUpdated) {
+    return false;
+  }
+  mMeanVtxCCDBUpdated = false;
+  if (mTimeSlots) { // the prior of the ongoing slot is kept
+    LOGP(info, "Ignoring the new CCDB MeanVertex within the time slot {}, its prior stays {}", mSlotID, mMeanVtxSlot.asString());
+    return false;
+  }
+  mMeanVtxSlot = mMeanVtxCCDB; // w/o calibration slots the prior follows the CCDB object
+  LOGP(info, "Mean vertex prior at timestamp {}: {}", tsMS, mMeanVtxSlot.asString());
+  return true;
 }
 
 } // namespace o2::alignrs

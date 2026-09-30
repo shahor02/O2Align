@@ -19,6 +19,7 @@
 #include "DataFormatsTPC/ClusterNative.h"
 #include "DataFormatsTPC/Constants.h"
 #include "DataFormatsTPC/TrackTPC.h"
+#include "TPCBase/ParameterDetector.h"
 #include "DataFormatsTPC/WorkflowHelper.h"
 #include "DetectorsBase/Propagator.h"
 #include "Framework/Logger.h"
@@ -44,15 +45,52 @@ void DetectorTPC::prepareData(o2::globaltracking::RecoContainer* /*recoData*/)
   // done in prepareTrack.
 }
 
+const std::string& DetectorTPC::getTimeSlotsJson() const
+{
+  return Params::Instance().VDTimeSlotsJson;
+}
+
+void DetectorTPC::onSlotChange(int slotID)
+{
+  // the drift parameters of every slot are independent: the labels of the derivatives follow the slot
+  mEnvelope->setActiveCalibSlot(slotID);
+  LOGP(info, "TPC drift calibration slot {}", slotID);
+}
+
+void DetectorTPC::finaliseCalib()
+{
+  auto* calib = mEnvelope ? dynamic_cast<TPCVDriftDOFSet*>(mEnvelope->getCalib()) : nullptr;
+  if (!calib) {
+    return; // the drift calibration was not requested by the DOF configuration
+  }
+  // the length of the drift volume as used by the cluster transformation; the nominal one is a
+  // fallback for as long as the correction maps are not plumbed to this detector
+  if (mCorrMaps) {
+    calib->setZLength(mCorrMaps->getGeometry().getTPCzLength());
+  } else {
+    calib->setZLength(o2::tpc::ParameterDetector::Instance().TPClength);
+    LOGP(warn, "TPC correction maps are not set, taking the nominal drift length {} cm",
+         calib->getZLength());
+  }
+  LOGP(info, "TPC drift calibration over {} time slot(s), drift length {} cm",
+       mEnvelope->getCalibLabels().size(), calib->getZLength());
+}
+
 Volume::Ptr DetectorTPC::buildHierarchy(Volume::SensorMapping& sensorMap)
 {
   // The TPC has no alignable entries in the geometry: both the envelope and the sector volumes
   // are fictitious and define their frames themselves.
   uint32_t gLbl{0};
   const uint32_t det = mDetIdx;
-  auto root = std::make_unique<Volume>("TPC_envelope", gLbl++, det, false, true);
+  auto root = std::make_unique<EnvelopeTPC>("TPC_envelope", gLbl++, det, false, true);
   // w/o a geometry counterpart the envelope cannot be shifted, but it may own calibration DOFs
   root->setRigidBodyAllowed(false);
+  // the drift is calibrated per time slot, all of them sharing the single DOF set of the envelope
+  if (mTimeSlots) {
+    root->setCalibSlots(mTimeSlots->getSlotIDs());
+    root->setTimeSlots(mTimeSlots.get());
+  }
+  mEnvelope = root.get();
   mSensors.assign(o2::tpc::constants::MAXSECTOR, nullptr);
   for (int isec = 0; isec < o2::tpc::constants::MAXSECTOR; ++isec) {
     const Label lbl(det, isec, true);

@@ -12,6 +12,7 @@
 #ifndef O2_ALIGN_SENSORTPC_H
 #define O2_ALIGN_SENSORTPC_H
 
+#include "O2Align/TimeSlotsSet.h"
 #include "O2Align/Volume.h"
 
 namespace o2::alignrs
@@ -27,6 +28,23 @@ class SensorTPC final : public Volume
   using Volume::Volume;
   void defineMatrixL2G() final;
   void defineMatrixT2L() final;
+};
+
+/// Fictitious envelope of the TPC, the parent of all the sector volumes. It has no counterpart in
+/// the geometry and cannot be shifted, but it owns the drift calibration DOFs (TPCVDriftDOFSet),
+/// which are fitted independently in every time slot of the drift calibration.
+class EnvelopeTPC final : public Volume
+{
+ public:
+  using Volume::Volume;
+
+  /// calibration intervals, needed to report the validity of the fitted values. Not owned.
+  void setTimeSlots(const TimeSlotsSet* slots) { mTimeSlots = slots; }
+
+  bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const final;
+
+ private:
+  const TimeSlotsSet* mTimeSlots{nullptr};
 };
 
 } // namespace o2::alignrs

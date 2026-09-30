@@ -116,4 +116,27 @@ int TimeSlotsSet::getSlotID(long timestamp) const
   return getSlot(timestamp).intervalID;
 }
 
+const TimeSlot& TimeSlotsSet::getSlotByID(int intervalID) const
+{
+  static const TimeSlot emptySlot;
+  const auto it = std::find_if(slots.begin(), slots.end(), [intervalID](const TimeSlot& slot) {
+    return slot.intervalID == intervalID;
+  });
+  if (it == slots.end()) {
+    LOGP(warn, "No time slot with intervalID {}", intervalID);
+    return emptySlot;
+  }
+  return *it;
+}
+
+std::vector<int> TimeSlotsSet::getSlotIDs() const
+{
+  std::vector<int> ids;
+  ids.reserve(slots.size());
+  for (const auto& slot : slots) {
+    ids.push_back(slot.intervalID);
+  }
+  return ids;
+}
+
 } // namespace o2::alignrs

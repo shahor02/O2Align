@@ -43,6 +43,12 @@ struct TimeSlotsSet {
   /// 0 if no slots are defined, -1 if the timestamp is not covered by any slot.
   int getSlotID(long timestamp) const;
 
+  /// Return the slot with the given intervalID, an empty slot if there is none
+  const TimeSlot& getSlotByID(int intervalID) const;
+
+  /// intervalIDs of all the slots, in their order of definition
+  std::vector<int> getSlotIDs() const;
+
   ClassDefNV(TimeSlotsSet, 1);
 };
 

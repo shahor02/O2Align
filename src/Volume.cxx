@@ -39,6 +39,7 @@ Volume::Volume(const char* symName, Label label, bool virt) : mSymName(symName),
 
 void Volume::init()
 {
+  mCalibLabels.assign(1, mLabel.asCalib()); // a single calibration slot unless setCalibSlots says otherwise
   if (mVirtual) { // fictitious volume, has no counterpart in the geometry
     return;
   }
@@ -208,6 +209,30 @@ void Volume::writeRigidBodyConstraints(std::ostream& os) const
   }
 }
 
+void Volume::setCalibSlots(const std::vector<int>& slotIDs)
+{
+  if (slotIDs.empty()) {
+    LOGP(fatal, "Cannot declare an empty set of calibration slots for {}", mSymName);
+  }
+  mCalibLabels.clear();
+  mCalibLabels.reserve(slotIDs.size());
+  for (int slotID : slotIDs) {
+    // the slot ID plays the role of the volume ID: the parameters of every slot are independent
+    mCalibLabels.emplace_back(Label(mLabel.det(), static_cast<uint32_t>(slotID), mLabel.sens(), true));
+  }
+  mActiveCalibSlot = 0;
+}
+
+void Volume::setActiveCalibSlot(int slotID)
+{
+  const auto lbl = Label(mLabel.det(), static_cast<uint32_t>(slotID), mLabel.sens(), true);
+  const auto it = std::find(mCalibLabels.begin(), mCalibLabels.end(), lbl);
+  if (it == mCalibLabels.end()) {
+    LOGP(fatal, "Calibration slot {} was not declared for {}", slotID, mSymName);
+  }
+  mActiveCalibSlot = static_cast<size_t>(std::distance(mCalibLabels.begin(), it));
+}
+
 void Volume::writeParameters(std::ostream& os) const
 {
   if (isRoot()) {
@@ -223,12 +248,18 @@ void Volume::writeParameters(std::ostream& os) const
       }
     }
     if (mCalib) {
-      auto calibLbl = mLabel.asCalib();
-      for (int iDOF = 0; iDOF < mCalib->nDOFs(); ++iDOF) {
-        os << std::format("{:<10} {:>+15g} {:>+15g} ! {} {:<5} ",
-                          calibLbl.raw(iDOF), 0.0, (mCalib->isFree(iDOF) ? 0.0 : -1.0),
-                          (mCalib->isFree(iDOF) ? 'V' : 'F'), mCalib->dofName(iDOF))
-           << mSymName << '\n';
+      // one independent set of parameters per calibration time slot
+      for (const auto& calibLbl : mCalibLabels) {
+        for (int iDOF = 0; iDOF < mCalib->nDOFs(); ++iDOF) {
+          os << std::format("{:<10} {:>+15g} {:>+15g} ! {} {:<5} ",
+                            calibLbl.raw(iDOF), 0.0, (mCalib->isFree(iDOF) ? 0.0 : -1.0),
+                            (mCalib->isFree(iDOF) ? 'V' : 'F'), mCalib->dofName(iDOF))
+             << mSymName;
+          if (mCalibLabels.size() > 1) {
+            os << std::format(" slot {}", calibLbl.id());
+          }
+          os << '\n';
+        }
       }
     }
   }
@@ -256,14 +287,19 @@ void Volume::writeTree(std::ostream& os, int indent) const
     }
     if (mCalib && mCalib->nFreeDOFs()) {
       nFreeDofs += mCalib->nFreeDOFs();
-      os << " CAL[";
-      auto calibLbl = mLabel.asCalib();
-      for (int i = 0; i < mCalib->nDOFs(); ++i) {
-        if (mCalib->isFree(i)) {
-          os << " " << mCalib->dofName(i) << "(" << calibLbl.raw(i) << ")";
+      for (const auto& calibLbl : mCalibLabels) {
+        os << " CAL";
+        if (mCalibLabels.size() > 1) {
+          os << "@" << calibLbl.id();
         }
+        os << "[";
+        for (int i = 0; i < mCalib->nDOFs(); ++i) {
+          if (mCalib->isFree(i)) {
+            os << " " << mCalib->dofName(i) << "(" << calibLbl.raw(i) << ")";
+          }
+        }
+        os << " ]";
       }
-      os << " ]";
     }
     if (!nFreeDofs) {
       os << " no DOFs";
@@ -272,6 +308,53 @@ void Volume::writeTree(std::ostream& os, int indent) const
   os << '\n';
   for (const auto& c : mChildren) {
     c->writeTree(os, indent + 2);
+  }
+}
+
+// Apply the free/fixed part of a calibration rule, common to all the calibration DOF set types:
+// "fixed" fixes the whole set, "free" fixes everything but the listed DOFs and "fix" fixes the
+// listed ones. A DOF is named either by its index or by its name, e.g. "L(1,0)" or "VDRIFT".
+void Volume::applyFreeFixConfig(DOFSet& dofSet, const nlohmann::json& cal)
+{
+  auto setFreeByKey = [&dofSet](const nlohmann::json& item, bool free) {
+    if (item.is_number_integer()) {
+      const int idx = item.get<int>();
+      if (idx < 0 || idx >= dofSet.nDOFs()) {
+        LOGP(warn, "Ignoring the DOF index {} of the calib rule: out of the [0, {}) range", idx, dofSet.nDOFs());
+        return;
+      }
+      dofSet.setFree(idx, free);
+      return;
+    }
+    if (!item.is_string()) {
+      return;
+    }
+    const auto name = item.get<std::string>();
+    bool found = false;
+    for (int k = 0; k < dofSet.nDOFs(); ++k) {
+      if (dofSet.dofName(k) == name) {
+        dofSet.setFree(k, free);
+        found = true;
+      }
+    }
+    if (!found) {
+      LOGP(warn, "Ignoring the DOF '{}' of the calib rule: no such DOF in this set", name);
+    }
+  };
+
+  if (cal.value("fixed", false)) {
+    dofSet.setAllFree(false);
+  }
+  if (cal.contains("free")) { // an explicit list of free DOFs fixes all the others
+    dofSet.setAllFree(false);
+    for (const auto& item : cal["free"]) {
+      setFreeByKey(item, true);
+    }
+  }
+  if (cal.contains("fix")) {
+    for (const auto& item : cal["fix"]) {
+      setFreeByKey(item, false);
+    }
   }
 }
 
@@ -365,77 +448,18 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
       if (rule.contains("calib")) {
         const auto& cal = rule["calib"];
         auto calType = cal.value("type", std::string(""));
+        std::unique_ptr<DOFSet> dofSet;
         if (calType == "legendre") {
-          int order = cal.value("order", 3);
-          auto dofSet = std::make_unique<LegendreDOFSet>(order);
-          bool fixed = cal.value("fixed", false);
-          if (fixed) {
-            dofSet->setAllFree(false);
-          }
-          // fix/free individual coefficients by name or index
-          if (cal.contains("free")) {
-            dofSet->setAllFree(false);
-            for (const auto& item : cal["free"]) {
-              if (item.is_number_integer()) {
-                dofSet->setFree(item.get<int>(), true);
-              } else if (item.is_string()) {
-                // match by name e.g. "L(1,0)"
-                for (int k = 0; k < dofSet->nDOFs(); ++k) {
-                  if (dofSet->dofName(k) == item.get<std::string>()) {
-                    dofSet->setFree(k, true);
-                  }
-                }
-              }
-            }
-          }
-          if (cal.contains("fix")) {
-            for (const auto& item : cal["fix"]) {
-              if (item.is_number_integer()) {
-                dofSet->setFree(item.get<int>(), false);
-              } else if (item.is_string()) {
-                for (int k = 0; k < dofSet->nDOFs(); ++k) {
-                  if (dofSet->dofName(k) == item.get<std::string>()) {
-                    dofSet->setFree(k, false);
-                  }
-                }
-              }
-            }
-          }
-          vol->setCalib(std::move(dofSet));
+          dofSet = std::make_unique<LegendreDOFSet>(cal.value("order", 3));
         } else if (calType == "inextensional") {
-          int maxOrder = cal.value("order", 2);
-          auto dofSet = std::make_unique<InextensionalDOFSet>(maxOrder);
-          bool fixed = cal.value("fixed", false);
-          if (fixed) {
-            dofSet->setAllFree(false);
-          }
-          if (cal.contains("free")) {
-            dofSet->setAllFree(false);
-            for (const auto& item : cal["free"]) {
-              if (item.is_number_integer()) {
-                dofSet->setFree(item.get<int>(), true);
-              } else if (item.is_string()) {
-                for (int k = 0; k < dofSet->nDOFs(); ++k) {
-                  if (dofSet->dofName(k) == item.get<std::string>()) {
-                    dofSet->setFree(k, true);
-                  }
-                }
-              }
-            }
-          }
-          if (cal.contains("fix")) {
-            for (const auto& item : cal["fix"]) {
-              if (item.is_number_integer()) {
-                dofSet->setFree(item.get<int>(), false);
-              } else if (item.is_string()) {
-                for (int k = 0; k < dofSet->nDOFs(); ++k) {
-                  if (dofSet->dofName(k) == item.get<std::string>()) {
-                    dofSet->setFree(k, false);
-                  }
-                }
-              }
-            }
-          }
+          dofSet = std::make_unique<InextensionalDOFSet>(cal.value("order", 2));
+        } else if (calType == "tpcvdrift") {
+          dofSet = std::make_unique<TPCVDriftDOFSet>();
+        } else {
+          LOGP(warn, "Ignoring the calib rule '{}' of {}: unknown calibration type '{}'", pattern, sym, calType);
+        }
+        if (dofSet) {
+          applyFreeFixConfig(*dofSet, cal);
           vol->setCalib(std::move(dofSet));
         }
       }

@@ -15,9 +15,12 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "DetectorsCommonDataFormats/AlignParam.h"
+#include "O2Align/TimeSlotsSet.h"
 #include "O2Align/Volume.h"
 #include "DataFormatsGlobalTracking/RecoContainer.h"
 #include "ReconstructionDataFormats/GlobalTrackID.h"
@@ -59,6 +62,28 @@ class Detector
   DetIdx getDetIdx() const noexcept { return mDetIdx; }
   const char* getDetName() const noexcept { return DetName[mDetIdx]; }
 
+  /// \name Time-sliced calibration
+  /// A detector may calibrate some of its DOFs independently in consecutive time intervals: the
+  /// DOF set is configured once, on the volume built for the slot 0, while the emitted Millepede
+  /// labels carry the ID of the slot the processed TF belongs to. A detector which does not use
+  /// this leaves getTimeSlotsJson() empty and stays in the single slot 0.
+  ///@{
+  /// json file with the calibration intervals of this detector, empty if it has none. Detector
+  /// specific, since it names its own Params field.
+  virtual const std::string& getTimeSlotsJson() const;
+  /// read getTimeSlotsJson() into mTimeSlots. Must be called before buildHierarchy, which may need
+  /// the list of the slots to prepare the per-slot labels of its volumes.
+  void loadTimeSlots();
+  /// calibration intervals of this detector, nullptr if it has none
+  const TimeSlotsSet* getTimeSlots() const noexcept { return mTimeSlots.get(); }
+  /// ID of the calibration slot of the processed TF, 0 if the detector has no slots
+  int getSlotID() const noexcept { return mSlotID; }
+  /// Select the calibration slot covering the timestamp (in ms) and report whether anything changed
+  /// for this detector, i.e. whether the caller must refresh what depends on it. Fatal if the slots
+  /// are defined and the timestamp is covered by none of them.
+  virtual bool setTimeStamp(long tsMS);
+  ///@}
+
   /// Convert the rigid-body corrections fitted by Millepede for the branch of this detector into
   /// the AlignParam objects to be applied to the IDEAL geometry (GeometryManager::applyAlignment),
   /// i.e. the fitted corrections combined with the initial alignment the fit started from.
@@ -81,8 +106,15 @@ class Detector
   /// Called by attachTo, which makes it a branch of the common hierarchy.
   virtual Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) = 0;
 
+  /// hook invoked by setTimeStamp when the calibration slot changes, for the detector to re-point
+  /// its slot-dependent labels and priors. The hierarchy is built for the slot 0, hence the 1st TF
+  /// triggers a change unless it belongs to that slot.
+  virtual void onSlotChange(int /*slotID*/) {}
+
   DetIdx mDetIdx{DetPVT};
-  Volume* mTopVolume{nullptr}; // top volume of the detector, owned by the common hierarchy
+  Volume* mTopVolume{nullptr};              // top volume of the detector, owned by the common hierarchy
+  std::unique_ptr<TimeSlotsSet> mTimeSlots; // calibration intervals of this detector, if any
+  int mSlotID{0};                           // calibration slot of the processed TF
 };
 
 } // namespace o2::alignrs
