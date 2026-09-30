@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "DataFormatsTPC/VDriftCorrFact.h"
 #include "O2Align/Detector.h"
 #include "O2Align/Volume.h"
 
@@ -42,6 +43,13 @@ class DetectorTPC final : public Detector
   /// both must be provided by the caller before the 1st prepareTrack call
   void setCorrMaps(const o2::gpu::TPCFastTransformPOD* maps) { mCorrMaps = maps; }
   void setTPCParam(const o2::gpu::GPUParam* par) { mTPCParam = par; }
+  const o2::gpu::TPCFastTransformPOD* getCorrMaps() const { return mCorrMaps; }
+  const o2::gpu::GPUParam* getTPCParam() const { return mTPCParam; }
+
+  /// The drift calibration already applied to the correction maps: the fitted VDRIFT correction is
+  /// relative to it, hence it is needed to express the result wrt the reference drift velocity.
+  void setVDrift(const o2::tpc::VDriftCorrFact& v) { mVDrift = v; }
+  const o2::tpc::VDriftCorrFact& getVDrift() const { return mVDrift; }
 
   const std::string& getTimeSlotsJson() const final;
 
@@ -87,6 +95,7 @@ class DetectorTPC final : public Detector
 
   const o2::gpu::TPCFastTransformPOD* mCorrMaps{nullptr};
   const o2::gpu::GPUParam* mTPCParam{nullptr};
+  o2::tpc::VDriftCorrFact mVDrift{}; // drift calibration accounted by mCorrMaps
   Volume* mEnvelope{nullptr};    // fictitious top volume, owner of the drift calibration DOFs
   std::vector<Volume*> mSensors; // sector volumes, indexed by sector
 };

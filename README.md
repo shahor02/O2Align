@@ -91,3 +91,8 @@ Stage 3 writes one record per slot under `tpcDrift` in `result.json`.
 
 Note that `DRIFTOFF` is degenerate with a common Z shift of the TPC sectors, and would also become
 degenerate with a `TZ` DOF of the envelope should the latter be made rigid-body alignable.
+
+The fitted correction is relative to the drift calibration already accounted for by the correction
+maps: whenever TPC clusters are requested, the workflow asks for the per-TF `TPC/TPCCORRMAP` input
+(produced upstream by `o2-tpc-scaler`, as for any other TPC cluster consumer) and for the drift
+CCDB objects, and builds the `GPUParam` used for the cluster errors from the current field.

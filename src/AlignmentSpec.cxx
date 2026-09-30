@@ -28,6 +28,7 @@
 #include <nlohmann/json.hpp>
 #include <TFile.h>
 
+#include "Headers/DataHeader.h"
 #include "Framework/CCDBParamSpec.h"
 #include "Framework/ConfigParamRegistry.h"
 #include "Framework/DataProcessorSpec.h"
@@ -53,6 +54,10 @@
 #include "ITSMFTTracking/MathUtils.h"
 #include "ITS3Reconstruction/IOUtils.h"
 #include "ITSMFTReconstruction/ChipMappingITS.h"
+#include "TPCCalibration/VDriftHelper.h"
+#include "TPCFastTransformPOD.h"
+#include "GPUO2ExternalUser.h"
+#include "GPUParam.h"
 #include "O2Align/TrackFit.h"
 #include "O2Align/AlignmentSpec.h"
 #include "O2Align/Params.h"
@@ -176,6 +181,8 @@ class AlignmentSpec final : public Task
     }
     mPVT = std::make_unique<DetectorPVT>(); // virtual, always created: it has no data of its own
     mDetectors.push_back(mPVT.get());
+    // the same condition under which getAlignmentSpec requests the TPC cluster transformation inputs
+    mLoadTPCCalib = mTPC && !mOutOpt[o2::alignrs::OutputOpt::MilleRes];
   }
 
   void init(InitContext& ic) final;
@@ -247,6 +254,7 @@ class AlignmentSpec final : public Task
   void initVertexer();
   void initMisalignment();
   void updateCalibrationSlots();
+  void updateTPCCalibration(ProcessingContext& pc);
 
   long mTimeStamp{0}; // current TF time stamp in ms
   o2::framework::TimingInfo mTimeInfo;
@@ -268,6 +276,10 @@ class AlignmentSpec final : public Task
   std::unique_ptr<DetectorTOF> mTOF;
   std::vector<Detector*> mDetectors; // all created detectors, in the order of the detector index
 
+  bool mLoadTPCCalib{false};                    // the TPC cluster transformation inputs are requested
+  std::unique_ptr<o2::gpu::GPUParam> mTPCParam; // TPC cluster error parametrization, field-dependent
+  float mTPCParamField{1e-6f};                  // field mTPCParam was built for
+  o2::tpc::VDriftHelper mTPCVDriftHelper{};     // drift calibration accounted by the correction maps
   std::shared_ptr<DataRequest> mDataRequest;
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
   std::unique_ptr<Volume> mHierarchy; // single tree-hierarchy of all detectors, rooted in a virtual volume
@@ -707,11 +719,38 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
   if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes] && Params::Instance().usePVConstraintMinTracks > 0) {
     pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
   }
+  updateTPCCalibration(pc); // must precede initOnFirstTF: the drift calibration DOFs need the maps
   if (static bool initOnce{false}; !initOnce) {
     initOnce = true;
     initOnFirstTF();
   }
   updateCalibrationSlots();
+}
+
+// Provide the TPC with everything its cluster transformation and error estimation need. The maps are
+// delivered per TF and already account for the drift calibration, applied by their producer.
+void AlignmentSpec::updateTPCCalibration(ProcessingContext& pc)
+{
+  if (!mLoadTPCCalib) {
+    return;
+  }
+  if (const float field = o2::base::Propagator::Instance()->getNominalBz(); field != mTPCParamField) {
+    mTPCParamField = field;
+    mTPCParam = std::make_unique<o2::gpu::GPUParam>();
+    mTPCParam->SetDefaults(field, false);
+    mTPC->setTPCParam(mTPCParam.get());
+    LOGP(info, "Updated the TPC cluster error parametrization for Bz = {} kG", field);
+  }
+  mTPCVDriftHelper.extractCCDBInputs(pc);
+  const auto* raw = pc.inputs().get<const char*>("corrMap");
+  mTPC->setCorrMaps(&o2::gpu::TPCFastTransformPOD::get(raw));
+  if (mTPCVDriftHelper.isUpdated()) {
+    const auto& vd = mTPCVDriftHelper.getVDriftObject();
+    LOGP(info, "TPC VDrift factor {} wrt reference {} and time offset correction {} wrt {} from source {}",
+         vd.corrFact, vd.refVDrift, vd.timeOffsetCorr, vd.refTimeOffset, mTPCVDriftHelper.getSourceName());
+    mTPC->setVDrift(vd);
+    mTPCVDriftHelper.acknowledgeUpdate();
+  }
 }
 
 // One-time initialisation, deferred to the 1st TF since it needs the geometry and the conditions
@@ -1498,6 +1537,9 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
     mPVT->setMeanVertexCCDB(*(const o2::dataformats::MeanVertexObject*)obj);
     return;
   }
+  if (mTPCVDriftHelper.accountCCDBInputs(matcher, obj)) {
+    return;
+  }
 }
 
 DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withITS3, o2::alignrs::OutputEnum out)
@@ -1517,6 +1559,12 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
     // the mean vertex is the prior of the primary vertex of every collision and the starting point
     // of the alignment of the virtual PVT detector
     dataRequest->inputs.emplace_back("meanvtx", "GLO", "MEANVERTEX", 0, Lifetime::Condition, ccdbParamSpec("GLO/Calib/MeanVertex", {}, 1));
+    if (detMask[DetID::TPC]) {
+      // the cluster transformation: the maps are delivered per TF, the drift calibration they
+      // account for is read from the CCDB just to be able to interpret the fitted drift correction
+      o2::tpc::VDriftHelper::requestCCDBInputs(dataRequest->inputs);
+      dataRequest->inputs.emplace_back("corrMap", o2::header::gDataOriginTPC, "TPCCORRMAP", 0, Lifetime::Timeframe);
+    }
     ggRequest = std::make_shared<o2::base::GRPGeomRequest>(true,                              // orbitResetTime
                                                            false,                             // GRPECS=true
                                                            true,                              // GRPLHCIF

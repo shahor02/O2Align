@@ -23,6 +23,7 @@ set(O2_ALIGN_PUBLIC_LIBRARIES
     O2::TRDBase
     O2::TOFBase
     O2::GPUTracking
+    O2::TPCCalibration
     O2::Framework
     O2::GlobalTrackingWorkflowReaders
     O2::GlobalTrackingWorkflowHelpers

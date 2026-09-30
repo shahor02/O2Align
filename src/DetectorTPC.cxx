@@ -63,8 +63,8 @@ void DetectorTPC::finaliseCalib()
   if (!calib) {
     return; // the drift calibration was not requested by the DOF configuration
   }
-  // the length of the drift volume as used by the cluster transformation; the nominal one is a
-  // fallback for as long as the correction maps are not plumbed to this detector
+  // the length of the drift volume as used by the cluster transformation; the maps are absent in
+  // the MilleRes stage, which reads no data and does not need the derivatives
   if (mCorrMaps) {
     calib->setZLength(mCorrMaps->getGeometry().getTPCzLength());
   } else {
