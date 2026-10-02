@@ -83,7 +83,7 @@ add_root_dictionary(O2Align
 
 add_executable(O2exe-alignment-workflow src/alignment-workflow.cxx)
 set_property(TARGET O2exe-alignment-workflow
-             PROPERTY OUTPUT_NAME o2-its3-alignment-workflow)
+             PROPERTY OUTPUT_NAME o2-dev-alignment-workflow)
 target_include_directories(O2exe-alignment-workflow
                            PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include)
 target_link_libraries(O2exe-alignment-workflow
