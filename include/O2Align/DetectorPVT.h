@@ -33,7 +33,7 @@ namespace o2::alignrs
 class DetectorPVT final : public Detector
 {
  public:
-  DetectorPVT() : Detector(DetPVT) {}
+  DetectorPVT();
 
   /// the mean vertex is not extracted from the TF data
   void prepareData(o2::globaltracking::RecoContainer* /*recoData*/) final {}

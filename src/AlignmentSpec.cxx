@@ -383,7 +383,7 @@ void AlignmentSpec::init(InitContext& ic)
     }
   }
   mConfMacro = ic.options().get<std::string>("config-macro");
-  if (!mConfMacro.empty()) {
+  if (!mConfMacro.empty() && mConfMacro != "none") {
     loadConfigMacro();
   }
 }
@@ -719,9 +719,9 @@ void AlignmentSpec::initVertexer()
     return;
   }
   o2::conf::ConfigurableParam::updateFromString("pvertexer.useTimeInChi2=false;"); // the PV refit does not use the track time
-  // prior of the 1st slot, refreshed by DetectorPVT at every slot change
-  mVertexer.setMeanVertex(&mPVT->getMeanVertexPrior());
   mVertexer.init();
+  mVertexer.setMeanVertex(&mPVT->getMeanVertexPrior());
+  mVertexer.initMeanVertexConstraint();
 }
 
 void AlignmentSpec::initMisalignment()
@@ -744,6 +744,7 @@ void AlignmentSpec::updateCalibrationSlots()
     if (det == mPVT.get()) {
       // copies the object and re-inits the XY constraint, no init() needed
       mVertexer.setMeanVertex(&mPVT->getMeanVertexPrior());
+      mVertexer.initMeanVertexConstraint();
     }
   }
 }
@@ -1515,7 +1516,7 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
 
   Options opts{
     {"nthreads", VariantType::Int, 1, {"number of threads"}},
-    {"config-macro", VariantType::String, "", {"configuration macro with signature (std::vector<o2::alignrs::Detector*>*, int) to execute from init"}},
+    {"config-macro", VariantType::String, "none", {"configuration macro with signature (std::vector<o2::alignrs::Detector*>*, int) to execute from init"}},
   };
 
   return DataProcessorSpec{

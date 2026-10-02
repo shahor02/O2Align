@@ -18,6 +18,13 @@
 namespace o2::alignrs
 {
 
+ DetectorPVT::DetectorPVT() : Detector(DetPVT) 
+ {
+  // attach dummy default vertex prior, to be replaced by the CCDB object at the first timestamp
+  mMeanVtxSlot = o2::dataformats::MeanVertexObject(0.f, 0.f, 0.f, 0.5f, 0.5f, 7.f, 0.f, 0.f);
+
+ }
+
 Volume::Ptr DetectorPVT::buildHierarchy(Volume::SensorMapping& sensorMap)
 {
   const auto lbl = getVertexLabel();

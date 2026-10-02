@@ -60,10 +60,10 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   int usePVConstraintMinTracks = 5; // minimum number of tracks to use PV constraint
   bool useMultyTrackPVConstraint = true; // use multi-track PV constraint (otherwise use per-track PV constraint)
   bool scaleMVPriorWithNTracks = true;   // per-track PV constraint: scale the luminous region covariance of the mean vertex prior by the number of tracks of the vertex, for the prior to count once per collision
-  const std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
+  std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
 
   // TPC drift calibration
-  const std::string VDTimeSlotsJson = ""; // json file with TPC drift calibration intervals in ms
+  std::string VDTimeSlotsJson = ""; // json file with TPC drift calibration intervals in ms
 
   int verbose = 0; // verbosity level
   bool useStableRef = true; // use input tracks as linearization point
