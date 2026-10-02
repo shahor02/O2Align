@@ -33,7 +33,7 @@ void customize(std::vector<ConfigParamSpec>& workflowOptions)
   std::vector<o2::framework::ConfigParamSpec> options{
     {"disable-mc", o2::framework::VariantType::Bool, false, {"enable MC propagation"}},
     {"track-sources", VariantType::String, std::string{GID::ALL}, {"comma-separated list of track sources to use"}},
-    {"cluster-sources", VariantType::String, "ITS", {"comma-separated list of detectors in the alignment"}},
+    {"detectors", VariantType::String, "ITS", {"comma-separated list of detectors in the alignment (clusters to load)"}},
     {"with-its3", VariantType::Bool, false, {"ITS3 alignment mode"}},
     {"output", VariantType::String, "", {"output steering"}},
     {"disable-root-input", VariantType::Bool, false, {"disable root-files input reader"}},
@@ -51,7 +51,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
   const GID::mask_t allowedSourcesTrc = GID::getSourcesMask("ITS,TPC,ITS-TPC,ITS-TPC-TRD,ITS-TPC-TOF,ITS-TPC-TRD-TOF");
   const GID::mask_t allowedSourcesClus = GID::getSourcesMask("ITS,TPC,TRD,TOF");
   GID::mask_t srcTrc = allowedSourcesTrc & GID::getSourcesMask(cfg.options().get<std::string>("track-sources"));
-  GID::mask_t srcCls = allowedSourcesClus & GID::getSourcesMask(cfg.options().get<std::string>("cluster-sources"));
+  GID::mask_t srcCls = allowedSourcesClus & GID::getSourcesMask(cfg.options().get<std::string>("detectors"));
   const auto useMC = !cfg.options().get<bool>("disable-mc");
   const auto withITS3 = cfg.options().get<bool>("with-its3");
   const o2::alignrs::OutputEnum output(cfg.options().get<std::string>("output"));

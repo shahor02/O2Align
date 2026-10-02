@@ -54,7 +54,7 @@ add_library(O2Align SHARED
 #add_library(O2::Align ALIAS O2Align)
 
 set_property(TARGET O2Align PROPERTY EXPORT_NAME O2Align)
-set_property(TARGET O2Align PROPERTY OUTPUT_NAME O2Align)
+set_property(TARGET O2Align PROPERTY OUTPUT_NAME O2AlignRS)
 set_property(TARGET O2Align PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(O2Align
