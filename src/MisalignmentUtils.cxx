@@ -59,7 +59,11 @@ MisalignmentModel loadMisalignmentModel(const std::string& jsonPath)
       if (v.empty()) {
         LOGP(fatal, "Legendre matrix for sensor {} is empty in {}", id, jsonPath);
       }
-      TMatrixD m(v.size(), v.back().size());
+      std::size_t nCols = 0; // the rows of the triangular matrix may be given with different lengths
+      for (const auto& row : v) {
+        nCols = std::max(nCols, row.size());
+      }
+      TMatrixD m(v.size(), nCols);
       for (std::size_t r{0}; r < v.size(); ++r) {
         for (std::size_t c{0}; c < v[r].size(); ++c) {
           m(r, c) = v[r][c];
@@ -67,6 +71,14 @@ MisalignmentModel loadMisalignmentModel(const std::string& jsonPath)
       }
       sensor.legendre = o2::math_utils::Legendre2DPolynominal(m);
       sensor.hasLegendre = true;
+    }
+    if (item.contains("rigidBody")) {
+      const auto rb = item["rigidBody"].get<std::vector<double>>();
+      if (rb.size() > sensor.rigidBody.size()) {
+        LOGP(fatal, "Rigid body misalignment of sensor {} has {} > {} values in {}", id, rb.size(), sensor.rigidBody.size(), jsonPath);
+      }
+      std::copy(rb.begin(), rb.end(), sensor.rigidBody.begin());
+      sensor.hasRigidBody = true;
     }
     if (item.contains("inextensional")) {
       const auto& inex = item["inextensional"];
@@ -109,8 +121,8 @@ MisalignmentShift evaluateLegendreShift(const SensorMisalignment& sensor, const 
     // account for additional tangential movement due to radial shift
     // we have to approximate the difference in arc-length from the reference pnt on the deformed surface
     // this is done by integrating the height function via Gauss-Legendre quadrature (from Numerical recipes 4.6 [1])
-    constexpr std::array<double, 8> x = {-0.9602898564975363, -0.7966664774136267, -0.5255324099163290, -0.1834346424956498, 0.1834346424956498, 0.5255324099163290, 0.7966664774136267, 0.9602898564975363};
-    constexpr std::array<double, 8> w = {0.1012285362903763, 0.2223810344533745, 0.3137066458778873, 0.3626837833783620, 0.3626837833783620, 0.3137066458778873, 0.2223810344533745, 0.1012285362903763};
+    const auto& x = LegendreDOFSet::GaussNodes;
+    const auto& w = LegendreDOFSet::GaussWeights;
     const double mid = 0.5 * u;
     const double half = 0.5 * u;
     double integral = 0.;

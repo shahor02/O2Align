@@ -14,6 +14,7 @@
 #include <format>
 #include <memory>
 
+#include <optional>
 #include "CommonConstants/LHCConstants.h"
 #include "DataFormatsGlobalTracking/RecoContainer.h"
 #include "DataFormatsTPC/ClusterNative.h"
@@ -57,23 +58,13 @@ void DetectorTPC::onSlotChange(int slotID)
   LOGP(info, "TPC drift calibration slot {}", slotID);
 }
 
-void DetectorTPC::finaliseCalib()
+void DetectorTPC::initCalib()
 {
   auto* calib = mEnvelope ? dynamic_cast<TPCVDriftDOFSet*>(mEnvelope->getCalib()) : nullptr;
   if (!calib) {
     return; // the drift calibration was not requested by the DOF configuration
   }
-  // the length of the drift volume as used by the cluster transformation; the maps are absent in
-  // the MilleRes stage, which reads no data and does not need the derivatives
-  if (mCorrMaps) {
-    calib->setZLength(mCorrMaps->getGeometry().getTPCzLength());
-  } else {
-    calib->setZLength(o2::tpc::ParameterDetector::Instance().TPClength);
-    LOGP(warn, "TPC correction maps are not set, taking the nominal drift length {} cm",
-         calib->getZLength());
-  }
-  LOGP(info, "TPC drift calibration over {} time slot(s), drift length {} cm",
-       mEnvelope->getCalibLabels().size(), calib->getZLength());
+  calib->setZLength(o2::tpc::ParameterDetector::Instance().TPClength);
 }
 
 Volume::Ptr DetectorTPC::buildHierarchy(Volume::SensorMapping& sensorMap)
@@ -87,8 +78,7 @@ Volume::Ptr DetectorTPC::buildHierarchy(Volume::SensorMapping& sensorMap)
   root->setRigidBodyAllowed(false);
   // the drift is calibrated per time slot, all of them sharing the single DOF set of the envelope
   if (mTimeSlots) {
-    root->setCalibSlots(mTimeSlots->getSlotIDs());
-    root->setTimeSlots(mTimeSlots.get());
+    root->setCalibSlots(*mTimeSlots);
   }
   mEnvelope = root.get();
   mSensors.assign(o2::tpc::constants::MAXSECTOR, nullptr);
@@ -102,6 +92,39 @@ Volume::Ptr DetectorTPC::buildHierarchy(Volume::SensorMapping& sensorMap)
   }
   return root;
 }
+
+namespace
+{
+/// TPC cluster accepted for the refit, transformed to the sector frame
+struct SelectedCluster {
+  uint8_t sector{0}, row{0};
+  float qTot{0.f};
+  int16_t state{0};
+  float x{0.f}, y{0.f}, z{0.f};
+};
+
+/// charge-weighted merge of the clusters of a track on neighbouring pad-rows of the same sector
+struct SuperCluster {
+  explicit SuperCluster(const SelectedCluster& c) : sector(c.sector), firstRow(c.row) { add(c); }
+  void add(const SelectedCluster& c)
+  {
+    sumX += c.qTot * c.x;
+    sumY += c.qTot * c.y;
+    sumZ += c.qTot * c.z;
+    sumRow += c.qTot * c.row;
+    charge += c.qTot;
+    state |= c.state;
+    ++nClusters;
+  }
+  std::array<float, 3> position() const { return {static_cast<float>(sumX / charge), static_cast<float>(sumY / charge), static_cast<float>(sumZ / charge)}; }
+  uint8_t meanRow() const { return static_cast<uint8_t>(std::lround(sumRow / charge)); }
+
+  uint8_t sector{0}, firstRow{0};
+  int16_t state{0};
+  int nClusters{0};
+  double sumX{0.}, sumY{0.}, sumZ{0.}, sumRow{0.}, charge{0.};
+};
+} // namespace
 
 bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack)
 {
@@ -139,115 +162,70 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   constexpr float TAN10 = 0.17632698f; // tan of the half sector opening angle
   constexpr int NSectorsPerSide = o2::tpc::constants::MAXSECTOR / 2;
   const size_t nPointsIni = resTrack.info.size();
+
+  // Accepted clusters in the outward direction: the clusters of the track are ordered from the
+  // outermost to the innermost, hence they are traversed from the last one on.
+  int iNext = nClus - 1;
+  auto nextCluster = [&]() -> std::optional<SelectedCluster> {
+    while (iNext >= 0) {
+      uint8_t sector = 0, row = 0;
+      const auto& cl = trk.getCluster(clusterIdxStruct, iNext--, clusterNativeAccess, sector, row);
+      if (row > params.maxTPCPadRow) { // outward refit: all following clusters will have a larger padrow
+        iNext = -1;
+        break;
+      }
+      if (row < params.minTPCPadRow) { // the following clusters still have a chance to be accepted
+        continue;
+      }
+      if (params.discardEdgePadrows > 0 && getDistanceToStackEdge(row) < params.discardEdgePadrows) {
+        continue;
+      }
+      auto padFromEdge = cl.getPad();
+      int npads = o2::gpu::GPUTPCGeometry::NPads(row);
+      if (padFromEdge > npads / 2) {
+        padFromEdge = npads - 1 - padFromEdge;
+      }
+      if (padFromEdge < params.discardEdgePadDepth) {
+        continue;
+      }
+      SelectedCluster sel{.sector = sector, .row = row, .qTot = static_cast<float>(cl.getQtot()), .state = shMap[&cl - clusterNativeAccess.clustersLinear]};
+      mCorrMaps->Transform(sector, row, cl.getPad(), cl.getTime(), sel.x, sel.y, sel.z, tOffset);
+      return sel;
+    }
+    return std::nullopt;
+  };
+
   // the min number of points is relaxed by each merging of clusters into a supercluster
   int npntCut = params.minTPCClusters;
   int npoints = 0;
-  bool stopLoop = false;
-  const o2::tpc::ClusterNative* cl = nullptr;
-  uint8_t sector = 0, row = 0, currentSector = 0, currentRow = 0;
-  int16_t clusterState = 0, nextState = 0;
+  auto pending = nextCluster();
+  while (pending) {
+    // merge the following clusters of the same sector within maxTPCRowsCombined rows from the 1st one
+    SuperCluster sc(*pending);
+    while ((pending = nextCluster()) && pending->sector == sc.sector && std::abs(pending->row - sc.firstRow) < params.maxTPCRowsCombined) {
+      sc.add(*pending);
+    }
+    npntCut -= sc.nClusters - 1;
+    const auto pnt3D = sc.position();
+    const uint8_t meanRow = sc.meanRow();
 
-  // the clusters are ordered from the outermost to the innermost, we traverse them in the outward direction
-  for (int i = nClus - 1; i >= 0; i -= cl ? 0 : 1) {
-    float x{0.f}, y{0.f}, z{0.f}, xTmp{0.f}, yTmp{0.f}, zTmp{0.f}, charge{0.f};
-    int clusters = 0;
-    double combRow = 0;
-
-    while (true) {
-      if (!cl) {
-        const auto* clTmp = &trk.getCluster(clusterIdxStruct, i, clusterNativeAccess, sector, row);
-        if (row > params.maxTPCPadRow) { // outward refit: all following clusters will have a larger padrow
-          stopLoop = true;
-          break;
-        }
-        if (row < params.minTPCPadRow) { // the following clusters still have a chance to be accepted
-          break;
-        }
-        if (params.discardEdgePadrows > 0 && getDistanceToStackEdge(row) < params.discardEdgePadrows) {
-          if (i != 0) {
-            --i;
-            continue;
-          }
-          stopLoop = true;
-          break;
-        }
-        mCorrMaps->Transform(sector, row, clTmp->getPad(), clTmp->getTime(), xTmp, yTmp, zTmp, tOffset);
-        if (params.discardSectorEdgeDepth > 0 && std::abs(yTmp) + params.discardSectorEdgeDepth > xTmp * TAN10) {
-          if (i != 0) {
-            --i;
-            continue;
-          }
-          stopLoop = true;
-          break;
-        }
-        cl = clTmp;
-        nextState = shMap[cl - clusterNativeAccess.clustersLinear];
-      }
-      if (clusters == 0 || (sector == currentSector && std::abs(row - currentRow) < params.maxTPCRowsCombined)) {
-        if (clusters == 1) { // charge-weight the 1st cluster before merging the 2nd one
-          x *= charge;
-          y *= charge;
-          z *= charge;
-          combRow *= charge;
-        }
-        if (clusters == 0) { // start a new supercluster
-          x = xTmp;
-          y = yTmp;
-          z = zTmp;
-          currentRow = row;
-          currentSector = sector;
-          charge = cl->getQtot();
-          clusterState = nextState;
-          combRow = row;
-        } else { // merge to the supercluster started at currentRow
-          x += xTmp * cl->getQtot();
-          y += yTmp * cl->getQtot();
-          z += zTmp * cl->getQtot();
-          combRow += row * cl->getQtot();
-          charge += cl->getQtot();
-          clusterState |= nextState;
-          --npntCut;
-        }
-        cl = nullptr;
-        ++clusters;
-        if (i != 0) {
-          --i;
-          continue;
-        }
-      }
-      break;
-    }
-    if (stopLoop) {
-      break;
-    }
-    if (clusters == 0) {
-      continue;
-    }
-    if (clusters > 1) {
-      x /= charge;
-      y /= charge;
-      z /= charge;
-      currentRow = static_cast<uint8_t>(combRow / charge);
-    }
-
-    const double alpha = o2::math_utils::detail::sector2Angle<double>(currentSector % NSectorsPerSide);
-    if (!prop->propagateToAlphaX(trkParam, refLin, alpha, x, false, params.maxSnp, params.maxStep, 1, params.corrType)) {
+    const double alpha = o2::math_utils::detail::sector2Angle<double>(sc.sector % NSectorsPerSide);
+    if (!prop->propagateToAlphaX(trkParam, refLin, alpha, pnt3D[0], false, params.maxSnp, params.maxStep, 1, params.corrType)) {
       break;
     }
     std::array<float, 3> cov{0.f, 0.f, 0.f};
     // TODO: this disables the occupancy / charge components of the error estimation
-    mTPCParam->GetClusterErrors2(currentSector, currentRow, z, trkParam.getSnp(), trkParam.getTgl(), -1.f, 0.f, 0.f, cov[0], cov[2]);
-    mTPCParam->UpdateClusterError2ByState(clusterState, cov[0], cov[2]);
-    const int nrComb = std::abs(row - currentRow) + 1;
-    if (nrComb > 1) {
-      const float fact = 1.f / std::sqrt(static_cast<float>(nrComb));
+    mTPCParam->GetClusterErrors2(sc.sector, meanRow, pnt3D[2], trkParam.getSnp(), trkParam.getTgl(), -1.f, 0.f, 0.f, cov[0], cov[2]);
+    mTPCParam->UpdateClusterError2ByState(sc.state, cov[0], cov[2]);
+    if (sc.nClusters > 1) { // conservative: the merged clusters are not independent measurements
+      const float fact = 1.f / std::sqrt(static_cast<float>(sc.nClusters));
       cov[0] *= fact;
       cov[2] *= fact;
     }
     cov[0] += params.extraClsErrYTPC * params.extraClsErrYTPC;
     cov[2] += params.extraClsErrZTPC * params.extraClsErrZTPC;
 
-    const std::array<double, 2> pos{y, z};
+    const std::array<double, 2> pos{pnt3D[1], pnt3D[2]};
     const std::array<double, 3> covD{cov[0], cov[1], cov[2]};
     chi2 += static_cast<float>(trkParam.getPredictedChi2Quiet(pos, covD));
     if (!trkParam.update(pos, covD)) {
@@ -259,11 +237,11 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     }
 
     auto& pnt = resTrack.info.emplace_back();
-    pnt.lr = static_cast<int8_t>(getStack(currentRow));
-    pnt.label = Label(mDetIdx, currentSector, true);
-    pnt.x = x;
+    pnt.lr = static_cast<int8_t>(getStack(meanRow));
+    pnt.label = Label(mDetIdx, sc.sector, true);
+    pnt.x = pnt3D[0];
     pnt.alpha = static_cast<float>(alpha);
-    pnt.cluster = o2::BaseCluster<float>(static_cast<int16_t>(currentSector), x, y, z, cov[0], cov[2], cov[1]);
+    pnt.cluster = o2::BaseCluster<float>(static_cast<int16_t>(sc.sector), pnt3D[0], pnt3D[1], pnt3D[2], cov[0], cov[2], cov[1]);
     ++npoints;
   }
 

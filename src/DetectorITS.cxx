@@ -44,8 +44,20 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
 
   mITSPointsInfo.clear();
   mITSPointsInfo.reserve(clusITS.size());
-  mOverlaps = o2::itsmft::ChipMappingITS{}.getOverlapsInfo();
-  if (params.ITSOverlapMargin > 0) {
+  // The overlap search relies on the ITS2 chip mapping and topology dictionary. With ITS3 the IDs of
+  // the outer barrel chips are shifted by the number of the IB tiles, hence it is not supported.
+  const bool findOverlaps = params.ITSOverlapMargin > 0 && !mIsITS3;
+  if (params.ITSOverlapMargin > 0 && mIsITS3) {
+    static bool warned = false;
+    if (!warned) {
+      warned = true;
+      LOGP(warn, "The search of the ITS overlaps is not supported with ITS3, ignoring ITSOverlapMargin={}", params.ITSOverlapMargin);
+    }
+  }
+  if (findOverlaps && mOverlaps.empty()) { // static, compute once
+    mOverlaps = o2::itsmft::ChipMappingITS{}.getOverlapsInfo();
+  }
+  if (findOverlaps) {
     mITSOvlClusRef.assign(clusITS.size(), -1);
     mITSOvlCandidateID.clear();
     mITSOvlCandidateID.reserve(clusITS.size());
@@ -98,7 +110,7 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
       pointInfo.x = x;
       pointInfo.alpha = alpha;
       pointInfo.cluster = clus;
-      if (params.ITSOverlapMargin > 0 && (!mIsITS3 || lay > 2)) {
+      if (findOverlaps) {
         int row = 0, col = 0;
         o2::itsmft::SegmentationAlpide::localToDetectorUnchecked(locXYZ.X(), locXYZ.Z(), row, col);
         int drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? row : o2::itsmft::SegmentationAlpide::NRows - row - 1;
@@ -193,11 +205,6 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   std::array<TrackD, 7> trkOutAt{};
   std::array<bool, 7> hasTrkOutAt{};
 
-  auto resetTrackCov = [](TrackD& trk) {
-    trk.resetCovariance();
-    trk.setCov(trk.getQ2Pt() * trk.getQ2Pt() * trk.getCov()[14], 14);
-  };
-
   auto findBestOverlap = [&](const FrameInfoExt& frame, int clusID, const TrackD& tr) -> FrameInfoExt* {
     if (clusID < 0 || !frame.cluster.getCount() || mITSOvlClusRef.empty()) {
       return nullptr;
@@ -258,8 +265,8 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   }
 
   if (allowOverlaps) {
-    resetTrackCov(trFitOut);
-    resetTrackCov(trFitInw);
+    resetTrackCovariance(trFitOut);
+    resetTrackCovariance(trFitInw);
     o2::track::TrackParD trkOutRef, *refLinOut = nullptr;
     if (params.useStableRef) {
       refLinOut = &(trkOutRef = trFitOut);
@@ -330,78 +337,36 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
 }
 
 
-Volume::Ptr DetectorITS::buildHierarchyITS(Volume::SensorMapping& sensorMap)
+// ITS2 hierarchy: ITS -> half-barrels -> staves -> half-staves -> modules -> chips. With ITS3 the
+// half-barrels of the 3 inner layers are the sensors themselves, with the tiles as pseudo children
+// carrying the measurements.
+Volume::Ptr DetectorITS::buildHierarchy(Volume::SensorMapping& sensorMap)
 {
   uint32_t gLbl{0};
   const uint32_t det = mDetIdx;
   auto geom = o2::its::GeometryTGeo::Instance();
-  Volume *volHB{nullptr}, *volSt{nullptr}, *volHSt{nullptr}, *volMod{nullptr};
+  auto isLayITS3 = [this](int lr) { return mIsITS3 && lr < 3; };
   std::unordered_map<std::string, Volume*> sym2vol;
+  auto addVolume = [&](Volume* parent, const char* symName) {
+    auto* vol = parent->addChild(symName, gLbl++, det, false);
+    sym2vol[vol->getSymName()] = vol;
+    return vol;
+  };
   auto root = std::make_unique<Volume>(geom->composeSymNameITS(), gLbl++, det, false);
   sym2vol[root->getSymName()] = root.get();
   for (int ilr = 0; ilr < geom->getNumberOfLayers(); ilr++) {
     for (int ihb = 0; ihb < geom->getNumberOfHalfBarrels(); ihb++) {
-      volHB = root->addChild(geom->composeSymNameHalfBarrel(ilr, ihb), gLbl++, det, false);
-      sym2vol[volHB->getSymName()] = volHB;
-      int nstavesHB = geom->getNumberOfStaves(ilr) / 2;
-      for (int ist = 0; ist < nstavesHB; ist++) {
-        volSt = volHB->addChild(geom->composeSymNameStave(ilr, ihb, ist), gLbl++, det, false);
-        sym2vol[volSt->getSymName()] = volSt;
-        for (int ihst = 0; ihst < geom->getNumberOfHalfStaves(ilr); ihst++) {
-          volHSt = volSt->addChild(geom->composeSymNameHalfStave(ilr, ihb, ist, ihst), gLbl++, det, false);
-          sym2vol[volHSt->getSymName()] = volHSt;
-          for (int imd = 0; imd < geom->getNumberOfModules(ilr); imd++) {
-            volMod = volHSt->addChild(geom->composeSymNameModule(ilr, ihb, ist, ihst, imd), gLbl++, det, false);
-            sym2vol[volMod->getSymName()] = volMod;
-          }
-        }
-      }
-    }
-  }
-  int lay = 0, hba = 0, sta = 0, ssta = 0, modd = 0, chip = 0;
-  for (int ich = 0; ich < geom->getNumberOfChips(); ich++) {
-    geom->getChipId(ich, lay, hba, sta, ssta, modd, chip);
-    Label lbl(det, ich, true);
-    Volume* parVol = sym2vol[modd < 0 ? geom->composeSymNameStave(lay, hba, sta) : geom->composeSymNameModule(lay, hba, sta, ssta, modd)];
-    if (!parVol) {
-      LOGP(fatal, "did not find parent for chip {}", ich);
-    }
-    int nch = modd < 0 ? geom->getNumberOfChipsPerStave(lay) : geom->getNumberOfChipsPerModule(lay);
-    auto* chipVol = parVol->addChild<SensorITS>(geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip % nch), lbl);
-    chipVol->setSensorId(ich);
-    sensorMap[lbl] = chipVol;
-  }
-  return root;
-}
-
-Volume::Ptr DetectorITS::buildHierarchyIT3(Volume::SensorMapping& sensorMap)
-{
-  uint32_t gLbl{0};
-  const uint32_t det = mDetIdx;
-  auto geom = o2::its::GeometryTGeo::Instance();
-  Volume *volHB{nullptr}, *volSt{nullptr}, *volHSt{nullptr}, *volMod{nullptr};
-  std::unordered_map<std::string, Volume*> sym2vol;
-  auto root = std::make_unique<Volume>(geom->composeSymNameITS(), gLbl++, det, false);
-  sym2vol[root->getSymName()] = root.get();
-  for (int ilr = 0; ilr < geom->getNumberOfLayers(); ilr++) {
-    const bool isLayITS3 = (ilr < 3);
-    for (int ihb = 0; ihb < geom->getNumberOfHalfBarrels(); ihb++) {
-      volHB = root->addChild(geom->composeSymNameHalfBarrel(ilr, ihb, isLayITS3), gLbl++, det, false);
-      sym2vol[volHB->getSymName()] = volHB;
-      if (isLayITS3) {
+      auto* volHB = addVolume(root.get(), geom->composeSymNameHalfBarrel(ilr, ihb, isLayITS3(ilr)));
+      if (isLayITS3(ilr)) {
         volHB->setSensorId((2 * ilr) + ihb);
         continue;
       }
-      int nstavesHB = geom->getNumberOfStaves(ilr) / 2;
-      for (int ist = 0; ist < nstavesHB; ist++) {
-        volSt = volHB->addChild(geom->composeSymNameStave(ilr, ihb, ist), gLbl++, det, false);
-        sym2vol[volSt->getSymName()] = volSt;
+      for (int ist = 0; ist < geom->getNumberOfStaves(ilr) / 2; ist++) {
+        auto* volSt = addVolume(volHB, geom->composeSymNameStave(ilr, ihb, ist));
         for (int ihst = 0; ihst < geom->getNumberOfHalfStaves(ilr); ihst++) {
-          volHSt = volSt->addChild(geom->composeSymNameHalfStave(ilr, ihb, ist, ihst), gLbl++, det, false);
-          sym2vol[volHSt->getSymName()] = volHSt;
+          auto* volHSt = addVolume(volSt, geom->composeSymNameHalfStave(ilr, ihb, ist, ihst));
           for (int imd = 0; imd < geom->getNumberOfModules(ilr); imd++) {
-            volMod = volHSt->addChild(geom->composeSymNameModule(ilr, ihb, ist, ihst, imd), gLbl++, det, false);
-            sym2vol[volMod->getSymName()] = volMod;
+            addVolume(volHSt, geom->composeSymNameModule(ilr, ihb, ist, ihst, imd));
           }
         }
       }
@@ -410,27 +375,22 @@ Volume::Ptr DetectorITS::buildHierarchyIT3(Volume::SensorMapping& sensorMap)
   int lay = 0, hba = 0, sta = 0, ssta = 0, modd = 0, chip = 0;
   for (int ich = 0; ich < geom->getNumberOfChips(); ich++) {
     geom->getChipId(ich, lay, hba, sta, ssta, modd, chip);
-    const bool isLayITS3 = (lay < 3);
-    Label lbl(det, ich, true);
-    if (isLayITS3) {
-      Volume* parVol = sym2vol[geom->composeSymNameHalfBarrel(lay, hba, true)];
-      if (!parVol) {
-        LOGP(fatal, "did not find parent for chip {}", ich);
-      }
-      auto* tile = parVol->addChild<SensorIT3>(geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip, true), lbl);
-      tile->setPseudo(true);
-      tile->setSensorId(ich);
-      sensorMap[lbl] = tile;
-    } else {
-      Volume* parVol = sym2vol[modd < 0 ? geom->composeSymNameStave(lay, hba, sta) : geom->composeSymNameModule(lay, hba, sta, ssta, modd)];
-      if (!parVol) {
-        LOGP(fatal, "did not find parent for chip {}", ich);
-      }
-      int nch = modd < 0 ? geom->getNumberOfChipsPerStave(lay) : geom->getNumberOfChipsPerModule(lay);
-      auto* chipVol = parVol->addChild<SensorITS>(geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip % nch), lbl);
-      chipVol->setSensorId(ich);
-      sensorMap[lbl] = chipVol;
+    const Label lbl(det, ich, true);
+    const std::string parSym = isLayITS3(lay) ? geom->composeSymNameHalfBarrel(lay, hba, true) : (modd < 0 ? geom->composeSymNameStave(lay, hba, sta) : geom->composeSymNameModule(lay, hba, sta, ssta, modd));
+    const auto parIt = sym2vol.find(parSym);
+    if (parIt == sym2vol.end()) {
+      LOGP(fatal, "did not find parent {} for chip {}", parSym, ich);
     }
+    Volume* sensor{nullptr};
+    if (isLayITS3(lay)) {
+      sensor = parIt->second->addChild<SensorIT3>(geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip, true), lbl);
+      sensor->setPseudo(true);
+    } else {
+      const int nch = modd < 0 ? geom->getNumberOfChipsPerStave(lay) : geom->getNumberOfChipsPerModule(lay);
+      sensor = parIt->second->addChild<SensorITS>(geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip % nch), lbl);
+    }
+    sensor->setSensorId(ich);
+    sensorMap[lbl] = sensor;
   }
   return root;
 }

@@ -21,24 +21,27 @@
 namespace o2::alignrs
 {
 
+/// ITS2 chip: the measurement plane is the effective sensitive layer, not the chip volume
 class SensorITS final : public Volume
 {
  public:
   using Volume::Volume;
   void defineMatrixL2G() final;
   void defineMatrixT2L() final;
-  void computeJacobianL2T(const double* pos, Matrix66& jac) const final;
   /// writes the Legendre or Inextensional calibration block, moved here from
   /// Volume::writeMillepedeResults since the calibration DOFSet layout is detector-specific
   bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const final;
 };
 
+/// ITS3 tile: a segment of a cylinder whose local origin is the centre of the circle. The tracking
+/// frame of every cluster is the one normal to the surface at the cluster, hence it varies over the
+/// tile: getT2L() refers to the frame at the centre of the tile only.
 class SensorIT3 final : public Volume
 {
-  using Volume::Volume;
+ public:
+  SensorIT3(const char* symName, Label label, bool virt = false) : Volume(symName, label, virt) { mFixedTrackingFrame = false; }
   void defineMatrixL2G() final;
   void defineMatrixT2L() final;
-  void computeJacobianL2T(const double* pos, Matrix66& jac) const final;
 };
 
 } // namespace o2::alignrs

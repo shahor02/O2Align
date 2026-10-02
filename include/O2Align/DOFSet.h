@@ -13,6 +13,8 @@
 #define O2_ALIGN_DOFSET_H
 
 #include <algorithm>
+#include <array>
+#include <utility>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -48,7 +50,8 @@ class DOFSet
     RigidBody,
     Legendre,
     Inextensional,
-    TPCVDrift
+    TPCVDrift,
+    MeanVertex
   };
   
   virtual ~DOFSet() = default;
@@ -143,6 +146,13 @@ class LegendreDOFSet final : public DOFSet
 
   static double getSensorPhiWidth(int sensorID, double radius);
   static std::pair<double, double> computeUV(double gloX, double gloY, double gloZ, int sensorID, double radius);
+  /// phi range [phi1, phi2] (in [0, 2pi)) of the ITS3 half-barrel sensor, excluding the equatorial gap
+  static std::pair<double, double> getSensorPhiBorders(int sensorID, double radius);
+
+  /// 8-point Gauss-Legendre quadrature on [-1, 1] (Numerical Recipes 4.6), used to integrate the
+  /// radial deformation along the arc
+  static constexpr std::array<double, 8> GaussNodes = {-0.9602898564975363, -0.7966664774136267, -0.5255324099163290, -0.1834346424956498, 0.1834346424956498, 0.5255324099163290, 0.7966664774136267, 0.9602898564975363};
+  static constexpr std::array<double, 8> GaussWeights = {0.1012285362903763, 0.2223810344533745, 0.3137066458778873, 0.3626837833783620, 0.3626837833783620, 0.3137066458778873, 0.2223810344533745, 0.1012285362903763};
   
  private:
   int mOrder;
@@ -212,6 +222,26 @@ class TPCVDriftDOFSet final : public DOFSet
  private:
   double mZLength{-1.}; // negative until set from the correction maps
   ClassDefOverride(TPCVDriftDOFSet, 1);
+};
+
+/// Position of the mean interaction vertex, owned by the single volume of DetectorPVT and fitted
+/// independently in every time slot of the mean vertex calibration. The DOFs are the corrections
+/// to the X, Y, Z of the MeanVertexObject in the global frame. Being the position of the measurement
+/// (the mean-vertex prior) rather than of a sensor, its derivatives are not produced by the generic
+/// chain but directly by the vertex constraint (AlignmentSpec::addMeanVertexPrior).
+class MeanVertexDOFSet final : public DOFSet
+{
+ public:
+  enum MeanVertexDOF : uint8_t { X = 0, Y, Z, NDOF };
+  static constexpr const char* MeanVertexDOFNames[MeanVertexDOF::NDOF] = {"X", "Y", "Z"};
+
+  MeanVertexDOFSet() : DOFSet(NDOF) {}
+  Type type() const override { return Type::MeanVertex; }
+  std::string dofName(int idx) const override { return MeanVertexDOFNames[idx]; }
+  /// not applicable: throws, see the class description
+  void fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<Eigen::MatrixXd> out) const override;
+
+  ClassDefOverride(MeanVertexDOFSet, 1);
 };
 
 } // namespace o2::alignrs

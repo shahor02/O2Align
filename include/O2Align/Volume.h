@@ -32,7 +32,12 @@
 
 namespace o2::alignrs
 {
-using Matrix36 = Eigen::Matrix<double, 3, 6>;
+class TimeSlotsSet;
+}
+
+namespace o2::alignrs
+{
+using Matrix26 = Eigen::Matrix<double, 2, 6>; // d(Y,Z)/d(rigid-body DOFs)
 using Matrix66 = Eigen::Matrix<double, 6, 6>;
 
 class Volume
@@ -133,9 +138,12 @@ class Volume
   /// The calibration DOF set is configured once, but its parameters may be fitted independently in
   /// consecutive time slots, the slot ID being encoded in the volume ID of the calibration label
   /// (see Detector::setTimeStamp). By default a volume has the single label of the slot 0.
+  /// The rigid-body DOFs are never time-sliced: a time-dependent position (the mean vertex) is a
+  /// calibration DOF set.
   ///@{
-  /// declare the calibration slots of this volume, in the order of their intervalID
-  void setCalibSlots(const std::vector<int>& slotIDs);
+  /// declare the calibration slots of this volume. The slots are not owned, they are kept to report
+  /// the validity of the fitted values.
+  void setCalibSlots(const TimeSlotsSet& slots);
   /// select the slot the processed TF belongs to. Fatal if the slot was not declared.
   void setActiveCalibSlot(int slotID);
   /// calibration label of the processed TF, the one the derivatives are attributed to
@@ -160,8 +168,17 @@ class Volume
   // transformation matrices
   virtual void defineMatrixL2G() {}
   virtual void defineMatrixT2L() {}
-  /// jacobian of the (LOC)->(TRK) rigid-body parameter transformation at the local point posLoc
-  virtual void computeJacobianL2T(const double* posLoc, Matrix66& jac) const;
+  /// Jacobian of the (LOC)->(TRK) rigid-body parameter transformation (thesis A.64), for the TRK
+  /// rotations taken about the point posLoc (in LOC) instead of the TRK origin: the translation
+  /// block is then -R*[posLoc]x, which equals [t']x*R of A.64 with t' the LOC origin wrt the pivot.
+  /// t2l is the (TRK)->(LOC) matrix, R = its rotation transposed.
+  static void computeJacobianL2T(const TGeoHMatrix& t2l, const double* posLoc, Matrix66& jac);
+  /// (TRK)->(LOC) matrix of the tracking frame rotated by alpha from the global one; equals getT2L()
+  /// for the alpha of the volume. Needed when the tracking frame depends on the measured point (ITS3).
+  /// Valid for the leaves (sensors) only, once their L2G is defined.
+  TGeoHMatrix computeT2L(double alpha) const;
+  /// the tracking frame is the same for all the points of this sensor, i.e. getT2L() is valid for all
+  bool hasFixedTrackingFrame() const noexcept { return mFixedTrackingFrame; }
   /// (LOC)->(GLO) matrix: for sensors and fictitious volumes it is defined by the volume itself,
   /// for the rest it is taken from the (possibly pre-aligned) geometry
   const TGeoHMatrix& getMatrixL2G() const;
@@ -175,10 +192,17 @@ class Volume
   /// RigidBodyDOFSet layout, hence implemented once in the base class. The caller
   /// (writeMillepedeResults) only calls this when the volume has free rigid-body DOFs.
   virtual bool MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, const std::vector<double>* inj, nlohmann::json& entry) const;
-  /// write the calibration block of the closure-test JSON output for this volume. Detector-specific
-  /// (the layout of the calibration DOFSet varies), hence the base implementation only warns that
-  /// it is not implemented for this volume. inj may be nullptr if no misalignment was injected. The
-  /// caller only calls this when the volume has free calibration DOFs.
+  /// fitted value of a parameter, 0 if it was not fitted (fixed or absent from millepede.res)
+  static double getFittedValue(const std::map<uint32_t, double>& labelToValue, uint32_t rawLabel)
+  {
+    const auto it = labelToValue.find(rawLabel);
+    return it != labelToValue.end() ? it->second : 0.;
+  }
+  /// write the calibration block of the closure-test JSON output for this volume. The base
+  /// implementation writes, under "calib", the absolute fitted values of the free DOFs of every
+  /// calibration slot (see calibSlotsToJSON); a detector-specific layout or the subtraction of an
+  /// injected calibration (inj, nullptr if none) needs an override. The caller only calls this when
+  /// the volume has free calibration DOFs.
   virtual bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const;
 
   /// ROOT-output counterparts of MP2JSON_RB/MP2JSON_Calib, same signature, not yet implemented.
@@ -195,11 +219,22 @@ class Volume
   Matrix66 mJL2P;                    // jac (LOC) -> (PAR)
   Matrix66 mJP2L;                    // jac (PAR) -> (LOC)
   TGeoHMatrix mT2L;                  // (TRK) -> (LOC)
+  TGeoHMatrix mG2L;                  // (GLO) -> (LOC), the inverse of getMatrixL2G(), for leaves only
+  bool mFixedTrackingFrame{true};    // see hasFixedTrackingFrame
+
+  /// set mT2L for the standard ALICE tracking frame, i.e. the global one rotated by alpha around Z
+  void setT2LFromAlpha(double alpha) { mT2L = computeT2L(alpha); }
+  /// one record per calibration slot with at least one fitted DOF: the slot ID and validity (if the
+  /// slots were declared) and the absolute fitted values of the free DOFs, by DOF name
+  nlohmann::json calibSlotsToJSON(const std::map<uint32_t, double>& labelToValue) const;
 
  private:
   static InjectedMisalignment loadInjectedMisalignment(const std::string& injectedJsonPath);
   /// apply the "fixed"/"free"/"fix" clauses of a calib rule, common to all calibration DOF types
   static void applyFreeFixConfig(DOFSet& dofSet, const nlohmann::json& cal);
+  /// DOF sets described by the rigidBody / calib clauses of a rule of the DOF configuration
+  static std::unique_ptr<DOFSet> makeRigidBodyDOFSet(const nlohmann::json& rb, const std::string& pattern);
+  static std::unique_ptr<DOFSet> makeCalibDOFSet(const nlohmann::json& cal, const std::string& pattern, const std::string& sym);
 
   std::string mSymName;
   Label mLabel;
@@ -210,8 +245,9 @@ class Volume
   int mSensorId{-1}; // RS check if needed
   std::unique_ptr<DOFSet> mRigidBody;
   std::unique_ptr<DOFSet> mCalib;
-  std::vector<Label> mCalibLabels{}; // calibration label per time slot, filled with the slot 0 in the ctor
-  size_t mActiveCalibSlot{0};        // index in mCalibLabels of the slot being processed
+  std::vector<Label> mCalibLabels{};            // calibration label per time slot, filled with the slot 0 in the ctor
+  size_t mActiveCalibSlot{0};                   // index in mCalibLabels of the slot being processed
+  const TimeSlotsSet* mCalibSlots{nullptr};     //! calibration slots, if declared; not owned
 
   Volume* setParent(Ptr c)
   {

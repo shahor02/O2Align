@@ -12,6 +12,7 @@
 #include "O2Align/SensorITS.h"
 #include "O2Align/DOFSet.h"
 #include "ITSBase/GeometryTGeo.h"
+#include "Framework/Logger.h"
 
 namespace o2::alignrs
 {
@@ -26,30 +27,27 @@ void SensorITS::defineMatrixL2G()
   mL2G *= tra;
 }
 
-void SensorITS::defineMatrixT2L()
+namespace
+{
+/// azimuth of the foot of the normal from the beam axis on a flat chip, as in
+/// GeometryTGeo::extractSensorXAlpha: the local X axis lies in the chip plane
+double getFlatChipAlpha(const TGeoHMatrix& l2g)
 {
   double locA[3] = {-100., 0., 0.}, locB[3] = {100., 0., 0.}, gloA[3], gloB[3];
-  mL2G.LocalToMaster(locA, gloA);
-  mL2G.LocalToMaster(locB, gloB);
+  l2g.LocalToMaster(locA, gloA);
+  l2g.LocalToMaster(locB, gloB);
   double dx = gloB[0] - gloA[0], dy = gloB[1] - gloA[1];
   double t = (gloB[0] * dx + gloB[1] * dy) / (dx * dx + dy * dy);
   double xp = gloB[0] - (dx * t), yp = gloB[1] - (dy * t);
   double alp = std::atan2(yp, xp);
   o2::math_utils::bringTo02Pid(alp);
-  mT2L.RotateZ(alp * TMath::RadToDeg()); // mT2L before is identity and afterwards rotated
-  const TGeoHMatrix l2gI = mL2G.Inverse();
-  mT2L.MultiplyLeft(l2gI);
+  return alp;
 }
+} // namespace
 
-void SensorITS::computeJacobianL2T(const double* posLoc, Matrix66& jac) const
+void SensorITS::defineMatrixT2L()
 {
-  jac.setZero();
-  Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> rotT2L(mT2L.GetRotationMatrix());
-  Eigen::Matrix3d skew, rotL2T = rotT2L.transpose();
-  skew << 0, -posLoc[2], posLoc[1], posLoc[2], 0, -posLoc[0], -posLoc[1], posLoc[0], 0;
-  jac.topLeftCorner<3, 3>() = rotL2T;
-  jac.topRightCorner<3, 3>() = -rotL2T * skew;
-  jac.bottomRightCorner<3, 3>() = rotL2T;
+  setT2LFromAlpha(getFlatChipAlpha(mL2G));
 }
 
 // The caller (Volume::writeMillepedeResults) only invokes this when getCalib() has free DOFs.
@@ -76,9 +74,7 @@ bool SensorITS::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, co
     for (int i = 0; i <= order; ++i) {
       json row = json::array();
       for (int j = 0; j <= i; ++j) {
-        uint32_t raw = calibLbl.raw(idx);
-        auto it = labelToValue.find(raw);
-        double fitted = it != labelToValue.end() ? it->second : 0.0;
+        const double fitted = getFittedValue(labelToValue, calibLbl.raw(idx));
         double ref = (i < static_cast<int>(injM.size()) && j < static_cast<int>(injM[i].size())) ? injM[i][j] : 0.0;
         row.push_back(fitted - ref);
         ++idx;
@@ -111,24 +107,14 @@ bool SensorITS::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, co
       }
       json modeArr = json::array();
       for (int k = 0; k < 4; ++k) {
-        uint32_t raw = calibLbl.raw(off + k);
-        auto it = labelToValue.find(raw);
-        double fitted = it != labelToValue.end() ? it->second : 0.0;
-        modeArr.push_back(fitted - injCoeffs[k]);
+        modeArr.push_back(getFittedValue(labelToValue, calibLbl.raw(off + k)) - injCoeffs[k]);
       }
       modesObj[std::to_string(n)] = modeArr;
     }
     inexEntry["modes"] = modesObj;
 
-    // alpha
-    uint32_t rawAlpha = calibLbl.raw(inexSet->alphaIdx());
-    auto itA = labelToValue.find(rawAlpha);
-    inexEntry["alpha"] = (itA != labelToValue.end() ? itA->second : 0.0) - injI.alpha;
-
-    // beta
-    uint32_t rawBeta = calibLbl.raw(inexSet->betaIdx());
-    auto itB = labelToValue.find(rawBeta);
-    inexEntry["beta"] = (itB != labelToValue.end() ? itB->second : 0.0) - injI.beta;
+    inexEntry["alpha"] = getFittedValue(labelToValue, calibLbl.raw(inexSet->alphaIdx())) - injI.alpha;
+    inexEntry["beta"] = getFittedValue(labelToValue, calibLbl.raw(inexSet->betaIdx())) - injI.beta;
 
     entry["inextensional"] = inexEntry;
     return true;
@@ -145,28 +131,11 @@ void SensorIT3::defineMatrixL2G()
 
 void SensorIT3::defineMatrixT2L()
 {
-  double locA[3] = {-100., 0., 0.}, locB[3] = {100., 0., 0.}, gloA[3], gloB[3];
-  mL2G.LocalToMaster(locA, gloA);
-  mL2G.LocalToMaster(locB, gloB);
-  double dx = gloB[0] - gloA[0], dy = gloB[1] - gloA[1];
-  double t = (gloB[0] * dx + gloB[1] * dy) / (dx * dx + dy * dy);
-  double xp = gloB[0] - (dx * t), yp = gloB[1] - (dy * t);
-  double alp = std::atan2(yp, xp);
-  o2::math_utils::bringTo02Pid(alp);
-  mT2L.RotateZ(alp * TMath::RadToDeg());
-  const TGeoHMatrix l2gI = mL2G.Inverse();
-  mT2L.MultiplyLeft(l2gI);
-}
-
-void SensorIT3::computeJacobianL2T(const double* posLoc, Matrix66& jac) const
-{
-  jac.setZero();
-  Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> rotT2L(mT2L.GetRotationMatrix());
-  Eigen::Matrix3d skew, rotL2T = rotT2L.transpose();
-  skew << 0, -posLoc[2], posLoc[1], posLoc[2], 0, -posLoc[0], -posLoc[1], posLoc[0], 0;
-  jac.topLeftCorner<3, 3>() = rotL2T;
-  jac.topRightCorner<3, 3>() = -rotL2T * skew;
-  jac.bottomRightCorner<3, 3>() = rotL2T;
+  // The local origin of the tube segment is the centre of the circle, hence the flat-chip formula
+  // does not apply: take the reference frame of the tile from the geometry, which treats ITS3
+  // separately (GeometryTGeo::extractSensorXAlpha). It is used only as a reference, the derivatives
+  // being computed in the tracking frame of every cluster, see hasFixedTrackingFrame.
+  setT2LFromAlpha(o2::its::GeometryTGeo::Instance()->getSensorRefAlpha(getSensorId()));
 }
 
 } // namespace o2::alignrs

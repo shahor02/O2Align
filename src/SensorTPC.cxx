@@ -42,36 +42,11 @@ void SensorTPC::defineMatrixT2L()
 // the fitted values are always absolute.
 bool EnvelopeTPC::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* /*inj*/, nlohmann::json& entry) const
 {
-  using json = nlohmann::json;
-  const auto* calib = dynamic_cast<const TPCVDriftDOFSet*>(getCalib());
-  if (!calib) {
+  if (!dynamic_cast<const TPCVDriftDOFSet*>(getCalib())) {
     LOGP(warn, "Calibration DOFs of {} are not the TPC drift ones, no result written", getSymName());
     return false;
   }
-  json slotArr = json::array();
-  for (const auto& lbl : getCalibLabels()) {
-    const int slotID = static_cast<int>(lbl.id());
-    json rec;
-    rec["slot"] = slotID;
-    if (mTimeSlots) {
-      const auto& slot = mTimeSlots->getSlotByID(slotID);
-      rec["run"] = slot.runNumber;
-      rec["tsS"] = slot.timeStampS;
-      rec["tsE"] = slot.timeStampE;
-    }
-    bool anyFitted = false;
-    for (int i = 0; i < calib->nDOFs(); ++i) {
-      if (!calib->isFree(i)) {
-        continue;
-      }
-      const auto it = labelToValue.find(lbl.raw(i));
-      rec[calib->dofName(i)] = it != labelToValue.end() ? it->second : 0.0;
-      anyFitted = anyFitted || it != labelToValue.end();
-    }
-    if (anyFitted) {
-      slotArr.push_back(std::move(rec));
-    }
-  }
+  auto slotArr = calibSlotsToJSON(labelToValue);
   if (slotArr.empty()) {
     return false;
   }

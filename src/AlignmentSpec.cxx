@@ -113,12 +113,69 @@ DerivativeContext makeDerivativeContext(const FrameInfoExt& frame, const TrackD&
           .dzdx = slopes.dzdx};
 }
 
-Matrix36 getRigidBodyBaseDerivatives(const DerivativeContext& ctx)
+Matrix26 getRigidBodyBaseDerivatives(const DerivativeContext& ctx)
 {
   static const RigidBodyDOFSet sRigidBodyBasis;
-  Eigen::MatrixXd dyn(3, sRigidBodyBasis.nDOFs());
+  Eigen::MatrixXd dyn(2, sRigidBodyBasis.nDOFs());
   sRigidBodyBasis.fillDerivatives(ctx, dyn);
   return dyn;
+}
+
+/// d(prediction)/d(rigid-body DOFs of the measurement leaf, in its local frame), thesis A.57-A.58:
+/// the base derivative (A.57) is evaluated in the tracking frame wrt rotations about the point
+/// (x,0,0) of the measurement plane, then transformed to the local frame of the leaf with the
+/// jacobian J_L2T for that pivot.
+Matrix26 getLeafRigidBodyDerivatives(const Volume& leaf, const FrameInfoExt& frame, const DerivativeContext& ctx)
+{
+  // the tracking frame of an ITS3 tile depends on the point, the other sensors have a fixed one
+  TGeoHMatrix t2lPoint;
+  const TGeoHMatrix* t2l = &leaf.getT2L();
+  if (!leaf.hasFixedTrackingFrame()) {
+    t2lPoint = leaf.computeT2L(frame.alpha);
+    t2l = &t2lPoint;
+  }
+  const double posTrk[3] = {frame.x, 0., 0.};
+  double posLoc[3];
+  t2l->LocalToMaster(posTrk, posLoc);
+  Matrix66 jacL2T;
+  Volume::computeJacobianL2T(*t2l, posLoc, jacL2T);
+  return getRigidBodyBaseDerivatives(ctx) * jacL2T;
+}
+
+/// precision matrix of a 2D measurement in the tracking frame, accounting for the Y-Z correlation
+/// (e.g. the pad tilt of the TRD). Returns false if the covariance is not positive definite.
+bool getMeasurementPrecision(const o2::BaseCluster<float>& cluster, Eigen::Matrix2d& prec)
+{
+  Eigen::Matrix2d cov;
+  cov << cluster.getSigmaY2(), cluster.getSigmaYZ(), cluster.getSigmaYZ(), cluster.getSigmaZ2();
+  if (cov(0, 0) <= 0. || cov.determinant() <= 0.) {
+    return false;
+  }
+  prec = cov.inverse();
+  return true;
+}
+
+/// precision of the multiple-scattering kinks of the GBL local slopes, which are the ALICE (snp, tgl):
+/// a scattering angle theta0 in each of the two orthogonal directions transverse to the track gives
+/// var(snp) = theta0^2 (1-snp^2)(1+tgl^2) and var(tgl) = theta0^2 (1+tgl^2)^2, as in the material
+/// correction of the KF (TrackParCov::correctForMaterial)
+Eigen::Vector2d getScatteringPrecision(const TrackD& trk, double theta0)
+{
+  const double theta2 = theta0 * theta0, snp = trk.getSnp(), tgl2 = trk.getTgl() * trk.getTgl();
+  return {1. / (theta2 * (1. - snp * snp) * (1. + tgl2)), 1. / (theta2 * (1. + tgl2) * (1. + tgl2))};
+}
+
+/// reorder the ALICE (Y,Z,Snp,Tgl,Q/Pt) transport jacobian to the GBL (Q/Pt,Snp,Tgl,Y,Z) convention
+gbl::Matrix5d toGBLOrder(const gbl::Matrix5d& jacALICE)
+{
+  constexpr int perm[5] = {4, 2, 3, 0, 1};
+  gbl::Matrix5d jacGBL;
+  for (int i = 0; i < 5; i++) {
+    for (int j = 0; j < 5; j++) {
+      jacGBL(i, j) = jacALICE(perm[i], perm[j]);
+    }
+  }
+  return jacGBL;
 }
 } // namespace
 
@@ -188,8 +245,6 @@ class AlignmentSpec final : public Task
     }
     mPVT = std::make_unique<DetectorPVT>(); // virtual, always created: it has no data of its own
     mDetectors.push_back(mPVT.get());
-    // the same condition under which getAlignmentSpec requests the TPC cluster transformation inputs
-    mLoadTPCCalib = mTPC && !mOutOpt[o2::alignrs::OutputOpt::MilleRes];
   }
 
   void init(InitContext& ic) final;
@@ -202,10 +257,6 @@ class AlignmentSpec final : public Task
   void updateTimeDependentParams(ProcessingContext& pc);
   void buildHierarchy();
 
-  bool processITSPart(Track& resTrack, const GlobalIDSet& contributorsGID);
-  bool processTPCPart(Track& resTrack, const GlobalIDSet& contributorsGID);
-  bool processTRDPart(Track& resTrack, const GlobalIDSet& contributorsGID);
-  bool processTOFPart(Track& resTrack, const GlobalIDSet& contributorsGID);
 
   // calculate the transport jacobian for points FROM and TO numerically via ridder's method
   // this assumes the track is already at point FROM and will be extrapolated to TO's x (xTo)
@@ -218,26 +269,38 @@ class AlignmentSpec final : public Task
   bool refitPV(const PVertex& vtxOrig, const std::vector<Track>& resTracks, PVertex& vtxRefit);
 
   // fill the GBL points of the track frames from the ipStart slot outward
-  bool fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points);
+  // mvPriorCovScale > 0: impose on the vertex point, besides the refitted vertex, the mean vertex prior
+  // with the luminous region covariance scaled by this factor (per-track PV constraint mode)
+  bool fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, double mvPriorCovScale = 0.);
 
   // fit the constructed trajectory and store it to gblTraj if the Mille data is requested
   bool fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, std::vector<gbl::GblTrajectory>& gblTraj, FitInfo& fitOut);
 
   // build and fit the GBL trajectory of a single track, accounting its frames from the ipStart slot outward
-  bool buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj);
+  bool buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj, double mvPriorCovScale = 0.);
 
   // d(local offsets at the vertex point) / d(vertex position) of the track, which is at the same
   // time the derivative of the local position of the mean vertex wrt its global position
   static Eigen::MatrixXd computeVertexTransformation(const Track& resTrack);
 
   // impose the prior of the mean interaction point on the vertex point of one track of a collision
-  void addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint);
+  void addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint, double covScale = 1.);
 
   // build and fit a single composed GBL trajectory for all tracks of one collision, with their
   // common vertex position as parameters shared by all of them
   bool buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj);
 
-  // prepare ITS measuremnt points
+  /// counters of the loop over the vertices of a TF
+  struct VertexLoopStat {
+    int nVtx{0}, nVtxAcc{0}, nTrc{0}, nTrcAcc{0};
+  };
+  // steps of process(), see there
+  void collectVertexTracks(const V2TRef& trackRef, bool useVertexConstraint, std::unordered_map<GTrackID, bool>& ambigTable, std::vector<Track>& resTracks);
+  void refitTracks(std::vector<Track>& resTracks, bool useVertexConstraint);
+  bool constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks);
+  void buildVertexTrajectories(std::vector<Track>& resTracks, bool useCommonVertex, std::vector<gbl::GblTrajectory>& gblTraj, VertexLoopStat& stat);
+  void writeMilleRecords(std::vector<gbl::GblTrajectory>& gblTraj);
+
   // build track to vertex association
   void buildT2V();
 
@@ -269,11 +332,10 @@ class AlignmentSpec final : public Task
   o2::framework::TimingInfo mTimeInfo;
   o2::alignrs::OutputEnum mOutOpt;
   std::unique_ptr<o2::utils::TreeStreamRedirector> mDBGOut;
+  std::unique_ptr<gbl::MilleBinary> mMille; // Millepede binary, open for the whole run
   std::vector<dataformats::VertexBase> mPVMC;
   std::vector<int> mT2PVMC;
   bool mIsITS3{true};
-  const o2::itsmft::TopologyDictionary* mITSDict{nullptr};
-  const o2::its3::TopologyDictionary* mIT3Dict{nullptr};
   o2::globaltracking::RecoContainer* mRecoData = nullptr;
   std::unique_ptr<steer::MCKinematicsReader> mcReader;
   o2::vertexing::PVertexer mVertexer; // used to refit the PV with the tracks refitted in the current alignment
@@ -285,9 +347,7 @@ class AlignmentSpec final : public Task
   std::unique_ptr<DetectorTOF> mTOF;
   std::vector<Detector*> mDetectors; // all created detectors, in the order of the detector index
 
-  bool mLoadTPCCalib{false};                    // the TPC cluster transformation inputs are requested
   std::unique_ptr<o2::gpu::GPUParam> mTPCParam; // TPC cluster error parametrization, field-dependent
-  float mTPCParamField{1e-6f};                  // field mTPCParam was built for
   o2::tpc::VDriftHelper mTPCVDriftHelper{};     // drift calibration accounted by the correction maps
   std::shared_ptr<DataRequest> mDataRequest;
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
@@ -304,7 +364,6 @@ class AlignmentSpec final : public Task
   std::unique_ptr<TMethodCall> mUsrConfMethod; // its entry point, loaded by init
   const Params* mParams{nullptr};
   MisalignmentModel mMisalignment;
-  std::array<Eigen::Matrix<double, 6, 1>, 6> mRigidBodyParams; // (dx,dy,dz,rx,ry,rz) in LOC per sensorID
 };
 
 void AlignmentSpec::init(InitContext& ic)
@@ -409,416 +468,217 @@ void AlignmentSpec::run(ProcessingContext& pc)
 
 void AlignmentSpec::process() // collisions
 {
-  auto prop = o2::base::PropagatorD::Instance();
-  const auto bz = prop->getNominalBz();
-  const bool fieldON = std::abs(bz) > 0.1;
-  std::span<const o2::MCCompLabel> mcLbls;
-  if (mUseMC) {
-    mcLbls = mRecoData->getITSTracksMCLabels();
-  }
-  // prepare detector data
-  for (auto det : mDetectors) {
+  for (auto* det : mDetectors) {
     det->prepareData(mRecoData);
   }
-
   if (mParams->usePVConstraintMinTracks > 0) {
     buildT2V(); // RSTODO for data
-  }
-
-  if (mNThreads > 1 && !(mParams->misAlgJson.empty())) {
-    LOGP(warn, "Applying misalignment works only single-threaded, forcing to 1");
-    mNThreads = 1;
   }
   LOGP(info, "Starting fits with {} threads", mNThreads);
   std::vector<gbl::GblTrajectory> gblTraj;
   std::vector<Track> resTracks;
-
   const auto primVertices = mRecoData->getPrimaryVertices();
   const auto primVer2TRefs = mRecoData->getPrimaryVertexMatchedTrackRefs();
-  const auto primVerGIs = mRecoData->getPrimaryVertexMatchedTracks();
   std::unordered_map<GTrackID, bool> ambigTable;
-  // process vertices with contributor tracks
   const int nvRefs = primVer2TRefs.size();
-
-  auto timeStart = std::chrono::high_resolution_clock::now();
-  int cFailedRefit{0}, cFailedProp{0}, cSelected{0}, cGBLFit{0}, cGBLFitFail{0}, cGBLChi2Rej{0}, cGBLConstruct{0};
-  double chi2Sum{0}, lostWeightSum{0};
-  int ndfSum{0};
-
-  auto resetTrackCov = [](TrackD& trk) {
-    trk.resetCovariance();
-    trk.setCov(trk.getQ2Pt() * trk.getQ2Pt() * trk.getCov()[14], 14);
-  };
-
-  int nVtx = 0, nVtxAcc = 0, nTrc = 0, nTrcAcc = 0;
+  VertexLoopStat stat;
   for (int ivref = 0; ivref < nvRefs; ivref++) {
-    const o2::dataformats::PrimaryVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;
-    const auto& trackRef = primVer2TRefs[ivref];
-    bool useVertexConstraint = false;
-    if (vtx && mParams->usePVConstraintMinTracks > 0 && vtx->getNContributors() >= mParams->usePVConstraintMinTracks) {
-      useVertexConstraint = true;
+    // the last reference holds the tracks not attached to any vertex
+    const PVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;
+    bool useVertexConstraint = vtx && mParams->usePVConstraintMinTracks > 0 && vtx->getNContributors() >= mParams->usePVConstraintMinTracks;
+    if (useVertexConstraint) {
       mStat.data[ProcStat::kInput][ProcStat::kVertices]++;
     }
     if (mParams->verbose > 1) {
-      LOGP(info, "processing vtref {} of {} with {} tracks, {}", ivref, nvRefs, trackRef.getEntries(), vtx ? vtx->asString() : std::string{});
+      LOGP(info, "processing vtref {} of {} with {} tracks, {}", ivref, nvRefs, primVer2TRefs[ivref].getEntries(), vtx ? vtx->asString() : std::string{});
     }
-    resTracks.clear();
-    nVtx++;
-    for (int src : mTrackSources) {      
-      int start = trackRef.getFirstEntryOfSource(src), end = start + trackRef.getEntriesOfSource(src);
-      for (int ti = start; ti < end; ti++) {
-        const auto trackIndex = primVerGIs[ti];
-        if (trackIndex.isAmbiguous()) {
-          auto& ambSeen = ambigTable[trackIndex]; // ambiguous track does not use PV constraint, no need to account it again
-          if (ambSeen) { // processed
-            continue;
-          }
-          ambSeen = true;
-        }
-        const auto& trPar = mRecoData->getTrackParam(trackIndex);
-        if (fieldON && trPar.getPt() < mParams->minPt) {
+    stat.nVtx++;
+    collectVertexTracks(primVer2TRefs[ivref], useVertexConstraint, ambigTable, resTracks);
+    refitTracks(resTracks, useVertexConstraint);
+    if (useVertexConstraint && !constrainWithVertex(*vtx, ivref, resTracks)) {
+      useVertexConstraint = false; // the tracks of this vertex are fitted w/o the vertex point
+    }
+    if (useVertexConstraint) {
+      stat.nVtxAcc++;
+    }
+    buildVertexTrajectories(resTracks, useVertexConstraint && mParams->useMultyTrackPVConstraint, gblTraj, stat);
+  }
+  LOGP(info, "Fitted {} of {} tracks of {} of {} vertices", stat.nTrcAcc, stat.nTrc, stat.nVtxAcc, stat.nVtx);
+  mGBLStat.print();
+  writeMilleRecords(gblTraj);
+}
+
+// Book the tracks of one vertex reference for the refit, with an extra frame prebooked for the
+// vertex point if the vertex constraint is requested.
+void AlignmentSpec::collectVertexTracks(const V2TRef& trackRef, bool useVertexConstraint, std::unordered_map<GTrackID, bool>& ambigTable, std::vector<Track>& resTracks)
+{
+  const bool fieldON = std::abs(o2::base::PropagatorD::Instance()->getNominalBz()) > 0.1;
+  const auto primVerGIs = mRecoData->getPrimaryVertexMatchedTracks();
+  resTracks.clear();
+  for (int src : mTrackSources) {
+    const int start = trackRef.getFirstEntryOfSource(src), end = start + trackRef.getEntriesOfSource(src);
+    for (int ti = start; ti < end; ti++) {
+      const auto trackIndex = primVerGIs[ti];
+      if (trackIndex.isAmbiguous()) {
+        auto& ambSeen = ambigTable[trackIndex]; // an ambiguous track is accounted only with the 1st vertex it is attached to
+        if (ambSeen) {
           continue;
         }
-        mStat.data[ProcStat::kInput][ProcStat::kTracks]++;
-        // account preliminary
-        auto& tr = resTracks.emplace_back();
-        tr.gid = trackIndex;
-        tr.track =  convertTrack<double>(trPar);
-        resetTrackCov(tr.track);
-        tr.kfFit.chi2 = 0.f; // the detectors accumulate the chi2 of their own points into it
-        if (useVertexConstraint) { // reserve a frame for eventual vertex point
-          tr.info.emplace_back();
-        }        
+        ambSeen = true;
+      }
+      const auto& trPar = mRecoData->getTrackParam(trackIndex);
+      if (fieldON && trPar.getPt() < mParams->minPt) {
+        continue;
+      }
+      mStat.data[ProcStat::kInput][ProcStat::kTracks]++;
+      auto& tr = resTracks.emplace_back();
+      tr.gid = trackIndex;
+      tr.track = convertTrack<double>(trPar);
+      resetTrackCovariance(tr.track);
+      tr.kfFit.chi2 = 0.f;       // the detectors accumulate the chi2 of their own points into it
+      if (useVertexConstraint) { // reserve a frame for the eventual vertex point
+        tr.info.emplace_back();
       }
     }
-    // fit the tracks, prepare for GLB
+  }
+}
+
+// Let every contributing detector add its points to the tracks and refit them inward, to the
+// innermost point (or the slot of the vertex point). A failed track has its gid cleared.
+void AlignmentSpec::refitTracks(std::vector<Track>& resTracks, bool useVertexConstraint)
+{
 #ifdef WITH_OPENMP
 #pragma omp parallel for schedule(dynamic) num_threads(mNThreads)
 #endif
-    for (size_t itr = 0; itr < (int)resTracks.size(); itr++) {
-      auto &track = resTracks[itr];
-      auto contributorsGID = mRecoData->getSingleDetectorRefs(track.gid);
-      if ( track.gid.includesDet(DetID::ITS) && mITS && !mITS->prepareTrack(mRecoData, contributorsGID, track) ) {
-        track.gid.clear(); // mark as failed
-        continue;
-      }
-      if ( track.gid.includesDet(DetID::TPC) && mTPC && !mTPC->prepareTrack(mRecoData, contributorsGID, track) ) { // do we want to abandont the track if TPC fails? or just continue with ITS?
-        track.gid.clear(); // mark as failed
-        continue;
-      }
-      if ( track.gid.includesDet(DetID::TRD) && mTRD && !mTRD->prepareTrack(mRecoData, contributorsGID, track) ) { // do we want to abandont the track if TRD fails? or just continue with ITS?
-        track.gid.clear(); // mark as failed
-        continue;
-      }
-      if ( track.gid.includesDet(DetID::TOF) && mTOF && !mTOF->prepareTrack(mRecoData, contributorsGID, track) ) { // do we want to abandont the track if TOF fails? or just continue with ITS?
-        track.gid.clear(); // mark as failed
-        continue;
-      }
-      // inward refit to the innermost point
-      if (!track.fitTrack((int)track.info.size() - 1, useVertexConstraint ? 1 : 0, false, true)) {
-        track.gid.clear(); // mark as failed
-        continue;
+  for (int itr = 0; itr < (int)resTracks.size(); itr++) {
+    auto& track = resTracks[itr];
+    const auto contributorsGID = mRecoData->getSingleDetectorRefs(track.gid);
+    bool ok = true;
+    for (auto* det : mDetectors) { // in the order of the radial position
+      const int detID = det->getO2DetID();
+      if (detID >= 0 && track.gid.includesDet(detID) && !det->prepareTrack(mRecoData, contributorsGID, track)) {
+        ok = false; // the whole track is abandoned if any of its detectors fails
+        break;
       }
     }
-    // RSTODO: check if the tracks are valid and count them
-    
-    // if vertex usage is allowed, refit vertex and update prompt tracks with the vertex point
-    if (useVertexConstraint) {
-      PVertex vtxRefit{};
-      if (refitPV(*vtx, resTracks, vtxRefit)) {
-        nVtxAcc++;
-        mStat.data[ProcStat::kAccepted][ProcStat::kVertices]++;
-        if (mParams->verbose > 1) {
-          LOGP(info, "refitted vtref {}: {} (original: {})", ivref, vtxRefit.asString(), vtx->asString());
-        }
-        // update the contributors with the refitted vertex, put to the frame prebooked in their info[0] slot
-        int nTrcWithPV = 0;
+    if (!ok || !track.fitTrack((int)track.info.size() - 1, useVertexConstraint ? 1 : 0, false, true)) {
+      track.gid.clear(); // mark as failed
+    }
+  }
+}
+
+// Refit the vertex with the refitted tracks and add the refitted vertex as the point prebooked in
+// the info[0] slot of its contributors. Returns false if the vertex refit failed.
+bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks)
+{
+  PVertex vtxRefit{};
+  if (!refitPV(vtx, resTracks, vtxRefit)) {
+    return false;
+  }
+  mStat.data[ProcStat::kAccepted][ProcStat::kVertices]++;
+  if (mParams->verbose > 1) {
+    LOGP(info, "refitted vtref {}: {} (original: {})", ivref, vtxRefit.asString(), vtx.asString());
+  }
+  int nTrcWithPV = 0;
 #ifdef WITH_OPENMP
 #pragma omp parallel for schedule(dynamic) num_threads(mNThreads) reduction(+ : nTrcWithPV)
 #endif
-        for (int itr = 0; itr < (int)resTracks.size(); itr++) {
-          auto& track = resTracks[itr];
-          if (track.gid.isPVContributor()) {
-            if (!track.updateWithVertex(vtxRefit)) {
-              LOGP(debug, "Failed to update track {} with {}", track.gid.asString(), vtxRefit.asString());
-              continue;
-            }
-            nTrcWithPV++;
-          }
-        }
-        mStat.data[ProcStat::kAccepted][ProcStat::kTracksWithVertex] += nTrcWithPV;
-      } else {
-        useVertexConstraint = false; // the tracks of this vertex are fitted w/o the vertex point
-      }
+  for (int itr = 0; itr < (int)resTracks.size(); itr++) {
+    auto& track = resTracks[itr];
+    if (!track.gid.isPVContributor()) {
+      continue;
     }
-    // create the GBL input: 1st, if the common vertex constraint is requested, the tracks
-    // constrained by the refitted vertex, i.e. those whose prebooked info[0] slot holds the vertex
-    // point. Otherwise they are fitted separately below, with the vertex as an ordinary measured
-    // point of every track.
-    const bool useCommonVertex = useVertexConstraint && mParams->useMultyTrackPVConstraint;
-    if (useCommonVertex) {
-      std::vector<Track*> contributors;
-      for (auto& resTrack : resTracks) {
-        if (!resTrack.gid.isIndexSet() || resTrack.info.empty() || !resTrack.info.front().isVertex()) {
-          continue;
-        }
+    if (!track.updateWithVertex(vtxRefit)) {
+      LOGP(debug, "Failed to update track {} with {}", track.gid.asString(), vtxRefit.asString());
+      continue;
+    }
+    nTrcWithPV++;
+  }
+  mStat.data[ProcStat::kAccepted][ProcStat::kTracksWithVertex] += nTrcWithPV;
+  return true;
+}
+
+// Create the GBL input of the tracks of one vertex: 1st, if the common vertex constraint is
+// requested, a single composed trajectory of the tracks whose prebooked info[0] slot holds the
+// vertex point. Then the remaining tracks, each separately: those carrying the vertex point are
+// fitted from it on, treating it as an ordinary measured point of this track only, the others from
+// their 1st measured point.
+void AlignmentSpec::buildVertexTrajectories(std::vector<Track>& resTracks, bool useCommonVertex, std::vector<gbl::GblTrajectory>& gblTraj, VertexLoopStat& stat)
+{
+  if (useCommonVertex) {
+    std::vector<Track*> contributors;
+    for (auto& resTrack : resTracks) {
+      if (resTrack.gid.isIndexSet() && !resTrack.info.empty() && resTrack.info.front().isVertex()) {
         contributors.push_back(&resTrack);
       }
-      nTrc += (int)contributors.size();
-      // all of them go to a single composed trajectory sharing the vertex position, hence the
-      // collision is a single Millepede local fit object
-      if (buildGBLVertex(contributors, gblTraj)) {
-        nTrcAcc += (int)contributors.size();
-      }
     }
-    // then the tracks not accounted in a composed trajectory: those carrying the vertex point are
-    // fitted from it on, treating it as an ordinary measured point of this track only. If a vertex
-    // slot was prebooked but left invalid, the fit must start from the 1st measured point
-    for (auto& resTrack : resTracks) {
-      if (!resTrack.gid.isIndexSet() || resTrack.info.empty()) {
-        continue; // failed track
-      }
-      if (useCommonVertex && resTrack.info.front().isVertex()) {
-        continue; // already accounted with the common vertex constraint
-      }
-      nTrc++;
-      if (buildGBLTrack(resTrack, resTrack.info.front().isValid() ? 0 : 1, gblTraj)) {
-        nTrcAcc++;
-      }
+    stat.nTrc += (int)contributors.size();
+    if (buildGBLVertex(contributors, gblTraj)) { // the collision is a single Millepede local fit object
+      stat.nTrcAcc += (int)contributors.size();
     }
   }
-  LOGP(info, "Fitted {} of {} tracks of {} of {} vertices", nTrcAcc, nTrc, nVtxAcc, nVtx);
-  mGBLStat.print();
-
-/*
-  // Data
-
-#ifdef WITH_OPENMP
-#pragma omp parallel num_threads(mNThreads) \
-  reduction(+ : cFailedRefit)               \
-  reduction(+ : cFailedProp)                \
-  reduction(+ : cSelected)                  \
-  reduction(+ : cGBLFit)                    \
-  reduction(+ : cGBLFitFail)                \
-  reduction(+ : cGBLChi2Rej)                \
-  reduction(+ : cGBLConstruct)              \
-  reduction(+ : chi2Sum)                    \
-  reduction(+ : lostWeightSum)              \
-  reduction(+ : ndfSum)
-#endif
-  {
-#ifdef WITH_OPENMP
-    const int tid = omp_get_thread_num();
-#else
-    const int tid = 0;
-#endif
-    auto& gblTrajSlot = gblTrajSlots[tid];
-    auto& resTrackSlot = resTrackSlots[tid];
-
-#ifdef WITH_OPENMP
-#pragma omp for schedule(dynamic)
-#endif
-    for (size_t iTrk = 0; iTrk < (int)itsTracks.size(); ++iTrk) {
-      const auto& trk = itsTracks[iTrk];
-      if (trk.getNClusters() < mParams->minITSCls ||
-          (trk.getChi2() / ((float)trk.getNClusters() * 2 - 5)) >= mParams->maxITSChi2Ndf ||
-          trk.getPt() < mParams->minPt ||
-          (mUseMC && (!mcLbls[iTrk].isValid() || !mcLbls[iTrk].isCorrect()))) {
-        continue;
-      }
-      ++cSelected;
-      Track& resTrack = resTrackSlot.emplace_back();
-      if (!prepareITSTrack((int)iTrk, trk, resTrack)) {
-        ++cFailedRefit;
-        resTrackSlot.pop_back();
-        continue;
-      }
-
-      o2::track::TrackParD* refLin = nullptr;
-      if (mParams->useStableRef) {
-        refLin = &resTrack.track;
-      }
-
-      // outward stepping from track IU
-      auto wTrk = resTrack.track;
-      const bool hasPV = resTrack.info[0]->lr == -1;
-      std::vector<gbl::GblPoint> points;
-      bool failed = false;
-      const int np = (int)resTrack.points.size();
-      track::TrackLTIntegral lt;
-      lt.setTimeNotNeeded();
-      constexpr int perm[5] = {4, 2, 3, 0, 1}; // ALICE->GBL: Q/Pt,Snp,Tgl,Y,Z
-      for (int ip{0}; ip < np; ++ip) {
-        const auto& frame = *resTrack.info[ip];
-        gbl::Matrix5d err = gbl::Matrix5d::Identity(), jacALICE = gbl::Matrix5d::Identity(), jacGBL;
-        float msErr = 0.f;
-        if (ip) {
-          // numerically calculates the transport jacobian from prev. point to this point
-          // then we actually do the step to the point and accumulate the material
-          if (!getTransportJacobian(wTrk, frame.x, frame.alpha, jacALICE, err) ||
-              !prop->propagateToAlphaX(wTrk, refLin, frame.alpha, frame.x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt)) {
-            ++cFailedProp;
-            failed = true;
-            break;
-          }
-          msErr = its::math_utils::MSangle(trk.getPID().getMass(), trk.getP(), lt.getX2X0());
-          // after computing jac, reorder to GBL convention
-          for (int i = 0; i < 5; i++) {
-            for (int j = 0; j < 5; j++) {
-              jacGBL(i, j) = jacALICE(perm[i], perm[j]);
-            }
-          }
-        }
-
-        // wTrk is now in the measurment frame
-        gbl::GblPoint point(jacGBL);
-        // measurement
-        Eigen::Vector2d res, prec;
-        res << frame.positionTrackingFrame[0] - wTrk.getY(), frame.positionTrackingFrame[1] - wTrk.getZ();
-
-        // here we can apply some misalignment on the measurment
-        if (!applyMisalignment(res, frame, wTrk, iTrk)) {
-          failed = true;
-          break;
-        }
-
-        prec << 1. / resTrack.points[ip].sig2y, 1. / resTrack.points[ip].sig2z;
-        // the projection matrix is in the tracking frame the idendity so no need to diagonalize it
-        point.addMeasurement(res, prec);
-        if (msErr > mParams->minMS && ip < np - 1) {
-          Eigen::Vector2d scat(0., 0.), scatPrec = Eigen::Vector2d::Constant(1. / (msErr * msErr));
-          point.addScatterer(scat, scatPrec);
-          lt.clearFast(); // clear if accounted
-        }
-
-        if (frame.lr >= 0) {
-          const auto globals = buildPointGlobals(frame, wTrk);
-          point.addGlobals(globals.labels, globals.der);
-        }
-
-        if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
-          static Eigen::IOFormat fmt(4, 0, ", ", "\n", "[", "]");
-          LOGP(info, "WORKING-POINT {}", ip);
-          LOGP(info, "Track: {}", wTrk.asString());
-          LOGP(info, "FrameInfo: {}", frame.asString());
-          std::cout << "jacALICE:\n"
-                    << jacALICE.format(fmt) << '\n';
-          std::cout << "jacGBL:\n"
-                    << jacGBL.format(fmt) << '\n';
-          LOGP(info, "Point {}: GBL res=({}, {}), KF stored res=({}, {})",
-               ip, res[0], res[1], resTrack.points[ip].dy, resTrack.points[ip].dz);
-          LOGP(info, "residual: dy={} dz={}", res[0], res[1]);
-          LOGP(info, "precision: precY={} precZ={}", prec[0], prec[1]);
-          point.printPoint(5);
-        }
-        points.push_back(point);
-      }
-      if (!failed) {
-        gbl::GblTrajectory traj(points, std::abs(bz) > 0.01);
-        if (traj.isValid()) {
-          double chi2 = NAN, lostWeight = NAN;
-          int ndf = 0;
-          if (auto ierr = traj.fit(chi2, ndf, lostWeight); !ierr) {
-            if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
-              LOGP(info, "GBL FIT chi2 {} ndf {}", chi2, ndf);
-              traj.printTrajectory(5);
-            }
-            if (chi2 / ndf > mParams->maxChi2Ndf && cGBLChi2Rej++ < 10) {
-              LOGP(error, "GBL fit exceeded red chi2 {}", chi2 / ndf);
-              if (std::abs(resTrack.kfFit.chi2Ndf - 1) < 0.02) {
-                LOGP(error, "\tGBL is far away from good KF fit!!!!");
-                continue;
-              }
-            } else {
-              ++cGBLFit;
-              chi2Sum += chi2;
-              lostWeightSum += lostWeight;
-              ndfSum += ndf;
-              if (mOutOpt[o2::alignrs::OutputOpt::MilleData]) {
-                gblTrajSlot.push_back(traj);
-              }
-              FitInfo fit;
-              fit.ndf = ndf;
-              fit.chi2 = (float)chi2;
-              fit.chi2Ndf = (float)chi2 / (float)ndf;
-              resTrack.gblFit = fit;
-            }
-          } else {
-            ++cGBLFitFail;
-          }
-        } else {
-          ++cGBLConstruct;
-        }
-      }
+  // per-track PV constraint: every track carrying the vertex point gets the mean vertex prior,
+  // optionally deweighted by their number for the prior to count once per collision
+  double mvPriorCovScale = 0.;
+  if (!useCommonVertex) {
+    const auto nWithVertex = std::count_if(resTracks.begin(), resTracks.end(), [](const Track& t) { return t.gid.isIndexSet() && !t.info.empty() && t.info.front().isVertex(); });
+    if (nWithVertex > 0) {
+      mvPriorCovScale = mParams->scaleMVPriorWithNTracks ? static_cast<double>(nWithVertex) : 1.;
     }
   }
-  auto timeEnd = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeStart);
-  LOGP(info, "Fitted {} tracks out of {} (selected {}) in {} sec", cGBLFit, itsTracks.size(), cSelected, duration.count() / 1e3);
-  LOGP(info, "\tRefit failed for {} tracks; Failed prop for {} tracks", cFailedRefit, cFailedProp);
-  LOGP(info, "\tGBL SUMMARY:");
-  LOGP(info, "\t\tGBL construction failed {}", cGBLConstruct);
-  LOGP(info, "\t\tGBL fit failed {}", cGBLFitFail);
-  LOGP(info, "\t\tGBL chi2Ndf rejected {}", cGBLChi2Rej);
-  if (!ndfSum) {
-    LOGP(info, "\t\tGBL Chi2/Ndf = NDF IS 0");
-  } else {
-    LOGP(info, "\t\tGBL Chi2/Ndf = {}", chi2Sum / ndfSum);
-  }
-  LOGP(info, "\t\tGBL LostWeight = {}", lostWeightSum);
-  LOGP(info, "Streaming results to output");
-  if (mOutOpt[o2::alignrs::OutputOpt::MilleData]) {
-    gbl::MilleBinary mille(mParams->milleBinFile, true);
-    for (auto& slot : gblTrajSlots) {
-      for (auto& traj : slot) {
-        traj.milleOut(mille);
-      }
+  for (auto& resTrack : resTracks) {
+    if (!resTrack.gid.isIndexSet() || resTrack.info.empty()) {
+      continue; // failed track
+    }
+    if (useCommonVertex && resTrack.info.front().isVertex()) {
+      continue; // already accounted with the common vertex constraint
+    }
+    stat.nTrc++;
+    const bool hasVertex = resTrack.info.front().isVertex();
+    if (buildGBLTrack(resTrack, resTrack.info.front().isValid() ? 0 : 1, gblTraj, hasVertex ? mvPriorCovScale : 0.)) {
+      stat.nTrcAcc++;
     }
   }
-  if (mOutOpt[o2::alignrs::OutputOpt::Debug]) {
-    for (auto& slot : resTrackSlots) {
-      for (auto& res : slot) {
-        (*mDBGOut) << "res"
-                   << "trk=" << res
-                   << "\n";
-      }
-    }
+}
+
+// Append the trajectories of this TF to the Millepede binary, which is kept open for the whole run
+void AlignmentSpec::writeMilleRecords(std::vector<gbl::GblTrajectory>& gblTraj)
+{
+  if (!mOutOpt[o2::alignrs::OutputOpt::MilleData]) {
+    return;
   }
-  */
+  if (!mMille) {
+    mMille = std::make_unique<gbl::MilleBinary>(mParams->milleBinFile, true);
+  }
+  for (auto& traj : gblTraj) {
+    traj.milleOut(*mMille);
+  }
+  LOGP(info, "Wrote {} trajectories to {}", gblTraj.size(), mParams->milleBinFile);
 }
 
 void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
 {
-  o2::base::GRPGeomHelper::instance().checkUpdates(pc);
   mTimeInfo = pc.services().get<o2::framework::TimingInfo>();
+  o2::base::GRPGeomHelper::instance().checkUpdates(pc);
   mTimeStamp = (o2::base::GRPGeomHelper::instance().getOrbitResetTimeMUS() +  static_cast<long>(mTimeInfo.firstTForbit * o2::constants::lhc::LHCOrbitMUS)) * 1e-3;
-  // must be read on every TF: the finaliseCCDB callback is invoked only from this call, and only when
-  // the delivered object differs from the cached one
-  if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes] && Params::Instance().usePVConstraintMinTracks > 0) {
-    pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
-  }
-  updateTPCCalibration(pc); // must precede initOnFirstTF: the drift calibration DOFs need the maps
   if (static bool initOnce{false}; !initOnce) {
     initOnce = true;
     initOnFirstTF();
   }
   updateCalibrationSlots();
+  if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes] && Params::Instance().usePVConstraintMinTracks > 0) {
+    pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
+  }
+  if (mTRD && !mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
+    pc.inputs().get<o2::trd::CalVdriftExB*>("calvdexb"); // triggers finaliseCCDB
+  }
+  if (mTPC && !mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {;
+    updateTPCCalibration(pc); // must precede initOnFirstTF: the drift calibration DOFs need the maps
+  }
 }
 
-// Provide the TPC with everything its cluster transformation and error estimation need. The maps are
-// delivered per TF and already account for the drift calibration, applied by their producer.
 void AlignmentSpec::updateTPCCalibration(ProcessingContext& pc)
 {
-  if (!mLoadTPCCalib) {
-    return;
-  }
-  if (const float field = o2::base::Propagator::Instance()->getNominalBz(); field != mTPCParamField) {
-    mTPCParamField = field;
-    mTPCParam = std::make_unique<o2::gpu::GPUParam>();
-    mTPCParam->SetDefaults(field, false);
-    mTPC->setTPCParam(mTPCParam.get());
-    LOGP(info, "Updated the TPC cluster error parametrization for Bz = {} kG", field);
-  }
   mTPCVDriftHelper.extractCCDBInputs(pc);
   const auto* raw = pc.inputs().get<const char*>("corrMap");
   mTPC->setCorrMaps(&o2::gpu::TPCFastTransformPOD::get(raw));
@@ -831,18 +691,23 @@ void AlignmentSpec::updateTPCCalibration(ProcessingContext& pc)
   }
 }
 
-// One-time initialisation, deferred to the 1st TF since it needs the geometry and the conditions
+// One-time initialisation, deferred to the 1st TF since it needs the geometry
 void AlignmentSpec::initOnFirstTF()
 {
   mParams = &Params::Instance();
   mParams->printKeyValues(true, true);
   if (mITS) {
-    mITS->setTopologyDictionaries(mITSDict, mIT3Dict);
     o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
   }
   buildHierarchy();
   if (mTPC) {
-    mTPC->finaliseCalib(); // the drift calibration DOFs need the geometry of the correction maps
+    mTPCParam = std::make_unique<o2::gpu::GPUParam>();
+    mTPCParam->SetDefaults(o2::base::Propagator::Instance()->getNominalBz(), false);
+    mTPC->setTPCParam(mTPCParam.get());
+    mTPC->initCalib();
+  }
+  if (mTRD) {
+    mTRD->initCalib();
   }
   initVertexer();
   initMisalignment();
@@ -864,30 +729,7 @@ void AlignmentSpec::initMisalignment()
   if (!(mParams->doMisalignmentLeg || mParams->doMisalignmentRB || mParams->doMisalignmentInex)) {
     return;
   }
-  mMisalignment = {};
-  for (auto& rb : mRigidBodyParams) {
-    rb.setZero();
-  }
-  if (mParams->misAlgJson.empty()) {
-    return;
-  }
-  mMisalignment = loadMisalignmentModel(mParams->misAlgJson);
-  if (!mParams->doMisalignmentRB) {
-    return;
-  }
-  using json = nlohmann::json;
-  std::ifstream f(mParams->misAlgJson);
-  auto data = json::parse(f);
-  for (const auto& item : data) {
-    int id = item["id"].get<int>();
-    if (!item.contains("rigidBody")) {
-      continue;
-    }
-    auto rb = item["rigidBody"].get<std::vector<double>>();
-    for (int k = 0; k < 6 && k < static_cast<int>(rb.size()); ++k) {
-      mRigidBodyParams[id](k) = rb[k];
-    }
-  }
+  mMisalignment = loadMisalignmentModel(mParams->misAlgJson); // empty model for an empty path
 }
 
 // Assign every detector with a time-sliced calibration to the slot covering this TF. The detectors
@@ -906,7 +748,8 @@ void AlignmentSpec::updateCalibrationSlots()
   }
 }
 
-// Derivatives of the residual of one measured point wrt all the global parameters it depends on:
+// Derivatives of the prediction of one measured point (i.e. minus those of the residual, as Millepede
+// expects) wrt all the global parameters it depends on:
 // the rigid-body DOFs of the measurement leaf and of all its ancestors up to (excluding) the common
 // root, followed by the calibration DOFs of the direct parent of the leaf.
 // The base derivative is computed in the tracking frame while the alignment is done in the local
@@ -920,7 +763,6 @@ AlignmentSpec::PointGlobals AlignmentSpec::buildPointGlobals(const FrameInfoExt&
   }
   const auto* tileVol = volIt->second;
   const auto derCtx = makeDerivativeContext(frame, wTrk);
-  Matrix36 der = getRigidBodyBaseDerivatives(derCtx);
 
   // count rigid body columns: only volumes with real DOFs (not DOFPseudo).
   // The chain walks up to the common root of all detectors, which owns no DOFs: the top
@@ -937,17 +779,12 @@ AlignmentSpec::PointGlobals AlignmentSpec::buildPointGlobals(const FrameInfoExt&
   const auto* calibSet = sensorVol ? sensorVol->getCalib() : nullptr;
   const int nCalib = calibSet ? calibSet->nDOFs() : 0;
 
-  PointGlobals globals{{}, Eigen::MatrixXd::Zero(3, nColRB + nCalib)};
+  PointGlobals globals{{}, Eigen::MatrixXd::Zero(2, nColRB + nCalib)};
   globals.labels.reserve(nColRB + nCalib);
   Eigen::Index curCol{0};
 
   // 1) tile: TRK -> LOC via precomputed T2L and J_L2T
-  const double posTrk[3] = {frame.x, 0., 0.};
-  double posLoc[3];
-  tileVol->getT2L().LocalToMaster(posTrk, posLoc);
-  Matrix66 jacL2T;
-  tileVol->computeJacobianL2T(posLoc, jacL2T);
-  der *= jacL2T;
+  Matrix26 der = getLeafRigidBodyDerivatives(*tileVol, frame, derCtx);
   if (tileVol->getRigidBody()) {
     const int nd = tileVol->getRigidBody()->nDOFs();
     for (int iDOF = 0; iDOF < nd; ++iDOF) {
@@ -976,7 +813,7 @@ AlignmentSpec::PointGlobals AlignmentSpec::buildPointGlobals(const FrameInfoExt&
   // being independent parameters of the fit.
   if (calibSet) {
     const int nd = calibSet->nDOFs();
-    Eigen::MatrixXd calDer(3, nd);
+    Eigen::MatrixXd calDer(2, nd);
     calibSet->fillDerivatives(derCtx, calDer);
     const auto& calibLbl = sensorVol->getActiveCalibLabel();
     for (int iDOF = 0; iDOF < nd; ++iDOF) {
@@ -984,6 +821,9 @@ AlignmentSpec::PointGlobals AlignmentSpec::buildPointGlobals(const FrameInfoExt&
     }
     globals.der.middleCols(curCol, nd) = calDer;
     curCol += nd;
+  }
+  if (frame.zFromTrack) { // the Z "measurement" follows the track, whatever the alignment
+    globals.der.row(1).setZero();
   }
   return globals;
 }
@@ -1009,7 +849,7 @@ void AlignmentSpec::buildHierarchy()
   }
 
   if (!mParams->dofConfigJson.empty()) {
-    // a rule may e.g. fix the mean vertex position or free its rotations, as well as fix or free the
+    // a rule may e.g. fix the mean vertex position (calib type meanvertex), as well as fix or free the
     // top volume of any detector: no DOF is fixed or freed by the hierarchy construction itself
     Volume::applyDOFConfig(mHierarchy.get(), mParams->dofConfigJson);
   }
@@ -1038,17 +878,15 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
   const auto bz = prop->getNominalBz();
   const auto minStep = std::sqrt(std::numeric_limits<double>::epsilon());
   const gbl::Vector5d x0(track.getParams());
-  auto trackC = track;
-  o2::track::TrackParD* refLin{nullptr};
-  if (mParams->useStableRef) {
-    refLin = &trackC;
-  }
 
   auto propagate = [&](gbl::Vector5d& p) -> bool {
     TrackD tmp(track);
     for (int i{0}; i < track::kNParams; ++i) {
       tmp.setParam(p[i], i);
     }
+    // the reference is propagated together with the track, hence it must restart from the
+    // unperturbed state at every call
+    o2::track::TrackParD ref(track), *refLin = mParams->useStableRef ? &ref : nullptr;
     if (!prop->propagateToAlphaX(tmp, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType)) {
       return false;
     }
@@ -1154,7 +992,7 @@ bool AlignmentSpec::refitPV(const PVertex& vtxOrig, const std::vector<Track>& re
 // state at the ipStart frame). The measurement residuals are stored in resTrack.points.
 // skipFirstMeas: add no measurement on the 1st accounted point, used for the common vertex point of
 // a composed trajectory, whose position enters via the inner transformation instead.
-bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points)
+bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, double mvPriorCovScale)
 {
   auto prop = o2::base::PropagatorD::Instance();
   const int np = (int)resTrack.info.size();
@@ -1172,7 +1010,6 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
   resTrack.points.reserve(np - ipStart);
   track::TrackLTIntegral lt;
   lt.setTimeNotNeeded();
-  constexpr int perm[5] = {4, 2, 3, 0, 1}; // ALICE->GBL: Q/Pt,Snp,Tgl,Y,Z
   for (int ip = ipStart; ip < np; ++ip) {
     const auto& frame = resTrack.info[ip];
     if (!frame.isValid()) {
@@ -1189,19 +1026,15 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
         return false;
       }
       msErr = its::math_utils::MSangle(wTrk.getPID().getMass(), wTrk.getP(), lt.getX2X0());
-      // after computing jac, reorder to GBL convention
-      for (int i = 0; i < 5; i++) {
-        for (int j = 0; j < 5; j++) {
-          jacGBL(i, j) = jacALICE(perm[i], perm[j]);
-        }
-      }
+      jacGBL = toGBLOrder(jacALICE);
     }
 
     // wTrk is now in the measurment frame
     gbl::GblPoint point(jacGBL);
     // measurement
     const auto& cluster = frame.cluster;
-    Eigen::Vector2d res = Eigen::Vector2d::Zero(), prec = Eigen::Vector2d::Zero();
+    Eigen::Vector2d res = Eigen::Vector2d::Zero();
+    Eigen::Matrix2d prec = Eigen::Matrix2d::Zero();
     const bool addMeas = !(skipFirstMeas && points.empty());
     if (addMeas) {
       res << cluster.getY() - wTrk.getY(), cluster.getZ() - wTrk.getZ();
@@ -1210,9 +1043,12 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       if (!applyMisalignment(res, frame, wTrk, iTrk)) {
         return false;
       }
-
-      prec << 1. / cluster.getSigmaY2(), 1. / cluster.getSigmaZ2();
-      // the projection matrix is in the tracking frame the idendity so no need to diagonalize it
+      if (!getMeasurementPrecision(cluster, prec)) {
+        LOGP(warn, "Abandon track {}: non-positive covariance of the point {}", resTrack.gid.asString(), frame.asString());
+        return false;
+      }
+      // measured directly in the tracking frame (identity projection); GBL diagonalizes the precision
+      // matrix and transforms the residuals and the global derivatives accordingly
       point.addMeasurement(res, prec);
       auto& meas = resTrack.points.emplace_back();
       meas.dy = res[0];
@@ -1224,17 +1060,21 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       o2::math_utils::bringTo02Pid(meas.phi);
     }
     if (msErr > mParams->minMS && ip < np - 1) {
-      Eigen::Vector2d scat(0., 0.), scatPrec = Eigen::Vector2d::Constant(1. / (msErr * msErr));
-      point.addScatterer(scat, scatPrec);
+      // the material crossed since the previous point is lumped into a thin scatterer at this one
+      point.addScatterer(Eigen::Vector2d::Zero(), getScatteringPrecision(wTrk, msErr));
       lt.clearFast(); // clear if accounted
     }
 
     if (!frame.isVertex()) { // the vertex point has no alignable volume behind it
       const auto globals = buildPointGlobals(frame, wTrk);
       point.addGlobals(globals.labels, globals.der);
-    } else if (addMeas && !mPVT->getPositionLabels().empty()) {
-      // add the refitted vertex as an extra measured point for this track only
-      point.addGlobals(mPVT->getPositionLabels(), computeVertexTransformation(resTrack));
+    } else if (addMeas && mvPriorCovScale > 0.) {
+      // Per-track PV constraint: the track passes through the true vertex V, measured (i) by the
+      // refitted vertex with its fit covariance, added above w/o global derivatives: it does not move
+      // with the mean vertex, and (ii) by the mean vertex mu with the luminous region covariance,
+      // V ~ N(mu, Sigma_lumi), which carries the derivatives wrt mu. Integrating V out, the
+      // information on mu comes from (V_refit - mu) ~ N(0, Sigma_fit + Sigma_lumi).
+      addMeanVertexPrior(resTrack, computeVertexTransformation(resTrack), point, mvPriorCovScale);
     }
 
     if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
@@ -1247,7 +1087,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       std::cout << "jacGBL:\n"
                 << jacGBL.format(fmt) << '\n';
       LOGP(info, "residual: dy={} dz={}", res[0], res[1]);
-      LOGP(info, "precision: precY={} precZ={}", prec[0], prec[1]);
+      LOGP(info, "precision: precYY={} precYZ={} precZZ={}", prec(0, 0), prec(0, 1), prec(1, 1));
       point.printPoint(5);
     }
     points.push_back(point);
@@ -1300,10 +1140,10 @@ bool AlignmentSpec::fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, 
 
 // Build and fit the GBL trajectory of a single refitted track, accounting its frames from the
 // ipStart slot outward. The GBL fit result is stored in resTrack.gblFit.
-bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj)
+bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj, double mvPriorCovScale)
 {
   std::vector<gbl::GblPoint> points;
-  if (!fillGBLPoints(resTrack, ipStart, false, points)) {
+  if (!fillGBLPoints(resTrack, ipStart, false, points, mvPriorCovScale)) {
     return false;
   }
   gbl::GblTrajectory traj(points, std::abs(o2::base::PropagatorD::Instance()->getNominalBz()) > 0.1);
@@ -1332,12 +1172,13 @@ Eigen::MatrixXd AlignmentSpec::computeVertexTransformation(const Track& resTrack
 // Impose the prior on the vertex of the collision: it must agree with the mean interaction point
 // within the sigmas of the luminous region. Being a property of the collision, the prior is
 // accounted only once, as a measurement on the vertex point of a single track of the composed
-// trajectory (adding it per track would multiply its weight by their number).
+// trajectory (adding it per track would multiply its weight by their number). In the per-track PV
+// constraint mode it is added to every track, with the covariance scaled by covScale to compensate.
 // The measurement carries the derivatives wrt the position of the mean vertex, which is a global
 // alignment parameter (the dummy volume of the virtual PVT detector), unless it is kept fixed.
 // trans is the d(local offsets)/d(vertex position) transformation of the hosting track, which is at
 // the same time the derivative of the local position of the mean vertex wrt its global position.
-void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint)
+void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint, double covScale)
 {
   const auto& frame = resTrack.info.front();
   double ca{0}, sa{0};
@@ -1353,18 +1194,20 @@ void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::Matri
   res << muY - resTrack.track.getY(), muZ - resTrack.track.getZ();
   // covariance of the luminous region rotated to this frame: the transformation of the vertex
   // position to the local offsets is the same as for the common parameters of the trajectory
-  Eigen::Matrix3d covGlo = Eigen::Matrix3d::Zero();
-  covGlo(0, 0) = mvPrior.getSigmaX2();
-  covGlo(1, 1) = mvPrior.getSigmaY2();
-  covGlo(2, 2) = mvPrior.getSigmaZ2();
-  const Eigen::Matrix2d cov = trans * covGlo * trans.transpose();
+  Eigen::Matrix3d covGlo;
+  covGlo << mvPrior.getSigmaX2(), mvPrior.getSigmaXY(), mvPrior.getSigmaXZ(),
+    mvPrior.getSigmaXY(), mvPrior.getSigmaY2(), mvPrior.getSigmaYZ(),
+    mvPrior.getSigmaXZ(), mvPrior.getSigmaYZ(), mvPrior.getSigmaZ2();
+  const Eigen::Matrix2d cov = covScale * trans * covGlo * trans.transpose();
   if (cov.determinant() < 1e-16) {
     LOGP(warn, "Skipping the mean vertex prior: singular projected covariance of {}", mvPrior.asString());
     return;
   }
   vtxPoint.addMeasurement(res, Eigen::Matrix2d(cov.inverse()));
   if (!mPVT->getPositionLabels().empty()) { // the mean vertex position is aligned as well
-    vtxPoint.addGlobals(mPVT->getPositionLabels(), trans);
+    // Millepede expects the derivatives of the prediction, i.e. minus those of the residual. Here it
+    // is the measurement, the mean vertex, which moves with the parameter: d(res)/d(MV) = +trans.
+    vtxPoint.addGlobals(mPVT->getPositionLabels(), Eigen::MatrixXd(-trans));
   }
 }
 
@@ -1504,22 +1347,10 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
     }
     const auto* tileVol = volIt->second;
 
-    // derivative in TRK frame (3x6: rows = dy, dz, dsnp)
-    Matrix36 der = getRigidBodyBaseDerivatives(makeDerivativeContext(frame, wTrk));
-
-    // TRK -> tile LOC
-    const double posTrk[3] = {frame.x, 0., 0.};
-    double posLoc[3];
-    tileVol->getT2L().LocalToMaster(posTrk, posLoc);
-    Matrix66 jacL2T;
-    tileVol->computeJacobianL2T(posLoc, jacL2T);
-    der *= jacL2T;
-
-    // tile LOC -> halfBarrel LOC (same chain as GBL hierarchy walk)
-    der *= tileVol->getJL2P();
-
+    // TRK -> tile LOC -> halfBarrel LOC (same chain as the GBL hierarchy walk)
+    const Matrix26 der = getLeafRigidBodyDerivatives(*tileVol, frame, makeDerivativeContext(frame, wTrk)) * tileVol->getJL2P();
     // apply: delta_res = der * delta_a_halfBarrel
-    Eigen::Vector3d shift = der * mRigidBodyParams[sensorID];
+    const Eigen::Vector2d shift = der * Eigen::Map<const Eigen::Matrix<double, 6, 1>>(mMisalignment[sensorID].rigidBody.data());
     res[0] += shift[0]; // dy
     res[1] += shift[1]; // dz
   }
@@ -1596,6 +1427,7 @@ void AlignmentSpec::endOfStream(EndOfStreamContext& /*ec*/)
     mDBGOut->Close();
     mDBGOut.reset();
   }
+  mMille.reset(); // flushes and closes the binary
 }
 
 void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
@@ -1605,12 +1437,21 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
   }
   if (matcher == ConcreteDataMatcher("ITS", "CLUSDICT", 0)) {
     LOG(info) << "its cluster dictionary updated";
-    mITSDict = (const o2::itsmft::TopologyDictionary*)obj;
+    if (mITS) { // after the 1st TF the detector holds its own pointers
+      mITS->setTopologyDictionaries((const o2::itsmft::TopologyDictionary*)obj, nullptr);
+    }
     return;
   }
   if (matcher == ConcreteDataMatcher("IT3", "CLUSDICT", 0)) {
     LOG(info) << "it3 cluster dictionary updated";
-    mIT3Dict = (const o2::its3::TopologyDictionary*)obj;
+    if (mITS) {
+      mITS->setTopologyDictionaries(nullptr, (const o2::its3::TopologyDictionary*)obj);
+    }
+    return;
+  }
+  if (matcher == ConcreteDataMatcher("TRD", "CALVDRIFTEXB", 0)) {
+    LOG(info) << "TRD CalVdriftExB updated";
+    mTRD->setCalVdriftExB((const o2::trd::CalVdriftExB*)obj);
     return;
   }
   if (matcher == ConcreteDataMatcher("GLO", "MEANVERTEX", 0)) {
@@ -1643,6 +1484,9 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
     // the mean vertex is the prior of the primary vertex of every collision and the starting point
     // of the alignment of the virtual PVT detector
     dataRequest->inputs.emplace_back("meanvtx", "GLO", "MEANVERTEX", 0, Lifetime::Condition, ccdbParamSpec("GLO/Calib/MeanVertex", {}, 1));
+    if (detMask[DetID::TRD]) { // the tracklet transformation needs the drift velocity and ExB
+      dataRequest->inputs.emplace_back("calvdexb", "TRD", "CALVDRIFTEXB", 0, Lifetime::Condition, ccdbParamSpec("TRD/Calib/CalVdriftExB"));
+    }
     if (detMask[DetID::TPC]) {
       // the cluster transformation: the maps are delivered per TF, the drift calibration they
       // account for is read from the CCDB just to be able to interpret the fitted drift correction

@@ -32,10 +32,7 @@ void SensorTRD::defineMatrixL2G()
 
 void SensorTRD::defineMatrixT2L()
 {
-  const double alp = o2::math_utils::detail::sector2Angle<double>(o2::trd::Geometry::getSector(getSensorId()));
-  mT2L.RotateZ(alp * TMath::RadToDeg()); // mT2L before is identity and afterwards rotated
-  const TGeoHMatrix l2gI = mL2G.Inverse();
-  mT2L.MultiplyLeft(l2gI);
+  setT2LFromAlpha(o2::math_utils::detail::sector2Angle<double>(o2::trd::Geometry::getSector(getSensorId())));
 }
 
 } // namespace o2::alignrs

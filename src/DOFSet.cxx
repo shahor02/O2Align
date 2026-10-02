@@ -25,8 +25,8 @@ double* DOFSet::gParErrs = nullptr;
 
 void DOFSet::validateDerivativeOutput(Eigen::Ref<Eigen::MatrixXd> out) const
 {
-  if (out.rows() != 3 || out.cols() != nDOFs()) {
-    throw std::invalid_argument(std::format("Derivative buffer shape {}x{} does not match expected 3x{}", out.rows(), out.cols(), nDOFs()));
+  if (out.rows() != 2 || out.cols() != nDOFs()) { // rows: Y, Z of the measurement
+    throw std::invalid_argument(std::format("Derivative buffer shape {}x{} does not match expected 2x{}", out.rows(), out.cols(), nDOFs()));
   }
   out.setZero();
 }
@@ -82,21 +82,25 @@ void RigidBodyDOFSet::fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<E
   out(1, RZ) = -ctx.trkY * vP;
 }
 
-double LegendreDOFSet::getSensorPhiWidth(int sensorID, double radius)
+std::pair<double, double> LegendreDOFSet::getSensorPhiBorders(int sensorID, double radius)
 {
   const bool isTop = sensorID % 2 == 0;
-  const double phiBorder1 = o2::math_utils::to02Pid(((isTop ? 0. : 1.) * o2::constants::math::PI) + std::asin(o2::its3::constants::equatorialGap / 2. / radius));
-  const double phiBorder2 = o2::math_utils::to02Pid(((isTop ? 1. : 2.) * o2::constants::math::PI) - std::asin(o2::its3::constants::equatorialGap / 2. / radius));
+  const double gapPhi = std::asin(o2::its3::constants::equatorialGap / 2. / radius);
+  return {o2::math_utils::to02Pid(((isTop ? 0. : 1.) * o2::constants::math::PI) + gapPhi),
+          o2::math_utils::to02Pid(((isTop ? 1. : 2.) * o2::constants::math::PI) - gapPhi)};
+}
+
+double LegendreDOFSet::getSensorPhiWidth(int sensorID, double radius)
+{
+  const auto [phiBorder1, phiBorder2] = getSensorPhiBorders(sensorID, radius);
   const double width = phiBorder2 - phiBorder1;
   return (width < 0.) ? width + o2::constants::math::TwoPI : width;
 }
 
 std::pair<double, double> LegendreDOFSet::computeUV(double gloX, double gloY, double gloZ, int sensorID, double radius)
 {
-  const bool isTop = sensorID % 2 == 0;
   const double phi = o2::math_utils::to02Pid(std::atan2(gloY, gloX));
-  const double phiBorder1 = o2::math_utils::to02Pid(((isTop ? 0. : 1.) * o2::constants::math::PI) + std::asin(o2::its3::constants::equatorialGap / 2. / radius));
-  const double phiBorder2 = o2::math_utils::to02Pid(((isTop ? 1. : 2.) * o2::constants::math::PI) - std::asin(o2::its3::constants::equatorialGap / 2. / radius));
+  const auto [phiBorder1, phiBorder2] = getSensorPhiBorders(sensorID, radius);
   const double u = (((phi - phiBorder1) * 2.) / (phiBorder2 - phiBorder1)) - 1.;
   const double v = ((2. * gloZ + o2::its3::constants::segment::lengthSensitive) / o2::its3::constants::segment::lengthSensitive) - 1.;
   return {u, v};
@@ -120,8 +124,8 @@ void LegendreDOFSet::fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<Ei
   // same intergration as `evaluateLegendreShift' but now for each order separateley
   Eigen::VectorXd arcMismatch = Eigen::VectorXd::Zero(nDOFs());
   if (std::abs(u) > o2::constants::math::Almost0) {
-    constexpr std::array<double, 8> x = {-0.9602898564975363, -0.7966664774136267, -0.5255324099163290, -0.1834346424956498, 0.1834346424956498, 0.5255324099163290, 0.7966664774136267, 0.9602898564975363};
-    constexpr std::array<double, 8> w = {0.1012285362903763, 0.2223810344533745, 0.3137066458778873, 0.3626837833783620, 0.3626837833783620, 0.3137066458778873, 0.2223810344533745, 0.1012285362903763};
+    const auto& x = GaussNodes;
+    const auto& w = GaussWeights;
     const double mid = 0.5 * u;
     const double half = 0.5 * u;
     for (int iq = 0; iq < 8; ++iq) {
@@ -203,6 +207,11 @@ void TPCVDriftDOFSet::fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<E
   // space-charge correction of the cluster
   out(1, VDRIFT) = side * driftLength;
   out(1, DRIFTOFF) = side;
+}
+
+void MeanVertexDOFSet::fillDerivatives(const DerivativeContext& /*ctx*/, Eigen::Ref<Eigen::MatrixXd> /*out*/) const
+{
+  throw std::logic_error("MeanVertexDOFSet derivatives are set by the mean vertex constraint, not by the measurement chain");
 }
 
 }  // namespace o2::alignrs

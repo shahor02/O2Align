@@ -40,10 +40,9 @@ class DetectorPVT final : public Detector
   /// the mean vertex contributes no measured point to an individual track
   bool prepareTrack(o2::globaltracking::RecoContainer* /*recoData*/, const GlobalIDSet& /*ids*/, Track& /*resTrack*/) final { return false; }
 
-  /// label of the mean vertex volume of a given mean vertex calibration slot, its DOFs TX/TY/TZ are
-  /// the global parameters of the vertex position in this slot: every slot is aligned independently,
-  /// hence the slot ID is used as the volume ID of the label
-  static Label getVertexLabel(int slotID = 0) { return Label(DetPVT, slotID, true); }
+  /// label of the mean vertex volume. Its position is a calibration DOF set (MeanVertexDOFSet),
+  /// whose labels carry the ID of the calibration slot, see Volume::getActiveCalibLabel
+  static Label getVertexLabel() { return Label(DetPVT, 0, true); }
   Volume* getVertexVolume() const { return mVertexVolume; }
 
   const std::string& getTimeSlotsJson() const final;

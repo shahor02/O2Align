@@ -61,7 +61,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
   bool requestCTPLumi = false;
   
   if (!output[o2::alignrs::OutputOpt::MilleRes]) {
-    if (allowedSourcesClus[GID::TPC]) {
+    if (srcCls[GID::TPC]) { // the TPC cluster transformation needs the scalers
       auto sclOpt = o2::tpc::CorrectionMapsOptions::parseGlobalOptions(cfg.options());
       requestCTPLumi = sclOpt.requestCTPLumi;
       srcTrc = srcTrc | GID::getSourcesMask("CTP");

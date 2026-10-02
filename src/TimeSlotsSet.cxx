@@ -20,6 +20,7 @@
 #include <nlohmann/json.hpp>
 
 #include "Framework/Logger.h"
+#include "O2Align/Label.h"
 #include "O2Align/TimeSlotsSet.h"
 
 namespace o2::alignrs
@@ -77,6 +78,13 @@ int TimeSlotsSet::readSlotsFromFile(const std::string& fileName)
     slot.timeStampE = entry.value("tsE", 0L);
     if (slot.timeStampE <= slot.timeStampS) {
       LOGP(fatal, "Time slot {} of run {} has invalid time range {}:{}", slot.intervalID, slot.runNumber, slot.timeStampS, slot.timeStampE);
+    }
+    // the slot ID plays the role of the volume ID in the Millepede labels of the slot parameters
+    if (slot.intervalID < 0 || static_cast<Label::T>(slot.intervalID) >= Label::ID_MAX) {
+      LOGP(fatal, "Time slot ID {} of run {} is outside of the allowed range [0, {})", slot.intervalID, slot.runNumber, Label::ID_MAX);
+    }
+    if (std::any_of(slots.begin(), slots.end() - 1, [&slot](const TimeSlot& other) { return other.intervalID == slot.intervalID; })) {
+      LOGP(fatal, "Time slot ID {} is defined more than once: the slots would share their parameters", slot.intervalID);
     }
     if (slots.size() > 1 && slots[slots.size() - 2].timeStampE > slot.timeStampS) {
       LOGP(fatal, "Time slot {} starting at {} overlaps with the preceding slot {} ending at {}",

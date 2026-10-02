@@ -16,10 +16,12 @@
 #include <cmath>
 #include <TGeoManager.h>
 #include <TGeoPhysicalNode.h>
+#include <TMath.h>
 #include <nlohmann/json.hpp>
 
 #include "O2Align/Volume.h"
 #include "O2Align/Constraint.h"
+#include "O2Align/TimeSlotsSet.h"
 #include "ITSBase/GeometryTGeo.h"
 #include "Framework/Logger.h"
 #include "MathUtils/Utils.h"
@@ -77,15 +79,23 @@ const TGeoHMatrix& Volume::getMatrixL2G() const
   return mL2G;
 }
 
-void Volume::computeJacobianL2T(const double* posLoc, Matrix66& jac) const
+void Volume::computeJacobianL2T(const TGeoHMatrix& t2l, const double* posLoc, Matrix66& jac)
 {
   jac.setZero();
-  Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> rotT2L(mT2L.GetRotationMatrix());
+  Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> rotT2L(t2l.GetRotationMatrix());
   Eigen::Matrix3d skew, rotL2T = rotT2L.transpose();
   skew << 0, -posLoc[2], posLoc[1], posLoc[2], 0, -posLoc[0], -posLoc[1], posLoc[0], 0;
   jac.topLeftCorner<3, 3>() = rotL2T;
   jac.topRightCorner<3, 3>() = -rotL2T * skew;
   jac.bottomRightCorner<3, 3>() = rotL2T;
+}
+
+TGeoHMatrix Volume::computeT2L(double alpha) const
+{
+  TGeoHMatrix t2l; // TRK -> GLO is the rotation by alpha
+  t2l.RotateZ(alpha * TMath::RadToDeg());
+  t2l.MultiplyLeft(mG2L); // GLO -> LOC
+  return t2l;
 }
 
 void Volume::finalise(uint8_t level)
@@ -96,6 +106,11 @@ void Volume::finalise(uint8_t level)
   mLevel = level;
   if (mRigidBody && !mRBAllowed) {
     LOGP(fatal, "Volume {} is not rigid-body alignable but was assigned rigid-body DOFs", mSymName);
+  }
+  for (const auto* dofSet : {mRigidBody.get(), mCalib.get()}) {
+    if (dofSet && dofSet->nDOFs() > static_cast<int>(Label::DOF_MAX) + 1) {
+      LOGP(fatal, "Volume {} has a DOF set with {} DOFs, the Millepede label can encode at most {}", mSymName, dofSet->nDOFs(), Label::DOF_MAX + 1);
+    }
   }
   if (isLeaf() && !mLabel.sens() && !mVirtual) {
     // being a leaf is what makes a volume define its own matrices instead of taking them from the
@@ -108,6 +123,7 @@ void Volume::finalise(uint8_t level)
     // need to it with including possible pre-alignment to allow for iterative convergence
     // (TRK) is defined wrt global z-axis
     defineMatrixL2G();
+    mG2L = getMatrixL2G().Inverse();
     defineMatrixT2L();
   } else if (mVirtual) {
     // a fictitious intermediate volume must define its L2G before the children derive their L2P from it
@@ -170,21 +186,18 @@ void Volume::writeRigidBodyConstraints(std::ostream& os) const
     return;
   }
 
+  // thesis A.83: for every free DOF of the parent, the mean of the child DOFs transported to the
+  // parent frame with J^-1 = getJP2L() must vanish
+  const auto nActiveChildren = std::count_if(mChildren.begin(), mChildren.end(), [](const auto& c) { return c->isActive(); });
   for (int iDOF = 0; iDOF < mRigidBody->nDOFs(); ++iDOF) {
     if (!mRigidBody->isFree(iDOF)) {
       continue;
     }
-    float nActiveChildren = 0.f;
-    for (const auto& c : mChildren) {
-      if (c->isActive()) {
-        ++nActiveChildren;
-      }
-    }
-    if (nActiveChildren == 0.) {
+    if (nActiveChildren == 0) {
       LOGP(fatal, "{} has dof {} active but no active children!", mSymName, mRigidBody->dofName(iDOF));
     }
-    const float invN = 1.0f / nActiveChildren;
-    Constraint con(std::format("DOF {} for {}", mRigidBody->dofName(iDOF), mSymName), 0.0f);
+    const double invN = 1.0 / static_cast<double>(nActiveChildren);
+    Constraint con(std::format("DOF {} for {}", mRigidBody->dofName(iDOF), mSymName), 0.);
     for (const auto& c : mChildren) {
       if (!c->mRigidBody) {
         continue;
@@ -193,14 +206,15 @@ void Volume::writeRigidBodyConstraints(std::ostream& os) const
         if (!c->mRigidBody->isFree(jDOF)) {
           continue;
         }
-        double coeff = invN * c->getJP2L()(iDOF, jDOF);
-        if (std::abs(coeff) > 1e-16f) {
+        const double coeff = invN * c->getJP2L()(iDOF, jDOF);
+        if (std::abs(coeff) > 1e-16) {
           con.add(c->getLabel().raw(jDOF), coeff);
         }
       }
     }
-
-    if (con.getSize() > 1) {
+    // a single term is a legitimate constraint as well: e.g. for a parent with a single active
+    // child it removes the degeneracy of their common rotation
+    if (con.getSize() > 0) {
       con.write(os);
     }
   }
@@ -209,8 +223,9 @@ void Volume::writeRigidBodyConstraints(std::ostream& os) const
   }
 }
 
-void Volume::setCalibSlots(const std::vector<int>& slotIDs)
+void Volume::setCalibSlots(const TimeSlotsSet& slots)
 {
+  const auto slotIDs = slots.getSlotIDs();
   if (slotIDs.empty()) {
     LOGP(fatal, "Cannot declare an empty set of calibration slots for {}", mSymName);
   }
@@ -221,6 +236,7 @@ void Volume::setCalibSlots(const std::vector<int>& slotIDs)
     mCalibLabels.emplace_back(Label(mLabel.det(), static_cast<uint32_t>(slotID), mLabel.sens(), true));
   }
   mActiveCalibSlot = 0;
+  mCalibSlots = &slots;
 }
 
 void Volume::setActiveCalibSlot(int slotID)
@@ -358,6 +374,77 @@ void Volume::applyFreeFixConfig(DOFSet& dofSet, const nlohmann::json& cal)
   }
 }
 
+// Build the rigid-body DOF set of a rule: "all"/"free" or "fixed", an array of the free DOF names,
+// or an object {"dofs": "all" | [names], "fixed": bool}. Returns nullptr for an invalid clause.
+std::unique_ptr<DOFSet> Volume::makeRigidBodyDOFSet(const nlohmann::json& rb, const std::string& pattern)
+{
+  static const std::map<std::string, int> rbNameToIdx = {
+    {"TX", RigidBodyDOFSet::TX}, {"TY", RigidBodyDOFSet::TY}, {"TZ", RigidBodyDOFSet::TZ}, {"RX", RigidBodyDOFSet::RX}, {"RY", RigidBodyDOFSet::RY}, {"RZ", RigidBodyDOFSet::RZ}};
+  auto dofSet = std::make_unique<RigidBodyDOFSet>();
+  // free (or fix, if fixed) the named DOFs, all the others being fixed
+  auto setListed = [&](const nlohmann::json& names, bool fixed) {
+    dofSet->setAllFree(false);
+    for (const auto& name : names) {
+      const auto it = rbNameToIdx.find(name.get<std::string>());
+      if (it == rbNameToIdx.end()) {
+        LOGP(fatal, "Unknown rigid-body DOF '{}' in the rule '{}', allowed are TX,TY,TZ,RX,RY,RZ", name.get<std::string>(), pattern);
+      }
+      dofSet->setFree(it->second, !fixed);
+    }
+  };
+  if (rb.is_string()) {
+    const auto s = rb.get<std::string>();
+    if (s == "fixed") {
+      dofSet->setAllFree(false);
+    } else if (s != "all" && s != "free") {
+      LOGP(fatal, "Unknown rigidBody value '{}' in the rule '{}', allowed are all, free, fixed or a list of DOFs", s, pattern);
+    }
+    return dofSet;
+  }
+  if (rb.is_array()) {
+    setListed(rb, false);
+    return dofSet;
+  }
+  if (rb.is_object()) {
+    const bool fixed = rb.value("fixed", false);
+    const auto dofs = rb.value("dofs", nlohmann::json("all"));
+    if (dofs.is_array()) {
+      setListed(dofs, false);
+      if (fixed) { // the listed DOFs are declared but fixed
+        dofSet->setAllFree(false);
+      }
+    } else if (dofs == "all") {
+      dofSet->setAllFree(!fixed);
+    } else {
+      LOGP(fatal, "Invalid rigidBody.dofs in the rule '{}'", pattern);
+    }
+    return dofSet;
+  }
+  LOGP(fatal, "Invalid rigidBody clause in the rule '{}'", pattern);
+  return nullptr;
+}
+
+// Build the calibration DOF set of a rule, with its free/fixed clauses applied
+std::unique_ptr<DOFSet> Volume::makeCalibDOFSet(const nlohmann::json& cal, const std::string& pattern, const std::string& sym)
+{
+  const auto calType = cal.value("type", std::string(""));
+  std::unique_ptr<DOFSet> dofSet;
+  if (calType == "legendre") {
+    dofSet = std::make_unique<LegendreDOFSet>(cal.value("order", 3));
+  } else if (calType == "inextensional") {
+    dofSet = std::make_unique<InextensionalDOFSet>(cal.value("order", 2));
+  } else if (calType == "tpcvdrift") {
+    dofSet = std::make_unique<TPCVDriftDOFSet>();
+  } else if (calType == "meanvertex") {
+    dofSet = std::make_unique<MeanVertexDOFSet>();
+  } else {
+    LOGP(warn, "Ignoring the calib rule '{}' of {}: unknown calibration type '{}'", pattern, sym, calType);
+    return nullptr;
+  }
+  applyFreeFixConfig(*dofSet, cal);
+  return dofSet;
+}
+
 void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
 {
   using json = nlohmann::json;
@@ -367,99 +454,39 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
   }
   auto data = json::parse(f);
   json rules = data.is_array() ? data : data.value("rules", json::array());
-
-  static const std::map<std::string, int> rbNameToIdx = {
-    {"TX", 0}, {"TY", 1}, {"TZ", 2}, {"RX", 3}, {"RY", 4}, {"RZ", 5}};
-
-  auto matchPattern = [](const std::string& pattern, const std::string& sym) -> bool {
-    if (fnmatch(pattern.c_str(), sym.c_str(), 0) == 0) {
-      return true;
-    }
-    std::string prefixed = "*" + pattern;
-    return fnmatch(prefixed.c_str(), sym.c_str(), 0) == 0;
-  };
-
   if (data.is_object() && data.contains("defaults")) {
     json defRule = data["defaults"];
     defRule["match"] = "*";
     rules.insert(rules.begin(), defRule);
   }
 
+  // the pattern is also tried with an implicit leading "*"
+  auto matchPattern = [](const std::string& pattern, const std::string& sym) -> bool {
+    return fnmatch(pattern.c_str(), sym.c_str(), 0) == 0 || fnmatch(("*" + pattern).c_str(), sym.c_str(), 0) == 0;
+  };
+
   root->traverse([&](Volume* vol) {
     if (vol->isPseudo()) {
       return;
     }
     const std::string& sym = vol->getSymName();
-    for (const auto& rule : rules) {
+    for (const auto& rule : rules) { // in order: a later matching rule replaces the DOF set of an earlier one
       const auto pattern = rule["match"].get<std::string>();
       if (!matchPattern(pattern, sym)) {
         continue;
       }
-      // rigid body DOFs: silently not applicable to the volumes which are not rigid-body alignable
-      // (the root of the hierarchy, the envelopes w/o own geometry), for which only the calibration
-      // DOFs can be configured. An explicitly named volume is likely a configuration mistake.
-      if (rule.contains("rigidBody") && !vol->isRigidBodyAllowed() && pattern.find('*') == std::string::npos) {
-        LOGP(warn, "Ignoring the rigidBody rule '{}': {} is not rigid-body alignable", pattern, sym);
-      }
-      if (rule.contains("rigidBody") && vol->isRigidBodyAllowed()) {
-        const auto& rb = rule["rigidBody"];
-        if (rb.is_string()) {
-          auto s = rb.get<std::string>();
-          if (s == "all" || s == "free") {
-            vol->setRigidBody(std::make_unique<RigidBodyDOFSet>());
-          } else if (s == "fixed") {
-            auto dofSet = std::make_unique<RigidBodyDOFSet>();
-            dofSet->setAllFree(false);
-            vol->setRigidBody(std::move(dofSet));
-          }
-        } else if (rb.is_array()) {
-          auto dofSet = std::make_unique<RigidBodyDOFSet>();
-          dofSet->setAllFree(false);
-          for (const auto& name : rb) {
-            auto it = rbNameToIdx.find(name.get<std::string>());
-            if (it != rbNameToIdx.end()) {
-              dofSet->setFree(it->second, true);
-            }
-          }
-          vol->setRigidBody(std::move(dofSet));
-        } else if (rb.is_object()) {
-          auto dofs = rb.value("dofs", std::string("all"));
-          bool fixed = rb.value("fixed", false);
-          if (dofs == "all") {
-            auto dofSet = std::make_unique<RigidBodyDOFSet>();
-            if (fixed) {
-              dofSet->setAllFree(false);
-            }
-            vol->setRigidBody(std::move(dofSet));
-          } else if (rb["dofs"].is_array()) {
-            auto dofSet = std::make_unique<RigidBodyDOFSet>();
-            dofSet->setAllFree(false);
-            for (const auto& name : rb["dofs"]) {
-              auto it = rbNameToIdx.find(name.get<std::string>());
-              if (it != rbNameToIdx.end()) {
-                dofSet->setFree(it->second, !fixed);
-              }
-            }
-            vol->setRigidBody(std::move(dofSet));
-          }
+      if (rule.contains("rigidBody")) {
+        // silently not applicable to the volumes which are not rigid-body alignable (the root of the
+        // hierarchy, the envelopes w/o own geometry), for which only the calibration DOFs can be
+        // configured. An explicitly named volume is likely a configuration mistake.
+        if (vol->isRigidBodyAllowed()) {
+          vol->setRigidBody(makeRigidBodyDOFSet(rule["rigidBody"], pattern));
+        } else if (pattern.find('*') == std::string::npos) {
+          LOGP(warn, "Ignoring the rigidBody rule '{}': {} is not rigid-body alignable", pattern, sym);
         }
       }
-      // calibration DOFs
       if (rule.contains("calib")) {
-        const auto& cal = rule["calib"];
-        auto calType = cal.value("type", std::string(""));
-        std::unique_ptr<DOFSet> dofSet;
-        if (calType == "legendre") {
-          dofSet = std::make_unique<LegendreDOFSet>(cal.value("order", 3));
-        } else if (calType == "inextensional") {
-          dofSet = std::make_unique<InextensionalDOFSet>(cal.value("order", 2));
-        } else if (calType == "tpcvdrift") {
-          dofSet = std::make_unique<TPCVDriftDOFSet>();
-        } else {
-          LOGP(warn, "Ignoring the calib rule '{}' of {}: unknown calibration type '{}'", pattern, sym, calType);
-        }
-        if (dofSet) {
-          applyFreeFixConfig(*dofSet, cal);
+        if (auto dofSet = makeCalibDOFSet(rule["calib"], pattern, sym)) {
           vol->setCalib(std::move(dofSet));
         }
       }
@@ -512,14 +539,10 @@ Volume::InjectedMisalignment Volume::loadInjectedMisalignment(const std::string&
 // The caller (writeMillepedeResults) only invokes this when getRigidBody() has free DOFs.
 bool Volume::MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, const std::vector<double>* inj, nlohmann::json& entry) const
 {
-  using json = nlohmann::json;
-  const auto* rb = getRigidBody();
-  json rbArr = json::array();
-  for (int i = 0; i < rb->nDOFs(); ++i) {
-    uint32_t raw = getLabel().raw(i);
-    auto it = labelToValue.find(raw);
-    double fitted = it != labelToValue.end() ? it->second : 0.0;
-    double ref = (inj && i < static_cast<int>(inj->size())) ? (*inj)[i] : 0.0;
+  auto rbArr = nlohmann::json::array();
+  for (int i = 0; i < getRigidBody()->nDOFs(); ++i) {
+    const double fitted = getFittedValue(labelToValue, mLabel.raw(i));
+    const double ref = (inj && i < static_cast<int>(inj->size())) ? (*inj)[i] : 0.0;
     rbArr.push_back(fitted - ref);
   }
   entry["rigidBody"] = rbArr;
@@ -527,10 +550,46 @@ bool Volume::MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, const st
 }
 
 // The caller (writeMillepedeResults) only invokes this when getCalib() has free DOFs.
-bool Volume::MP2JSON_Calib(const std::map<uint32_t, double>&, const InjectedMisalignment*, nlohmann::json&) const
+bool Volume::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const
 {
-  LOGP(warn, "MP2JSON_Calib is not implemented for volume {} (calib type {})", getSymName(), static_cast<int>(getCalib()->type()));
-  return false;
+  if (inj) {
+    LOGP(warn, "The injected calibration of {} (calib type {}) is not subtracted, its fitted values are absolute", getSymName(), static_cast<int>(getCalib()->type()));
+  }
+  auto slots = calibSlotsToJSON(labelToValue);
+  if (slots.empty()) {
+    return false;
+  }
+  entry["calib"] = std::move(slots);
+  return true;
+}
+
+nlohmann::json Volume::calibSlotsToJSON(const std::map<uint32_t, double>& labelToValue) const
+{
+  auto slotArr = nlohmann::json::array();
+  for (const auto& lbl : mCalibLabels) {
+    const int slotID = static_cast<int>(lbl.id());
+    nlohmann::json rec;
+    rec["slot"] = slotID;
+    if (mCalibSlots) {
+      const auto& slot = mCalibSlots->getSlotByID(slotID);
+      rec["run"] = slot.runNumber;
+      rec["tsS"] = slot.timeStampS;
+      rec["tsE"] = slot.timeStampE;
+    }
+    bool anyFitted = false;
+    for (int i = 0; i < mCalib->nDOFs(); ++i) {
+      if (!mCalib->isFree(i)) {
+        continue;
+      }
+      const auto it = labelToValue.find(lbl.raw(i));
+      rec[mCalib->dofName(i)] = it != labelToValue.end() ? it->second : 0.0;
+      anyFitted = anyFitted || it != labelToValue.end();
+    }
+    if (anyFitted) {
+      slotArr.push_back(std::move(rec));
+    }
+  }
+  return slotArr;
 }
 
 bool Volume::MP2ROOT_RB(const std::map<uint32_t, double>&, const std::vector<double>*, nlohmann::json&) const

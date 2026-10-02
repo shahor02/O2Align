@@ -12,10 +12,12 @@
 #include <string>
 #include <format>
 
+#include <Eigen/Dense>
 #include "DetectorsBase/Propagator.h"
 #include "MathUtils/Utils.h"
 #include "O2Align/AlignmentTypes.h"
 #include "O2Align/Params.h"
+#include "O2Align/TrackFit.h"
 
 namespace o2::alignrs
 {
@@ -35,8 +37,7 @@ bool Track::fitTrack(int frameStart, int frameStop, bool cropOnFailure, bool res
   auto prop = o2::base::PropagatorD::Instance();
   auto trFit = track; // fit a copy: the seed must be preserved if the fit fails
   if (reset) {
-    trFit.resetCovariance();
-    trFit.setCov(trFit.getQ2Pt() * trFit.getQ2Pt() * trFit.getCov()[14], 14);
+    resetTrackCovariance(trFit);
   }
   const int step = frameStart > frameStop ? -1 : 1;
   const int frameEnd = frameStop + step; // 1st slot past the range
@@ -101,9 +102,18 @@ bool Track::updateWithVertex(const o2::dataformats::VertexBase& vtx)
   o2::math_utils::bringToPMPi(frame.alpha);
   o2::math_utils::sincosd(frame.alpha, sa, ca);
   frame.x = static_cast<float>(vtx.getX() * ca + vtx.getY() * sa); // the vertex position in the track frame
+  // covariance of the vertex projected along the track to the plane X = frame.x of the tracking frame:
+  // d(Y,Z)/d(vertex) = [[-sa - y' ca, ca - y' sa, 0], [-z' ca, -z' sa, 1]], see computeVertexTransformation
+  const auto slopes = TrackSlopes::computeTrackSlopes(trDCA.getSnp(), trDCA.getTgl());
+  Eigen::Matrix<double, 2, 3> trans;
+  trans << -sa - slopes.dydx * ca, ca - slopes.dydx * sa, 0., -slopes.dzdx * ca, -slopes.dzdx * sa, 1.;
+  Eigen::Matrix3d covGlo;
+  covGlo << vtx.getSigmaX2(), vtx.getSigmaXY(), vtx.getSigmaXZ(),
+    vtx.getSigmaXY(), vtx.getSigmaY2(), vtx.getSigmaYZ(),
+    vtx.getSigmaXZ(), vtx.getSigmaYZ(), vtx.getSigmaZ2();
+  const Eigen::Matrix2d cov = trans * covGlo * trans.transpose();
   frame.cluster = o2::BaseCluster<float>(-1, frame.x, static_cast<float>(-vtx.getX() * sa + vtx.getY() * ca), vtx.getZ(),
-                                         0.5f * (vtx.getSigmaX2() + vtx.getSigmaY2()), // the vertex is round in the transverse plane
-                                         vtx.getSigmaZ2(), 0.f);
+                                         static_cast<float>(cov(0, 0)), static_cast<float>(cov(1, 1)), static_cast<float>(cov(0, 1)));
   frame.lr = FrameInfoExt::Vertex;
   if (!fitTrack(0, 0, false, false)) {
     frame.lr = FrameInfoExt::Invalid;

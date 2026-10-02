@@ -9,14 +9,11 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
+
 #include <format>
-#include <fstream>
-#include <sstream>
-#include <cmath>
+#include <ostream>
 
 #include "O2Align/Constraint.h"
-#include "Framework/Logger.h"
-#include "MathUtils/Utils.h"
 
 namespace o2::alignrs
 {
@@ -24,12 +21,12 @@ namespace o2::alignrs
 void Constraint::write(std::ostream& os) const
 {
   os << "!!! " << mName << '\n';
-  os << "Constraint " << mValue << '\n';
+  os << std::format("Constraint {:.12g}\n", mValue);
   for (size_t i{0}; i < mLabels.size(); ++i) {
-    os << mLabels[i] << " " << mCoeffs[i] << '\n';
+    // full precision: the coefficients mix rotations with lever arms of up to a few metres
+    os << std::format("{} {:.12g}\n", mLabels[i], mCoeffs[i]);
   }
   os << '\n';
 }
 
-}
-
+} // namespace o2::alignrs

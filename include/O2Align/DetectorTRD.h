@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "DataFormatsTRD/CalibratedTracklet.h"
+#include "DataFormatsTRD/CalVdriftExB.h"
 #include "TRDBase/TrackletTransformer.h"
 #include "GPUTRDRecoParam.h"
 #include "O2Align/Detector.h"
@@ -30,14 +31,17 @@ class DetectorTRD final : public Detector
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
+  void initCalib();
+  void setCalVdriftExB(const o2::trd::CalVdriftExB* cal) { mTransformer->setCalVdriftExB(cal); }
 
  protected:
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
  private:
-  std::unique_ptr<o2::trd::TrackletTransformer> mTransformer;
-  o2::gpu::GPUTRDRecoParam mRecoParam; // parameters required for the tracklet covariance
-  bool mRecoParamInit{false};
+  std::unique_ptr<o2::trd::TrackletTransformer> mTransformer; // created at the 1st prepareData, once the geometry is loaded
+  const o2::trd::CalVdriftExB* mCalVdriftExB{nullptr};
+  o2::gpu::GPUTRDRecoParam mRecoParam; // parameters required for the tracklet covariance, set in prepareData
+  float mRecoParamField{-999.f};       // field mRecoParam was initialised for
   std::vector<o2::trd::CalibratedTracklet> mTrackletsLoc; // calibrated tracklets of the TF in the LOCAL frame
   std::vector<Volume*> mSensors;                          // chamber volumes, indexed by TRD chamber ID
 };

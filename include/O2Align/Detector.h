@@ -46,6 +46,7 @@ class Detector
     NDetectors
   };
   static constexpr const char* DetName[NDetectors] = {"PVT", "ITS", "TPC", "TRD", "TOF"};
+  static constexpr int O2DetID[NDetectors] = {-1, o2::detectors::DetID::ITS, o2::detectors::DetID::TPC, o2::detectors::DetID::TRD, o2::detectors::DetID::TOF};
   static_assert(NDetectors <= Label::DET_GLOBAL, "Detector index clashes with the code reserved for the root of the hierarchy");
 
   explicit Detector(DetIdx det) : mDetIdx(det) {}
@@ -60,6 +61,8 @@ class Detector
   Volume* getTopVolume() const noexcept { return mTopVolume; }
 
   DetIdx getDetIdx() const noexcept { return mDetIdx; }
+  /// o2::detectors::DetID of the detector, -1 for the virtual PVT
+  int getO2DetID() const noexcept { return O2DetID[mDetIdx]; }
   const char* getDetName() const noexcept { return DetName[mDetIdx]; }
 
   /// \name Time-sliced calibration
@@ -76,8 +79,9 @@ class Detector
   void loadTimeSlots();
   /// calibration intervals of this detector, nullptr if it has none
   const TimeSlotsSet* getTimeSlots() const noexcept { return mTimeSlots.get(); }
-  /// ID of the calibration slot of the processed TF, 0 if the detector has no slots
-  int getSlotID() const noexcept { return mSlotID; }
+  /// ID of the calibration slot of the processed TF, 0 if the detector has no slots or no TF was
+  /// processed yet
+  int getSlotID() const noexcept { return mSlotID < 0 ? 0 : mSlotID; }
   /// Select the calibration slot covering the timestamp (in ms) and report whether anything changed
   /// for this detector, i.e. whether the caller must refresh what depends on it. Fatal if the slots
   /// are defined and the timestamp is covered by none of them.
@@ -107,14 +111,14 @@ class Detector
   virtual Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) = 0;
 
   /// hook invoked by setTimeStamp when the calibration slot changes, for the detector to re-point
-  /// its slot-dependent labels and priors. The hierarchy is built for the slot 0, hence the 1st TF
-  /// triggers a change unless it belongs to that slot.
+  /// its slot-dependent labels and priors. It is invoked also for the 1st TF, whatever its slot, so
+  /// that the slot-dependent state (e.g. the mean vertex prior) is always initialised by it.
   virtual void onSlotChange(int /*slotID*/) {}
 
   DetIdx mDetIdx{DetPVT};
   Volume* mTopVolume{nullptr};              // top volume of the detector, owned by the common hierarchy
   std::unique_ptr<TimeSlotsSet> mTimeSlots; // calibration intervals of this detector, if any
-  int mSlotID{0};                           // calibration slot of the processed TF
+  int mSlotID{-1};                          // calibration slot of the processed TF, -1 before the 1st one
 };
 
 } // namespace o2::alignrs

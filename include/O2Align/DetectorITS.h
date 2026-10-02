@@ -50,22 +50,20 @@ class DetectorITS : public Detector
 
   void setTopologyDictionaries(const o2::itsmft::TopologyDictionary* itsDict, const o2::its3::TopologyDictionary* its3Dict)
   {
-    mITSDict = itsDict;
-    mIT3Dict = its3Dict;
+    if (itsDict) {
+      mITSDict = itsDict;
+    }
+    if (its3Dict) {
+      mIT3Dict = its3Dict;
+    }
   }
 
   const std::vector<FrameInfoExt>& getPointsInfo() const { return mITSPointsInfo; }
 
  protected:
-  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final
-  {
-    return mIsITS3 ? buildHierarchyIT3(sensorMap) : buildHierarchyITS(sensorMap);
-  }
+  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
  private:
-  Volume::Ptr buildHierarchyITS(Volume::SensorMapping& sensorMap);
-  Volume::Ptr buildHierarchyIT3(Volume::SensorMapping& sensorMap);
-
   bool mIsITS3{false};
   const o2::itsmft::TopologyDictionary* mITSDict{nullptr};
   const o2::its3::TopologyDictionary* mIT3Dict{nullptr};

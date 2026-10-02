@@ -35,8 +35,10 @@ struct SensorMisalignment {
   bool hasLegendre{false};
   InextensionalMisalignment inextensional;
   bool hasInextensional{false};
+  std::array<double, 6> rigidBody{}; // (dx,dy,dz,rx,ry,rz) in LOC of the sensor
+  bool hasRigidBody{false};
 
-  bool empty() const noexcept { return !hasLegendre && !hasInextensional; }
+  bool empty() const noexcept { return !hasLegendre && !hasInextensional && !hasRigidBody; }
 };
 
 struct MisalignmentModel {

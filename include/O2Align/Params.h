@@ -39,7 +39,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   int maxTPCPadRow = 146;             // max TPC pad-row to account
   int maxTPCRowsCombined = 1;         // allow combining clusters on so many rows to a single cluster
   int discardEdgePadrows = 3;         // discard padrow if its distance to stack edge padrow < this
-  float discardSectorEdgeDepth = 2.5; // discard clusters too close to the sector edge
+  float discardEdgePadDepth = 2.5;    // discard clusters too close to the sector edge (in pad units)
 
   // TRD
   bool applyXORTRD = false;           // apply XOR in TRD tranfformer
@@ -59,12 +59,13 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // PV constraint
   int usePVConstraintMinTracks = 5; // minimum number of tracks to use PV constraint
   bool useMultyTrackPVConstraint = true; // use multi-track PV constraint (otherwise use per-track PV constraint)
+  bool scaleMVPriorWithNTracks = true;   // per-track PV constraint: scale the luminous region covariance of the mean vertex prior by the number of tracks of the vertex, for the prior to count once per collision
   const std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
 
   // TPC drift calibration
   const std::string VDTimeSlotsJson = ""; // json file with TPC drift calibration intervals in ms
 
-  bool verbose = 0; // verbosity level
+  int verbose = 0; // verbosity level
   bool useStableRef = true; // use input tracks as linearization point
   float minMS = 1e-6f;      //  minimum scattering to account for
   float maxChi2Ndf = 10;    // maximum Chi2/Ndf allowed for GBL fit

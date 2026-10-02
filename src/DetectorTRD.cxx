@@ -27,6 +27,7 @@
 #include "O2Align/AlignmentTypes.h"
 #include "O2Align/DetectorTRD.h"
 #include "O2Align/Params.h"
+#include <cstring>
 #include "O2Align/SensorTRD.h"
 #include "O2Align/TrackFit.h"
 #include "TRDBase/Geometry.h"
@@ -75,24 +76,26 @@ Volume::Ptr DetectorTRD::buildHierarchy(Volume::SensorMapping& sensorMap)
   return root;
 }
 
-void DetectorTRD::prepareData(o2::globaltracking::RecoContainer* recoData)
+void DetectorTRD::initCalib()
 {
-  // The transformation of the raw tracklet to the calibrated LOCAL frame position does not depend
-  // on the track, hence it is done once per TF. The tilt correction and the covariance depend on
-  // the track and are applied in prepareTrack.
-  const auto& params = Params::Instance();
   if (!mTransformer) {
-    mTransformer.reset(new o2::trd::TrackletTransformer);
-    if (params.applyXORTRD) {
+    mTransformer = std::make_unique<o2::trd::TrackletTransformer>();
+    if (Params::Instance().applyXORTRD) {
       mTransformer->setApplyXOR();
     }
-    auto prevShift = mTransformer->isShiftApplied();
-    if (getenv("ALIEN_JDL_LPMPRODUCTIONTYPE") && std::strcmp(getenv("ALIEN_JDL_LPMPRODUCTIONTYPE"), "MC") == 0) {
+    const char* prodType = std::getenv("ALIEN_JDL_LPMPRODUCTIONTYPE");
+    if (prodType && std::strcmp(prodType, "MC") == 0) {
       // apply artificial pad shift in case non-ideal alignment is used to compensate for shift in current alignment from real data
       mTransformer->setApplyShift(false);
     }
     mTransformer->init();
+    mTransformer->setCalVdriftExB(mCalVdriftExB);
   }
+  mRecoParam.init(o2::base::PropagatorD::Instance()->getNominalBz());
+}
+
+void DetectorTRD::prepareData(o2::globaltracking::RecoContainer* recoData)
+{
   const auto trackletsRaw = recoData->getTRDTracklets();
   mTrackletsLoc.clear();
   mTrackletsLoc.reserve(trackletsRaw.size());
@@ -113,10 +116,6 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     return false;
   }
   auto prop = o2::base::PropagatorD::Instance();
-  if (!mRecoParamInit) {
-    mRecoParam.init(prop->getNominalBz());
-    mRecoParamInit = true;
-  }
   const auto trackletsRaw = recoData->getTRDTracklets();
   const auto* geo = o2::trd::Geometry::instance();
   const size_t nPointsIni = resTrack.info.size();
@@ -178,6 +177,7 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     pnt.label = Label(mDetIdx, trkltDet, true);
     pnt.x = static_cast<float>(traXYZ[0]);
     pnt.alpha = static_cast<float>(alpSens);
+    pnt.zFromTrack = true; // posZ is the track Z at the tracklet: it does not depend on the chamber position
     pnt.cluster = o2::BaseCluster<float>(static_cast<int16_t>(trkltDet), static_cast<float>(traXYZ[0]),
                                          static_cast<float>(posY), static_cast<float>(posZ),
                                          cov[0] + params.extraClsErrYTRD * params.extraClsErrYTRD,

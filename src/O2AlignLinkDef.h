@@ -19,6 +19,7 @@
 #pragma link C++ class o2::alignrs::LegendreDOFSet + ;
 #pragma link C++ class o2::alignrs::InextensionalDOFSet + ;
 #pragma link C++ class o2::alignrs::TPCVDriftDOFSet + ;
+#pragma link C++ class o2::alignrs::MeanVertexDOFSet + ;
 #pragma link C++ class o2::alignrs::Volume + ;
 #pragma link C++ class o2::alignrs::Constraint + ;
 

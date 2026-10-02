@@ -43,10 +43,11 @@ struct FrameInfoExt final {
   float x{-999.f};                // X of the measurement in the tracking frame
   float alpha{-999.f};            // rotation angle of the tracking frame
   o2::BaseCluster<float> cluster; // cluster info
+  bool zFromTrack{false};         // the Z is not measured but taken from the track (TRD): no Z derivatives wrt the alignment
   std::string asString() const;
   bool isValid() const { return lr > Invalid; }
   bool isVertex() const { return lr == Vertex; }
-  ClassDefNV(FrameInfoExt, 2)
+  ClassDefNV(FrameInfoExt, 3)
 };
 
 struct FitInfo final {

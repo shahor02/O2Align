@@ -59,10 +59,7 @@ class DetectorTPC final : public Detector
   static Label getVDriftLabel(int slotID = 0) { return Label(DetTPC, slotID, false, true); }
   Volume* getEnvelopeVolume() const { return mEnvelope; }
 
-  /// Hand the TPC drift length to the drift calibration DOFs, which need it to convert the cluster Z
-  /// into the drift length. Must be called once the correction maps are set and the DOF
-  /// configuration is applied, i.e. after buildHierarchy.
-  void finaliseCalib();
+  void initCalib();
 
   /// index of the stack the padrow belongs to, -1 if the padrow is out of range
   static int getStack(int padrow)

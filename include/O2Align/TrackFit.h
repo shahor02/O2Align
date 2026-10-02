@@ -26,12 +26,6 @@ using Mat51 = Eigen::Matrix<double, 5, 1>;
 using Mat55 = Eigen::Matrix<double, 5, 5>;
 using TrackD = o2::track::TrackParCovD;
 
-template <typename T>
-struct TrackingCluster : public o2::BaseCluster<T> {
-  using o2::BaseCluster<T>::BaseCluster;
-  T alpha{};
-};
-
 template <typename T, typename F>
 track::TrackParametrizationWithError<T> convertTrack(const track::TrackParametrizationWithError<F>& trk)
 {
@@ -77,10 +71,18 @@ o2::track::TrackParametrizationWithError<T> interpolateTrackParCov(
   Mat55 cA = unpack(tA.getCov());
   Mat55 cB = unpack(tB.getCov());
   Eigen::LLT<Mat55> lltA(cA), lltB(cB);
+  if (lltA.info() != Eigen::Success || lltB.info() != Eigen::Success) {
+    res.invalidate();
+    return res;
+  }
   Mat55 wA = lltA.solve(Mat55::Identity());
   Mat55 wB = lltB.solve(Mat55::Identity());
   Mat55 wTot = wA + wB;
   Eigen::LLT<Mat55> lltTot(wTot);
+  if (lltTot.info() != Eigen::Success) {
+    res.invalidate();
+    return res;
+  }
   Mat55 cTot = lltTot.solve(Mat55::Identity());
   Mat51 pA, pB;
   for (int i = 0; i < 5; ++i) {
@@ -100,76 +102,11 @@ o2::track::TrackParametrizationWithError<T> interpolateTrackParCov(
   return res;
 }
 
-// Performs an outward (0->7) and inward (7->0) Kalman refit storing the
-// extrapolation *before* the cluster update at each layer.
-// cluster array clArr[0] = PV (optional), clArr[1..7] = layers 0-6.
-// chi2 is accumulated only for the outward direction
-template <typename T>
-bool doBidirRefit(
-  const o2::its::TrackITS& iTrack,
-  std::array<const TrackingCluster<T>*, 8>& clArr,
-  std::array<o2::track::TrackParametrizationWithError<T>, 8>& extrapOut,
-  std::array<o2::track::TrackParametrizationWithError<T>, 8>& extrapInw,
-  T& chi2,
-  bool useStableRef,
-  typename o2::base::PropagatorImpl<T>::MatCorrType corrType)
+/// Reset the covariance of a seed before a refit: the default diagonal errors, with a 100% error on q/pt
+inline void resetTrackCovariance(TrackD& trk)
 {
-  const auto prop = o2::base::PropagatorImpl<T>::Instance();
-  const auto geom = o2::its::GeometryTGeo::Instance();
-  const auto bz = prop->getNominalBz();
-
-  auto rotateTrack = [bz](o2::track::TrackParametrizationWithError<T>& tr, T alpha, o2::track::TrackParametrization<T>* refLin) {
-    return refLin ? tr.rotate(alpha, *refLin, bz) : tr.rotate(alpha);
-  };
-  auto accountCluster = [&](int i, std::array<o2::track::TrackParametrizationWithError<T>, 8>& extrapDest, o2::track::TrackParametrizationWithError<T>& tr, o2::track::TrackParametrization<T>* refLin) -> int {
-    if (clArr[i]) {
-      bool outward = tr.getX() < clArr[i]->getX();
-      if (!rotateTrack(tr, clArr[i]->alpha, refLin) || !prop->propagateTo(tr, refLin, clArr[i]->getX(), false, base::PropagatorImpl<T>::MAX_SIN_PHI, base::PropagatorImpl<T>::MAX_STEP, corrType)) {
-        return 0;
-      }
-      if (outward) {
-        chi2 += tr.getPredictedChi2Quiet(*clArr[i]);
-      }
-      extrapDest[i] = tr; // before update
-      if (!tr.update(*clArr[i])) {
-        return 0;
-      }
-    } else {
-      extrapDest[i].invalidate();
-      return -1;
-    }
-    return 1;
-  };
-  auto trFitInw = convertTrack<T>(iTrack.getParamOut());
-  auto trFitOut = convertTrack<T>(iTrack.getParamIn());
-  if (clArr[0]) { // propagate outward seed to PV cluster's tracking frame
-    if (!trFitOut.rotate(clArr[0]->alpha) || !prop->propagateToX(trFitOut, clArr[0]->getX(), bz, base::PropagatorImpl<T>::MAX_SIN_PHI, base::PropagatorImpl<T>::MAX_STEP, corrType)) {
-      return false;
-    }
-  }
-  // linearization references
-  o2::track::TrackParametrization<T> refLinInw0, refLinOut0, *refLinOut = nullptr, *refLinInw = nullptr;
-  if (useStableRef) {
-    refLinOut = &(refLinOut0 = trFitOut);
-    refLinInw = &(refLinInw0 = trFitInw);
-  }
-
-  auto resetTrackCov = [bz](auto& trk) {
-    trk.resetCovariance();
-    float qptB5Scale = std::abs(bz) > 0.1f ? std::abs(bz) / 5.006680f : 1.f;
-    float q2pt2 = trk.getQ2Pt() * trk.getQ2Pt(), q2pt2Wgh = q2pt2 * qptB5Scale * qptB5Scale;
-    float err2 = (100.f + q2pt2Wgh) / (1.f + q2pt2Wgh) * q2pt2; // -> 100 for high pTs, -> 1 for low pTs.
-    trk.setCov(err2, 14);                                       // 100% error
-  };
-  resetTrackCov(trFitOut);
-  resetTrackCov(trFitInw);
-
-  for (int i = 0; i <= 7; i++) {
-    if (!accountCluster(i, extrapOut, trFitOut, refLinOut) || !accountCluster(7 - i, extrapInw, trFitInw, refLinInw)) {
-      return false;
-    }
-  }
-  return true;
+  trk.resetCovariance();
+  trk.setCov(trk.getQ2Pt() * trk.getQ2Pt() * trk.getCov()[14], 14);
 }
 
 } // namespace o2::alignrs
