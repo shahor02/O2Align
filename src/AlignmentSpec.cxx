@@ -257,7 +257,6 @@ class AlignmentSpec final : public Task
   void updateTimeDependentParams(ProcessingContext& pc);
   void buildHierarchy();
 
-
   // calculate the transport jacobian for points FROM and TO numerically via ridder's method
   // this assumes the track is already at point FROM and will be extrapolated to TO's x (xTo)
   // method does not modify the original track
@@ -282,6 +281,7 @@ class AlignmentSpec final : public Task
   // d(local offsets at the vertex point) / d(vertex position) of the track, which is at the same
   // time the derivative of the local position of the mean vertex wrt its global position
   static Eigen::MatrixXd computeVertexTransformation(const Track& resTrack);
+  static Eigen::MatrixXd makeZeroFieldInnerTransformation(const Eigen::MatrixXd& vtxTrans, int iTrk, int nTrk);
 
   // impose the prior of the mean interaction point on the vertex point of one track of a collision
   void addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint, double covScale = 1.);
@@ -355,6 +355,7 @@ class AlignmentSpec final : public Task
   Volume::SensorMapping mChip2Hiearchy; // global label mapping to leaves in the tree
   ProcStat mStat{};     // processing statistics
   GBLStat mGBLStat{};   // GBL construction and fit statistics
+  bool mFieldOFF{false}; // set per TF
   bool mUseMC{false};
   bool mUsePVConstraint{false}; // use PV as additional constraint in a given track refit  //RSTODO: this should be a per-track decision, not global, should not be datamember
   GTrackID::mask_t mTracksSrcMask;
@@ -512,7 +513,6 @@ void AlignmentSpec::process() // collisions
 // vertex point if the vertex constraint is requested.
 void AlignmentSpec::collectVertexTracks(const V2TRef& trackRef, bool useVertexConstraint, std::unordered_map<GTrackID, bool>& ambigTable, std::vector<Track>& resTracks)
 {
-  const bool fieldON = std::abs(o2::base::PropagatorD::Instance()->getNominalBz()) > 0.1;
   const auto primVerGIs = mRecoData->getPrimaryVertexMatchedTracks();
   resTracks.clear();
   for (int src : mTrackSources) {
@@ -527,7 +527,7 @@ void AlignmentSpec::collectVertexTracks(const V2TRef& trackRef, bool useVertexCo
         ambSeen = true;
       }
       const auto& trPar = mRecoData->getTrackParam(trackIndex);
-      if (fieldON && trPar.getPt() < mParams->minPt) {
+      if (!mFieldOFF && trPar.getPt() < mParams->minPt) {
         continue;
       }
       mStat.data[ProcStat::kInput][ProcStat::kTracks]++;
@@ -660,6 +660,7 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
 {
   mTimeInfo = pc.services().get<o2::framework::TimingInfo>();
   o2::base::GRPGeomHelper::instance().checkUpdates(pc);
+  mFieldOFF = std::abs(o2::base::PropagatorD::Instance()->getNominalBz()) < 0.1;
   mTimeStamp = (o2::base::GRPGeomHelper::instance().getOrbitResetTimeMUS() +  static_cast<long>(mTimeInfo.firstTForbit * o2::constants::lhc::LHCOrbitMUS)) * 1e-3;
   if (static bool initOnce{false}; !initOnce) {
     initOnce = true;
@@ -702,7 +703,7 @@ void AlignmentSpec::initOnFirstTF()
   buildHierarchy();
   if (mTPC) {
     mTPCParam = std::make_unique<o2::gpu::GPUParam>();
-    mTPCParam->SetDefaults(o2::base::Propagator::Instance()->getNominalBz(), false);
+    mTPCParam->SetDefaults(o2::base::PropagatorD::Instance()->getNominalBz(), false);
     mTPC->setTPCParam(mTPCParam.get());
     mTPC->initCalib();
   }
@@ -876,7 +877,6 @@ void AlignmentSpec::buildHierarchy()
 bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double alphaTo, gbl::Matrix5d& jac, gbl::Matrix5d& err)
 {
   auto prop = o2::base::PropagatorD::Instance();
-  const auto bz = prop->getNominalBz();
   const auto minStep = std::sqrt(std::numeric_limits<double>::epsilon());
   const gbl::Vector5d x0(track.getParams());
 
@@ -1147,7 +1147,7 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
   if (!fillGBLPoints(resTrack, ipStart, false, points, mvPriorCovScale)) {
     return false;
   }
-  gbl::GblTrajectory traj(points, std::abs(o2::base::PropagatorD::Instance()->getNominalBz()) > 0.1);
+  gbl::GblTrajectory traj(points, !mFieldOFF); // no curvature w/o field
   return fitGBLTrajectory(traj, resTrack.kfFit.chi2Ndf, gblTraj, resTrack.gblFit);
 }
 
@@ -1167,6 +1167,21 @@ Eigen::MatrixXd AlignmentSpec::computeVertexTransformation(const Track& resTrack
   trans(1, 0) = -slopes.dzdx * ca;      // dZ / dVx
   trans(1, 1) = -slopes.dzdx * sa;      // dZ / dVy
   trans(1, 2) = 1.;                     // dZ / dVz
+  return trans;
+}
+
+// Inner transformation of the iTrk-th of nTrk tracks of a composed trajectory w/o magnetic field. The
+// geometric constraint (2 rows) would add a curvature per track, which is not defined at B=0, hence
+// the kinematic constraint (5 rows, the full local parameters q/pt, snp, tgl, Y, Z at the vertex point)
+// is used instead, with the external parameters being the vertex position followed by the (snp, tgl)
+// of every track. The q/pt row is null, i.e. the curvature is fixed. vtxTrans is the
+// d(Y,Z)/d(vertex) transformation from computeVertexTransformation.
+Eigen::MatrixXd AlignmentSpec::makeZeroFieldInnerTransformation(const Eigen::MatrixXd& vtxTrans, int iTrk, int nTrk)
+{
+  Eigen::MatrixXd trans = Eigen::MatrixXd::Zero(5, 3 + 2 * nTrk);
+  trans(1, 3 + 2 * iTrk) = 1.;     // snp of this track
+  trans(2, 3 + 2 * iTrk + 1) = 1.; // tgl of this track
+  trans.block(3, 0, 2, 3) = vtxTrans;
   return trans;
 }
 
@@ -1216,6 +1231,7 @@ void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::Matri
 // coordinates of their common vertex as parameters shared by all of them: the vertex constraint is
 // then exact by parameterization, while every track keeps its own curvature and scattering
 // parameters. Follows the GBL composed trajectory with geometric constraint (GBL exampleComposedGeo).
+// W/o magnetic field the kinematic constraint w/o curvature is used, see makeZeroFieldInnerTransformation.
 // Every contributor must carry the vertex point in its info[0] slot, with its track state there,
 // as left by Track::updateWithVertex.
 bool AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj)
@@ -1241,9 +1257,19 @@ bool AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std:
   if (used.size() < 2) { // a single track does not define the common vertex
     return false;
   }
+  if (mFieldOFF) { // the number of the external parameters depends on the number of tracks
+    for (size_t i = 0; i < pointsAndTrans.size(); i++) {
+      pointsAndTrans[i].second = makeZeroFieldInnerTransformation(pointsAndTrans[i].second, (int)i, (int)pointsAndTrans.size());
+    }
+  }
   gbl::GblTrajectory traj(pointsAndTrans);
   FitInfo fit{};
-  if (!fitGBLTrajectory(traj, -1.f, gblTraj, fit)) {
+  bool res = fitGBLTrajectory(traj, -1.f, gblTraj, fit);
+  if (mVerbose > 1) {
+    LOGP(info, "GBL vertex fit of {} tracks (out of {}): chi2Ndf={} chi2={} ndf={} -> {}", 
+      used.size(), contributors.size(), fit.chi2Ndf, fit.chi2, fit.ndf, res ? "success" : "failure");
+  }
+  if (!res) {
     return false;
   }
   for (auto* trc : used) { // the composed fit is common for all the tracks of the collision
