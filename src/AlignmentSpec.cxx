@@ -41,6 +41,7 @@
 #include "Framework/DataProcessorSpec.h"
 #include "Framework/Task.h"
 #include "Framework/TimingInfo.h"
+#include "Framework/DeviceSpec.h"
 #include "ITSBase/GeometryTGeo.h"
 #include "DataFormatsGlobalTracking/RecoContainer.h"
 #include "DetectorsCommonDataFormats/DetID.h"
@@ -364,13 +365,23 @@ class AlignmentSpec final : public Task
   std::string mConfMacro{};                  // optional user macro configuring the detectors
   std::unique_ptr<TMethodCall> mUsrConfMethod; // its entry point, loaded by init
   const Params* mParams{nullptr};
+  int mLane = 0;
+  int mNLanes = 1;
+  std::string mMilleOutName{};
   MisalignmentModel mMisalignment;
 };
 
 void AlignmentSpec::init(InitContext& ic)
 {
+  mLane = ic.services().get<const o2::framework::DeviceSpec>().inputTimesliceId;
+  mNLanes = ic.services().get<const o2::framework::DeviceSpec>().maxInputTimeslices;
   o2::base::GRPGeomHelper::instance().setRequest(mGGCCDBRequest);
-  mNThreads = ic.options().get<int>("nthreads");
+  #ifdef WITH_OPENMP
+  mNThreads = std::max(1, ic.options().get<int>("nthreads"));
+  #else
+  mNThreads = 1;
+  LOGP(warn, "OpenMP is not enabled, the number of threads is forced to 1");
+  #endif
   if (mOutOpt) {
     LOG(info) << mOutOpt.pstring();
     mDBGOut = std::make_unique<o2::utils::TreeStreamRedirector>("its3_debug_alg.root", "recreate");
@@ -648,12 +659,13 @@ void AlignmentSpec::writeMilleRecords(std::vector<gbl::GblTrajectory>& gblTraj)
     return;
   }
   if (!mMille) {
-    mMille = std::make_unique<gbl::MilleBinary>(mParams->milleBinFile, true);
+    mMilleOutName = mNLanes > 1 ? fmt::format("{}_{}.bin", mParams->milleBinFile, mLane) : fmt::format("{}.bin", mParams->milleBinFile);
+    mMille = std::make_unique<gbl::MilleBinary>(mMilleOutName, true);
   }
   for (auto& traj : gblTraj) {
     traj.milleOut(*mMille);
   }
-  LOGP(info, "Wrote {} trajectories to {}", gblTraj.size(), mParams->milleBinFile);
+  LOGP(info, "Wrote {} trajectories to {}", gblTraj.size(), mMilleOutName);
 }
 
 void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
@@ -858,13 +870,18 @@ void AlignmentSpec::buildHierarchy()
   executeConfigMacro(); // the user macro overrides whatever the JSON configuration has set
 
   mHierarchy->finalise();
+  for (auto* det : mDetectors) {
+    if (det->getTopVolume() != nullptr) {
+      LOGP(info, "DOF summary of {}:\n{}", det->getDetName(), det->reportDOFSummary());
+    }
+  }
   if (withPVT) {
     mPVT->updatePositionLabels();
     if (mPVT->getPositionLabels().empty()) {
       LOGP(info, "Mean vertex position is fixed, it is imposed as a prior w/o being aligned");
     }
   }
-  if (mOutOpt[o2::alignrs::OutputOpt::MilleSteer]) {
+  if (mOutOpt[o2::alignrs::OutputOpt::MilleSteer] && mLane == 0) {
     std::ofstream tree(mParams->milleTreeFile);
     mHierarchy->writeTree(tree);
     std::ofstream cons(mParams->milleConFile);
@@ -1265,7 +1282,7 @@ bool AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std:
   gbl::GblTrajectory traj(pointsAndTrans);
   FitInfo fit{};
   bool res = fitGBLTrajectory(traj, -1.f, gblTraj, fit);
-  if (mVerbose > 1) {
+  if (mParams->verbose > 1) {
     LOGP(info, "GBL vertex fit of {} tracks (out of {}): chi2Ndf={} chi2={} ndf={} -> {}", 
       used.size(), contributors.size(), fit.chi2Ndf, fit.chi2, fit.ndf, res ? "success" : "failure");
   }

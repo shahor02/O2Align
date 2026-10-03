@@ -60,6 +60,8 @@ class DetectorITS : public Detector
 
   const std::vector<FrameInfoExt>& getPointsInfo() const { return mITSPointsInfo; }
 
+  std::string reportDOFSummary() const final;
+
  protected:
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 

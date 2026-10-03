@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 
@@ -393,6 +394,106 @@ Volume::Ptr DetectorITS::buildHierarchy(Volume::SensorMapping& sensorMap)
     sensorMap[lbl] = sensor;
   }
   return root;
+}
+
+namespace
+{
+/// free-RB / free-calib / total counts of one hierarchy kind (half-barrel, stave, ...) at a layer
+struct DOFCounts {
+  int nRB{0}, nCal{0}, nTot{0};
+  void add(const Volume* v)
+  {
+    if (v == nullptr) {
+      return;
+    }
+    ++nTot;
+    nRB += v->getRigidBody() && v->getRigidBody()->nFreeDOFs() > 0;
+    nCal += v->getCalib() && v->getCalib()->nFreeDOFs() > 0;
+  }
+};
+
+std::ostream& operator<<(std::ostream& os, const DOFCounts& c)
+{
+  return os << c.nRB << '/' << c.nCal << '/' << c.nTot;
+}
+
+/// comma-separated names of the free DOFs of a single volume, "none" if it has none
+std::string freeDOFNames(const Volume* v)
+{
+  std::string s;
+  auto append = [&s](const char* tag, const DOFSet* d) {
+    if (d == nullptr) {
+      return;
+    }
+    for (int i = 0; i < d->nDOFs(); ++i) {
+      if (d->isFree(i)) {
+        if (!s.empty()) {
+          s += ",";
+        }
+        s += tag;
+        s += d->dofName(i);
+      }
+    }
+  };
+  append("", v->getRigidBody());
+  append("CAL:", v->getCalib());
+  return s.empty() ? "none" : s;
+}
+
+} // namespace
+
+std::string DetectorITS::reportDOFSummary() const
+{
+  if (mTopVolume == nullptr) {
+    return {};
+  }
+  auto geom = o2::its::GeometryTGeo::Instance();
+  auto isLayITS3 = [this](int lr) { return mIsITS3 && lr < 3; };
+  std::unordered_map<std::string, Volume*> sym2vol;
+  mTopVolume->traverse([&sym2vol](Volume* v) { sym2vol[v->getSymName()] = v; });
+  auto find = [&sym2vol](const std::string& symName) -> Volume* {
+    const auto it = sym2vol.find(symName);
+    return it == sym2vol.end() ? nullptr : it->second;
+  };
+
+  std::ostringstream oss;
+  oss << "ITSenvelope: " << freeDOFNames(mTopVolume) << '\n';
+
+  int lay = 0, hba = 0, sta = 0, ssta = 0, modd = 0, chip = 0;
+  for (int ilr = 0; ilr < geom->getNumberOfLayers(); ilr++) {
+    const bool isIB3 = isLayITS3(ilr);
+    DOFCounts halfBarrels, staves, halfStaves, modules, sensors;
+    for (int ihb = 0; ihb < geom->getNumberOfHalfBarrels(); ihb++) {
+      halfBarrels.add(find(geom->composeSymNameHalfBarrel(ilr, ihb, isIB3)));
+      if (isIB3) {
+        continue; // the half-barrel IS the sensor; its tiles are counted below as "sensors"
+      }
+      for (int ist = 0; ist < geom->getNumberOfStaves(ilr) / 2; ist++) {
+        staves.add(find(geom->composeSymNameStave(ilr, ihb, ist)));
+        for (int ihst = 0; ihst < geom->getNumberOfHalfStaves(ilr); ihst++) {
+          halfStaves.add(find(geom->composeSymNameHalfStave(ilr, ihb, ist, ihst)));
+          for (int imd = 0; imd < geom->getNumberOfModules(ilr); imd++) {
+            modules.add(find(geom->composeSymNameModule(ilr, ihb, ist, ihst, imd)));
+          }
+        }
+      }
+    }
+    for (int ich = 0; ich < geom->getNumberOfChips(); ich++) {
+      geom->getChipId(ich, lay, hba, sta, ssta, modd, chip);
+      if (lay != ilr) {
+        continue;
+      }
+      const int nch = isIB3 ? -1 : (modd < 0 ? geom->getNumberOfChipsPerStave(lay) : geom->getNumberOfChipsPerModule(lay));
+      const std::string symChip = isIB3 ? geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip, true) : geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip % nch);
+      sensors.add(find(symChip));
+    }
+    oss << "Layer " << ilr << ": halfbarrels: " << halfBarrels;
+    if (!isIB3) {
+      oss << ", staves: " << staves << ", halfstaves: " << halfStaves << ", modules: " << modules;
+    }
+    oss << ", sensors: " << sensors << '\n';
+  }
+  return oss.str();
 }
 
 } // namespace o2::alignrs

@@ -105,6 +105,13 @@ class Detector
   /// itself is not needed. The derivation (thesis A.7, A.8) is documented in Detector.cxx.
   virtual std::vector<o2::detectors::AlignParam> MP2AlignParams(const std::map<uint32_t, double>& labelToValue, const std::vector<o2::detectors::AlignParam>& initial, bool writeLocal) const;
 
+  /// Compact, human-readable summary of how many volumes of this detector's branch have at least
+  /// one free rigid-body and/or calibration DOF, one line per hierarchy level: "<Nrb>/<Ncal>/<N>"
+  /// counts, with N the total number of volumes of that kind. The base implementation groups by
+  /// the generic tree depth below getTopVolume(); a detector whose levels have a meaningful name
+  /// (ITS: half-barrel/stave/half-stave/module/sensor) should override it. Empty before attachTo.
+  virtual std::string reportDOFSummary() const;
+
  protected:
   /// create the stand-alone hierarchy of this detector, its top volume being its own root.
   /// Called by attachTo, which makes it a branch of the common hierarchy.

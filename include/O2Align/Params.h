@@ -98,7 +98,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   double ridderEps = 1e-16;
 
   // MillePede output
-  std::string milleBinFile = "mp2data.bin";
+  std::string milleBinFile = "mp2data";
   std::string milleConFile = "mp2con.txt";
   std::string milleParamFile = "mp2param.txt";
   std::string milleTreeFile = "mp2tree.txt";

@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -341,6 +343,31 @@ bool Detector::setTimeStamp(long tsMS)
   mSlotID = slotID;
   onSlotChange(slotID);
   return true;
+}
+
+std::string Detector::reportDOFSummary() const
+{
+  if (mTopVolume == nullptr) {
+    return {};
+  }
+  struct Counts {
+    int nRB{0}, nCal{0}, nTot{0};
+    void add(const Volume* v)
+    {
+      ++nTot;
+      nRB += v->getRigidBody() && v->getRigidBody()->nFreeDOFs() > 0;
+      nCal += v->getCalib() && v->getCalib()->nFreeDOFs() > 0;
+    }
+  };
+  const int topLevel = mTopVolume->getLevel();
+  std::map<int, Counts> byLevel;
+  mTopVolume->traverse([&byLevel, topLevel](Volume* v) { byLevel[v->getLevel() - topLevel].add(v); });
+  std::ostringstream oss;
+  oss << getDetName() << ":";
+  for (const auto& [lvl, c] : byLevel) {
+    oss << " level" << lvl << ": " << c.nRB << '/' << c.nCal << '/' << c.nTot << ',';
+  }
+  return oss.str();
 }
 
 // The KF (re)fit of the prepared track moved to Track::fitTrack / Track::continueFitOutward
