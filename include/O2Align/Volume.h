@@ -163,8 +163,8 @@ class Volume
   bool isRigidBodyAllowed() const noexcept { return mRBAllowed; }
   void setSensorId(int id) noexcept { mSensorId = id; }
   int getSensorId() const noexcept { return mSensorId; }
-  // true if this volume participates in the hierarchy (has DOFs or is pseudo)
-  bool isActive() const noexcept { return mRigidBody != nullptr || mIsPseudo; }
+  // true if this volume participates in the hierarchy (has a free RB DOF or is pseudo)
+  bool isActive() const noexcept { return (mRigidBody && mRigidBody->nFreeDOFs() > 0) || mIsPseudo; }
 
   // transformation matrices
   virtual void defineMatrixL2G() {}

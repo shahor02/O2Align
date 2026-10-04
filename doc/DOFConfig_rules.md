@@ -45,6 +45,17 @@ or none of their free DOFs feeds it through the child-to-parent jacobian) is ski
 or an envelope without its own geometry such as `TRD_envelope`), so the common mode of the
 supermodules of a detector can't be pinned this way.
 
+## Aligning a Subtree as One Rigid Body
+
+The opposite situation to `pinChildrenMean` is freeing a parent's rigid-body DOF while giving none
+of its descendants a `rigidBody` rule at all. This is not auto-disabled and needs no mean-of-children
+constraint: the parent-to-child jacobian is applied unconditionally down to every leaf measurement
+regardless of whether a descendant carries a DOFSet, so the parent's free DOF is fully observable on
+its own. A constraint is only needed to resolve the degeneracy of a DOF being free at *both* a parent
+and a child level simultaneously (the case this section opened with); with nothing free below the
+parent, there is no such degeneracy. Use this to align, say, a half-barrel as a single rigid body
+while keeping its staves/modules/chips fixed to it, without needing to give them any DOF config.
+
 ## TPC Drift
 
 The TPC drift calibration belongs to `TPC_envelope` and is not enabled by default. Enable both `VDRIFT` and `DRIFTOFF` with:

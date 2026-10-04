@@ -154,24 +154,28 @@ void Volume::finalise(uint8_t level)
     for (const auto& c : mChildren) {
       c->finalise(level + 1);
     }
-    // auto-disable parent RB DOFs if no children are active
-    if (mRigidBody) {
-      int nActiveChildren = 0;
-      for (const auto& c : mChildren) {
-        if (c->isActive()) {
-          ++nActiveChildren;
-        }
-      }
-      if (!nActiveChildren) {
-        for (int iDOF = 0; iDOF < mRigidBody->nDOFs(); ++iDOF) {
-          if (mRigidBody->isFree(iDOF)) {
-            LOGP(warn, "Auto-disabling DOF {} for {} since no active children",
-                 mRigidBody->dofName(iDOF), mSymName);
-            mRigidBody->setFree(iDOF, false);
-          }
-        }
-      }
-    }
+    // A free parent RB DOF with no active children is NOT auto-disabled: it is fully observable
+    // from leaf residuals regardless of whether any descendant carries a DOFSet (buildPointGlobals
+    // transports the parent-to-child jacobian unconditionally), and it only needs the mean-of-children
+    // constraint (writeChildrenMeanConstraints) when a DOF is free at both this level and a child
+    // level, which is the actual degeneracy that mechanism breaks. See doc/DOFConfig_rules.md.
+    // if (mRigidBody) {
+    //   int nActiveChildren = 0;
+    //   for (const auto& c : mChildren) {
+    //     if (c->isActive()) {
+    //       ++nActiveChildren;
+    //     }
+    //   }
+    //   if (!nActiveChildren) {
+    //     for (int iDOF = 0; iDOF < mRigidBody->nDOFs(); ++iDOF) {
+    //       if (mRigidBody->isFree(iDOF)) {
+    //         LOGP(warn, "Auto-disabling DOF {} for {} since no active children",
+    //              mRigidBody->dofName(iDOF), mSymName);
+    //         mRigidBody->setFree(iDOF, false);
+    //       }
+    //     }
+    //   }
+    // }
   }
 }
 
@@ -201,9 +205,8 @@ void Volume::writeChildrenMeanConstraints(std::ostream& os) const
       continue;
     }
     const char* dofName = RigidBodyDOFSet::RigidBodyDOFNames[iDOF];
-    if (free && nActiveChildren == 0) { // finalise() should have fixed such a DOF
-      LOGP(fatal, "{} has dof {} active but no active children!", mSymName, dofName);
-    }
+    // a free DOF with no active children needs no constraint: there is no degeneracy to break
+    // (see finalise()) and the fall-through below (con.getSize() == 0, free == true) stays silent
     Constraint con(std::format("DOF {} for {}{}", dofName, mSymName, free ? "" : " (pinned)"), 0.);
     if (nActiveChildren > 0) {
       addChildrenMeanTerms(con, iDOF, 1.0 / static_cast<double>(nActiveChildren));
