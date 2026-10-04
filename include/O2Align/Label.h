@@ -13,6 +13,7 @@
 #define O2_ALIGN_LABEL_H
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <format>
 #include <stdexcept>
@@ -102,5 +103,13 @@ class Label
 };
 
 } // namespace o2::alignrs
+
+template <>
+struct std::hash<o2::alignrs::Label> {
+  size_t operator()(const o2::alignrs::Label& label) const noexcept
+  {
+    return std::hash<o2::alignrs::Label::T>{}(label.raw(0));
+  }
+};
 
 #endif

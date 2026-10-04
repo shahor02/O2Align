@@ -70,6 +70,7 @@
 #include "O2Align/AlignmentSpec.h"
 #include "O2Align/Params.h"
 #include "O2Align/AlignmentTypes.h"
+#include "O2Align/ProcessingStats.h"
 #include "O2Align/Volume.h"
 #include "O2Align/MisalignmentUtils.h"
 #include "O2Align/SensorITS.h"
@@ -184,23 +185,6 @@ class AlignmentSpec final : public Task
 {
  public:
 
-  struct ProcStat {
-    enum {
-      kInput,
-      kAccepted,
-      kNStatCl
-    };
-    enum {
-      kVertices,
-      kTracks,
-      kTracksWithVertex,
-      kCosmic,
-      kMaxStat
-    };
-    std::array<std::array<size_t, kMaxStat>, kNStatCl> data{};
-    void print() const;
-  };
-
   /// statistics of the GBL trajectories construction and fit
   struct GBLStat {
     int failedProp{0};       // tracks lost on the propagation between the points
@@ -271,7 +255,7 @@ class AlignmentSpec final : public Task
   // fill the GBL points of the track frames from the ipStart slot outward
   // mvPriorCovScale > 0: impose on the vertex point, besides the refitted vertex, the mean vertex prior
   // with the luminous region covariance scaled by this factor (per-track PV constraint mode)
-  bool fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, double mvPriorCovScale = 0.);
+  bool fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, std::vector<Volume*>& contributingVolumes, double mvPriorCovScale = 0.);
 
   // fit the constructed trajectory and store it to gblTraj if the Mille data is requested
   bool fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, std::vector<gbl::GblTrajectory>& gblTraj, FitInfo& fitOut);
@@ -289,17 +273,12 @@ class AlignmentSpec final : public Task
 
   // build and fit a single composed GBL trajectory for all tracks of one collision, with their
   // common vertex position as parameters shared by all of them
-  bool buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj);
-
-  /// counters of the loop over the vertices of a TF
-  struct VertexLoopStat {
-    int nVtx{0}, nVtxAcc{0}, nTrc{0}, nTrcAcc{0};
-  };
+  size_t buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj);
   // steps of process(), see there
   void collectVertexTracks(const V2TRef& trackRef, bool useVertexConstraint, std::unordered_map<GTrackID, bool>& ambigTable, std::vector<Track>& resTracks);
   void refitTracks(std::vector<Track>& resTracks, bool useVertexConstraint);
   bool constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks);
-  void buildVertexTrajectories(std::vector<Track>& resTracks, bool useCommonVertex, std::vector<gbl::GblTrajectory>& gblTraj, VertexLoopStat& stat);
+  void buildVertexTrajectories(std::vector<Track>& resTracks, bool useCommonVertex, std::vector<gbl::GblTrajectory>& gblTraj);
   void writeMilleRecords(std::vector<gbl::GblTrajectory>& gblTraj);
 
   // build track to vertex association
@@ -318,7 +297,7 @@ class AlignmentSpec final : public Task
     std::vector<int> labels;
     Eigen::MatrixXd der;
   };
-  PointGlobals buildPointGlobals(const FrameInfoExt& frame, const TrackD& wTrk) const;
+  PointGlobals buildPointGlobals(const FrameInfoExt& frame, const TrackD& wTrk, std::vector<Volume*>& contributingVolumes);
 
   // steps of updateTimeDependentParams
   void initOnFirstTF();
@@ -354,7 +333,7 @@ class AlignmentSpec final : public Task
   std::shared_ptr<o2::base::GRPGeomRequest> mGGCCDBRequest;
   std::unique_ptr<Volume> mHierarchy; // single tree-hierarchy of all detectors, rooted in a virtual volume
   Volume::SensorMapping mChip2Hiearchy; // global label mapping to leaves in the tree
-  ProcStat mStat{};     // processing statistics
+  ProcessingStats mProcessingStats;
   GBLStat mGBLStat{};   // GBL construction and fit statistics
   bool mFieldOFF{false}; // set per TF
   bool mUseMC{false};
@@ -480,6 +459,7 @@ void AlignmentSpec::run(ProcessingContext& pc)
 
 void AlignmentSpec::process() // collisions
 {
+  ++mProcessingStats.nTF;
   for (auto* det : mDetectors) {
     det->prepareData(mRecoData);
   }
@@ -493,29 +473,27 @@ void AlignmentSpec::process() // collisions
   const auto primVer2TRefs = mRecoData->getPrimaryVertexMatchedTrackRefs();
   std::unordered_map<GTrackID, bool> ambigTable;
   const int nvRefs = primVer2TRefs.size();
-  VertexLoopStat stat;
   for (int ivref = 0; ivref < nvRefs; ivref++) {
     // the last reference holds the tracks not attached to any vertex
     const PVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;
     bool useVertexConstraint = vtx && mParams->usePVConstraintMinTracks > 0 && vtx->getNContributors() >= mParams->usePVConstraintMinTracks;
-    if (useVertexConstraint) {
-      mStat.data[ProcStat::kInput][ProcStat::kVertices]++;
+    if (vtx) {
+      ++mProcessingStats.nPV;
     }
     if (mParams->verbose > 1) {
       LOGP(info, "processing vtref {} of {} with {} tracks, {}", ivref, nvRefs, primVer2TRefs[ivref].getEntries(), vtx ? vtx->asString() : std::string{});
     }
-    stat.nVtx++;
     collectVertexTracks(primVer2TRefs[ivref], useVertexConstraint, ambigTable, resTracks);
     refitTracks(resTracks, useVertexConstraint);
     if (useVertexConstraint && !constrainWithVertex(*vtx, ivref, resTracks)) {
       useVertexConstraint = false; // the tracks of this vertex are fitted w/o the vertex point
     }
     if (useVertexConstraint) {
-      stat.nVtxAcc++;
+      ++mProcessingStats.nPVConstrAcc;
     }
-    buildVertexTrajectories(resTracks, useVertexConstraint && mParams->useMultyTrackPVConstraint, gblTraj, stat);
+    buildVertexTrajectories(resTracks, useVertexConstraint && mParams->useMultyTrackPVConstraint, gblTraj);
   }
-  LOGP(info, "Fitted {} of {} tracks of {} of {} vertices", stat.nTrcAcc, stat.nTrc, stat.nVtxAcc, stat.nVtx);
+  mProcessingStats.Print();
   mGBLStat.print();
   writeMilleRecords(gblTraj);
 }
@@ -541,7 +519,7 @@ void AlignmentSpec::collectVertexTracks(const V2TRef& trackRef, bool useVertexCo
       if (!mFieldOFF && trPar.getPt() < mParams->minPt) {
         continue;
       }
-      mStat.data[ProcStat::kInput][ProcStat::kTracks]++;
+      ++mProcessingStats.nTrc;
       auto& tr = resTracks.emplace_back();
       tr.gid = trackIndex;
       tr.track = convertTrack<double>(trPar);
@@ -586,13 +564,11 @@ bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vect
   if (!refitPV(vtx, resTracks, vtxRefit)) {
     return false;
   }
-  mStat.data[ProcStat::kAccepted][ProcStat::kVertices]++;
   if (mParams->verbose > 1) {
     LOGP(info, "refitted vtref {}: {} (original: {})", ivref, vtxRefit.asString(), vtx.asString());
   }
-  int nTrcWithPV = 0;
 #ifdef WITH_OPENMP
-#pragma omp parallel for schedule(dynamic) num_threads(mNThreads) reduction(+ : nTrcWithPV)
+#pragma omp parallel for schedule(dynamic) num_threads(mNThreads)
 #endif
   for (int itr = 0; itr < (int)resTracks.size(); itr++) {
     auto& track = resTracks[itr];
@@ -603,9 +579,7 @@ bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vect
       LOGP(debug, "Failed to update track {} with {}", track.gid.asString(), vtxRefit.asString());
       continue;
     }
-    nTrcWithPV++;
   }
-  mStat.data[ProcStat::kAccepted][ProcStat::kTracksWithVertex] += nTrcWithPV;
   return true;
 }
 
@@ -614,7 +588,7 @@ bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vect
 // vertex point. Then the remaining tracks, each separately: those carrying the vertex point are
 // fitted from it on, treating it as an ordinary measured point of this track only, the others from
 // their 1st measured point.
-void AlignmentSpec::buildVertexTrajectories(std::vector<Track>& resTracks, bool useCommonVertex, std::vector<gbl::GblTrajectory>& gblTraj, VertexLoopStat& stat)
+void AlignmentSpec::buildVertexTrajectories(std::vector<Track>& resTracks, bool useCommonVertex, std::vector<gbl::GblTrajectory>& gblTraj)
 {
   if (useCommonVertex) {
     std::vector<Track*> contributors;
@@ -623,9 +597,10 @@ void AlignmentSpec::buildVertexTrajectories(std::vector<Track>& resTracks, bool 
         contributors.push_back(&resTrack);
       }
     }
-    stat.nTrc += (int)contributors.size();
-    if (buildGBLVertex(contributors, gblTraj)) { // the collision is a single Millepede local fit object
-      stat.nTrcAcc += (int)contributors.size();
+    if (const auto nAccepted = buildGBLVertex(contributors, gblTraj); nAccepted > 0) {
+      ++mProcessingStats.nPVGBLAcc;
+      mProcessingStats.nTrcGBLAcc += nAccepted;
+      mProcessingStats.nTrcMultiGBLAcc += nAccepted;
     }
   }
   // per-track PV constraint: every track carrying the vertex point gets the mean vertex prior,
@@ -644,10 +619,10 @@ void AlignmentSpec::buildVertexTrajectories(std::vector<Track>& resTracks, bool 
     if (useCommonVertex && resTrack.info.front().isVertex()) {
       continue; // already accounted with the common vertex constraint
     }
-    stat.nTrc++;
     const bool hasVertex = resTrack.info.front().isVertex();
     if (buildGBLTrack(resTrack, resTrack.info.front().isValid() ? 0 : 1, gblTraj, hasVertex ? mvPriorCovScale : 0.)) {
-      stat.nTrcAcc++;
+      ++mProcessingStats.nTrcGBLAcc;
+      ++mProcessingStats.nTrcSingleGBLAcc;
     }
   }
 }
@@ -769,13 +744,13 @@ void AlignmentSpec::updateCalibrationSlots()
 // The base derivative is computed in the tracking frame while the alignment is done in the local
 // one, dr/da_(LOC) = dr/da_(TRK) * da_(TRK)/da_(LOC), and is then transported level by level with
 // the local-to-parent jacobian of each child.
-AlignmentSpec::PointGlobals AlignmentSpec::buildPointGlobals(const FrameInfoExt& frame, const TrackD& wTrk) const
+AlignmentSpec::PointGlobals AlignmentSpec::buildPointGlobals(const FrameInfoExt& frame, const TrackD& wTrk, std::vector<Volume*>& contributingVolumes)
 {
   const auto volIt = mChip2Hiearchy.find(frame.label); // as assigned by the detector owning the frame
   if (volIt == mChip2Hiearchy.end()) {
     LOGP(fatal, "Cannot find global label: {}", frame.label.asString());
   }
-  const auto* tileVol = volIt->second;
+  auto* tileVol = volIt->second;
   const auto derCtx = makeDerivativeContext(frame, wTrk);
 
   // count rigid body columns: only volumes with real DOFs (not DOFPseudo).
@@ -838,6 +813,13 @@ AlignmentSpec::PointGlobals AlignmentSpec::buildPointGlobals(const FrameInfoExt&
   }
   if (frame.zFromTrack) { // the Z "measurement" follows the track, whatever the alignment
     globals.der.row(1).setZero();
+  }
+  if (!globals.labels.empty()) {
+    for (auto* volume = tileVol; volume && !volume->isRoot(); volume = volume->getParent()) {
+      if (std::find(contributingVolumes.begin(), contributingVolumes.end(), volume) == contributingVolumes.end()) {
+        contributingVolumes.push_back(volume);
+      }
+    }
   }
   return globals;
 }
@@ -1010,7 +992,7 @@ bool AlignmentSpec::refitPV(const PVertex& vtxOrig, const std::vector<Track>& re
 // state at the ipStart frame). The measurement residuals are stored in resTrack.points.
 // skipFirstMeas: add no measurement on the 1st accounted point, used for the common vertex point of
 // a composed trajectory, whose position enters via the inner transformation instead.
-bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, double mvPriorCovScale)
+bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, std::vector<Volume*>& contributingVolumes, double mvPriorCovScale)
 {
   auto prop = o2::base::PropagatorD::Instance();
   const int np = (int)resTrack.info.size();
@@ -1084,7 +1066,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
     }
 
     if (!frame.isVertex()) { // the vertex point has no alignable volume behind it
-      const auto globals = buildPointGlobals(frame, wTrk);
+      const auto globals = buildPointGlobals(frame, wTrk, contributingVolumes);
       point.addGlobals(globals.labels, globals.der);
     } else if (addMeas && mvPriorCovScale > 0.) {
       // Per-track PV constraint: the track passes through the true vertex V, measured (i) by the
@@ -1161,11 +1143,18 @@ bool AlignmentSpec::fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, 
 bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj, double mvPriorCovScale)
 {
   std::vector<gbl::GblPoint> points;
-  if (!fillGBLPoints(resTrack, ipStart, false, points, mvPriorCovScale)) {
+  std::vector<Volume*> contributingVolumes;
+  if (!fillGBLPoints(resTrack, ipStart, false, points, contributingVolumes, mvPriorCovScale)) {
     return false;
   }
   gbl::GblTrajectory traj(points, !mFieldOFF); // no curvature w/o field
-  return fitGBLTrajectory(traj, resTrack.kfFit.chi2Ndf, gblTraj, resTrack.gblFit);
+  if (!fitGBLTrajectory(traj, resTrack.kfFit.chi2Ndf, gblTraj, resTrack.gblFit)) {
+    return false;
+  }
+  for (auto* volume : contributingVolumes) {
+    volume->incDataCounter();
+  }
+  return true;
 }
 
 // d(offsets at the vertex point) / d(vertex position): the vertex is displaced in the global frame
@@ -1251,17 +1240,20 @@ void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::Matri
 // W/o magnetic field the kinematic constraint w/o curvature is used, see makeZeroFieldInnerTransformation.
 // Every contributor must carry the vertex point in its info[0] slot, with its track state there,
 // as left by Track::updateWithVertex.
-bool AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj)
+size_t AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj)
 {
   std::vector<std::pair<std::vector<gbl::GblPoint>, Eigen::MatrixXd>> pointsAndTrans;
   std::vector<Track*> used;
+  std::vector<std::vector<Volume*>> volumesByTrack;
   pointsAndTrans.reserve(contributors.size());
   used.reserve(contributors.size());
+  volumesByTrack.reserve(contributors.size());
   for (auto* trc : contributors) {
     std::vector<gbl::GblPoint> points;
+    std::vector<Volume*> contributingVolumes;
     // the vertex point is the 1st point of every sub-trajectory and carries no measurement of its
     // own: the common vertex position enters via the inner transformation below
-    if (!fillGBLPoints(*trc, 0, true, points) || points.size() < 2) {
+    if (!fillGBLPoints(*trc, 0, true, points, contributingVolumes) || points.size() < 2) {
       continue;
     }
     Eigen::MatrixXd innerTrans = computeVertexTransformation(*trc);
@@ -1270,9 +1262,10 @@ bool AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std:
     }
     pointsAndTrans.emplace_back(std::move(points), std::move(innerTrans));
     used.push_back(trc);
+    volumesByTrack.push_back(std::move(contributingVolumes));
   }
   if (used.size() < 2) { // a single track does not define the common vertex
-    return false;
+    return 0;
   }
   if (mFieldOFF) { // the number of the external parameters depends on the number of tracks
     for (size_t i = 0; i < pointsAndTrans.size(); i++) {
@@ -1287,12 +1280,15 @@ bool AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, std:
       used.size(), contributors.size(), fit.chi2Ndf, fit.chi2, fit.ndf, res ? "success" : "failure");
   }
   if (!res) {
-    return false;
+    return 0;
   }
-  for (auto* trc : used) { // the composed fit is common for all the tracks of the collision
-    trc->gblFit = fit;
+  for (size_t iTrack = 0; iTrack < used.size(); ++iTrack) {
+    used[iTrack]->gblFit = fit;
+    for (auto* volume : volumesByTrack[iTrack]) {
+      volume->incDataCounter();
+    }
   }
-  return true;
+  return used.size();
 }
 
 void AlignmentSpec::buildT2V()
@@ -1472,6 +1468,24 @@ void AlignmentSpec::endOfStream(EndOfStreamContext& /*ec*/)
     mDBGOut.reset();
   }
   mMille.reset(); // flushes and closes the binary
+
+  if (mParams->volumeStatistics && mHierarchy) {
+    mHierarchy->traverse([this](Volume* volume) {
+      const int label = static_cast<int>(volume->getLabel().raw(0));
+      const std::string& name = volume->getSymName();
+      mProcessingStats.nTrcByLabel[label] = volume->getDataCounter();
+      mProcessingStats.labelToSymName[label] = name;
+      mProcessingStats.symNameToLabel[name] = label;
+    });
+  }
+
+  const auto statOutName = mNLanes > 1 ? fmt::format("{}_{}.root", mParams->statFile, mLane) : fmt::format("{}.root", mParams->statFile);
+  TFile statOut(statOutName.c_str(), "RECREATE");
+  if (statOut.IsZombie()) {
+    LOGP(fatal, "Failed to create processing statistics file {}", statOutName);
+  }
+  statOut.WriteObject(&mProcessingStats, "ProcessingStats");
+  LOGP(info, "Wrote processing statistics to {}", statOutName);
 }
 
 void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)

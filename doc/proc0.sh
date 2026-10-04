@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#Lanes=3 Nthreads=5 runOPTL="-b --run" ./proc0.sh  | tee rr1.log
+
 : ${DataDir:="data/_alice_data_2025_LHC25ab_562862_apass1_alignment_its_0010_o2_ctf_run00562862_orbit0261432416_tf0000451373_epn313"}
 
 : ${confString:="AlignParams.dofConfigJson=/home/shahoian/alice/O2Align/doc/ITS_RB_from_staves.json"}
@@ -12,7 +14,7 @@ GLOSET="--shm-segment-size ${SHMSIZE:-8000000000} --hbfutils-config ${DataDir}/o
 : ${PVOPT:="pvertexer.useMeanVertexConstraint=false;pvertexer.meanVertexExtraErrSelection=0.2;pvertexer.iniScale2=100;pvertexer.acceptableScale2=10."}
 
 cmd="o2-reader-driver-workflow $GLOSET --max-tf ${MAXTF:--1} | \
-o2-dev-alignment-workflow $GLOSET --disable-mc --input-dir $DataDir --nthreads ${NTHREADS} --output MilleData,MilleSteer \
+o2-dev-alignment-workflow $GLOSET --disable-mc --pipeline barrel-alignment:${Lanes:-1}  --input-dir $DataDir --nthreads ${Nthreads:-1} --output MilleData,MilleSteer \
 --track-sources ${TrackSrc:-ITS,ITS-TPC,ITS-TPC-TRD,ITS-TPC-TRD-TOF,ITS-TPC-TOF} --detectors ${DetList:-ITS}  --config-macro ${CONFMACRO:-none} \
 --configKeyValues \"$PVOPT;$confString\" ${runOPTL} "
 

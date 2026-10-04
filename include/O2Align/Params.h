@@ -98,6 +98,8 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   double ridderEps = 1e-16;
 
   // MillePede output
+  bool volumeStatistics = true; // include per-volume accepted-track counters in the statistics output
+  std::string statFile = "procStat";
   std::string milleBinFile = "mp2data";
   std::string milleConFile = "mp2con.txt";
   std::string milleParamFile = "mp2param.txt";

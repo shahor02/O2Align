@@ -210,6 +210,10 @@ class Volume
   virtual bool MP2ROOT_RB(const std::map<uint32_t, double>& labelToValue, const std::vector<double>* inj, nlohmann::json& entry) const;
   virtual bool MP2ROOT_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const;
 
+  uint32_t getDataCounter() const noexcept { return mStat; }
+  void incDataCounter() noexcept { ++mStat; }
+  void setDataCounter(uint32_t c) noexcept { mStat = c; }
+
  protected:
   /// matrices
   Volume* mParent{nullptr}; // parent
@@ -262,6 +266,7 @@ class Volume
   bool mIsPseudo{false};
   bool mRBAllowed{true}; // rigid-body DOFs may be assigned to this volume
   int mSensorId{-1}; // RS check if needed
+  uint32_t mStat{0}; // counter for tracks contributing to this volume
   std::unique_ptr<DOFSet> mRigidBody;
   std::unique_ptr<DOFSet> mCalib;
   /// per rigid-body DOF: force the weighted mean of the active children's movement (transported to
