@@ -872,7 +872,7 @@ void AlignmentSpec::buildHierarchy()
   mHierarchy->finalise();
   for (auto* det : mDetectors) {
     if (det->getTopVolume() != nullptr) {
-      LOGP(info, "DOF summary of {}:\n{}", det->getDetName(), det->reportDOFSummary());
+      LOGP(info, "DOF summary of {} (NFreeRB/NFreeCalib/Nvolumes):\n{}", det->getDetName(), det->reportDOFSummary());
     }
   }
   if (withPVT) {
