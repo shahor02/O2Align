@@ -32,21 +32,37 @@ Fix both with:
 { "match": "TPC_envelope", "calib": { "type": "tpcvdrift", "fixed": true } }
 ```
 
-## ITS Inner Layer
+## ITS Alignable Match Strings
 
-For standard ITS (not ITS3), Layer 0 symbolic names have the form `ITS/ITSULayer0/ITSUHalfBarrelN` and `ITS/ITSULayer0/ITSUHalfBarrelN/ITSUStaveN`. These rules free translations only on the Layer 0 half-barrels and staves:
+The patterns below are based on the output from the `macro/printAlignableVolumes.C` running over Run3 TGeometry root file. 
+The ITS envelope is the `ITS` alignable. The layer name is a path component, not a separate alignable entry. In the match patterns, layer IDs use `[0-2]` for the inner barrel and `[3-6]` for the outer barrel. Half-barrel, half-stave, module, and chip IDs in these paths are single digits, matched with `?`. Inner-barrel stave IDs are single digits; outer-barrel stave IDs can be one or two digits, so both exact-width forms are listed there. Avoid a trailing `*` when matching a specific level: `fnmatch` allows it to match `/` and descendants too.
 
-```json
-[
-  {
-    "match": "ITSULayer0/ITSUHalfBarrel?",
-    "rigidBody": ["TX", "TY", "TZ"]
-  },
-  {
-    "match": "ITSULayer0/ITSUHalfBarrel?/ITSUStave?",
-    "rigidBody": ["TX", "TY", "TZ"]
-  }
-]
-```
+### Inner Barrel (Layers 0–2)
 
-The single-character `?` matches the half-barrel or stave index without matching their descendants. ITS3 uses different symbolic names, such as `ITS3CarbonForm`, so these patterns do not select ITS3 volumes.
+The inner-barrel hierarchy has half-barrels, staves, and chips:
+
+| Alignable level | `match` string |
+| --- | --- |
+| ITS envelope | `ITS` |
+| Half-barrel | `ITS/ITSULayer[0-2]/ITSUHalfBarrel?` |
+| Stave | `ITS/ITSULayer[0-2]/ITSUHalfBarrel?/ITSUStave?` |
+| Chip | `ITS/ITSULayer[0-2]/ITSUHalfBarrel?/ITSUStave?/ITSUChip?` |
+
+### Outer Barrel (Layers 3–6)
+
+The outer-barrel hierarchy adds half-staves and modules between staves and chips:
+
+| Alignable level | `match` string |
+| --- | --- |
+| ITS envelope | `ITS` |
+| Half-barrel | `ITS/ITSULayer[3-6]/ITSUHalfBarrel?` |
+| Stave, one-digit ID | `ITS/ITSULayer[3-6]/ITSUHalfBarrel?/ITSUStave?` |
+| Stave, two-digit ID | `ITS/ITSULayer[3-6]/ITSUHalfBarrel?/ITSUStave[0-9][0-9]` |
+| Half-stave, under one-digit stave | `ITS/ITSULayer[3-6]/ITSUHalfBarrel?/ITSUStave?/ITSUHalfStave?` |
+| Half-stave, under two-digit stave | `ITS/ITSULayer[3-6]/ITSUHalfBarrel?/ITSUStave[0-9][0-9]/ITSUHalfStave?` |
+| Module, under one-digit stave | `ITS/ITSULayer[3-6]/ITSUHalfBarrel?/ITSUStave?/ITSUHalfStave?/ITSUModule?` |
+| Module, under two-digit stave | `ITS/ITSULayer[3-6]/ITSUHalfBarrel?/ITSUStave[0-9][0-9]/ITSUHalfStave?/ITSUModule?` |
+| Chip, under one-digit stave | `ITS/ITSULayer[3-6]/ITSUHalfBarrel?/ITSUStave?/ITSUHalfStave?/ITSUModule?/ITSUChip?` |
+| Chip, under two-digit stave | `ITS/ITSULayer[3-6]/ITSUHalfBarrel?/ITSUStave[0-9][0-9]/ITSUHalfStave?/ITSUModule?/ITSUChip?` |
+
+For example, replace a `match` value with one of the strings above in a rule such as `{ "match": "...", "rigidBody": ["TX", "TY", "TZ"] }`. ITS3 uses different names, such as `ITS3CarbonForm`, and is not selected by these patterns.
