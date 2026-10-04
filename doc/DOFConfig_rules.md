@@ -23,7 +23,11 @@ Keep X, Y, and Z either all free or all fixed: the vertex fit only uses the posi
 `Volume::writeRigidBodyConstraints` forces, for every *free* rigid-body DOF of a parent, the
 weighted mean of its active children's movement in that DOF to vanish. This breaks a real
 degeneracy: moving the parent and moving all its children together in the same direction are
-otherwise indistinguishable. When the parent DOF is fixed instead, that degeneracy doesn't arise,
+otherwise indistinguishable. A child without any free rigid-body DOF (no `rigidBody` rule, or a
+`fixed` one) is looked through: its own children, with the jacobians chained, take its place, and so
+on down to the nearest level having a free DOF. The walk stops at the first descendant with *any*
+free DOF, so free DOFs of a grandchild along a direction its (partially free) parent keeps fixed
+are not included in the mean — avoid such configurations. When the parent DOF is fixed instead, that degeneracy doesn't arise,
 so no such constraint is written by default — the children are then free to collectively drift in
 that DOF, which may be a genuinely unconstrained (or only weakly constrained) mode of the fit.
 
@@ -39,8 +43,8 @@ later matching rule replaces the flags of an earlier one rather than merging wit
 With the chambers free, this pins the mean `TY` shift and `RZ` rotation of the chambers of every
 supermodule to the (fixed) supermodule position, without making the supermodule itself a fit
 parameter. The flags don't depend on the volume's `rigidBody` clause: they also work on a volume with
-no rigid-body DOF set at all. A pinned DOF that no free child DOF contributes to (no active children,
-or none of their free DOFs feeds it through the child-to-parent jacobian) is skipped with a warning.
+no rigid-body DOF set at all. A pinned DOF that no free descendant DOF contributes to (nothing free below,
+or none of the free DOFs feeds it through the chained jacobians) is skipped with a warning.
 `pinChildrenMean` is ignored, with a warning, on a volume that is not rigid-body alignable (the root,
 or an envelope without its own geometry such as `TRD_envelope`), so the common mode of the
 supermodules of a detector can't be pinned this way.
@@ -52,8 +56,8 @@ of its descendants a `rigidBody` rule at all. This is not auto-disabled and need
 constraint: the parent-to-child jacobian is applied unconditionally down to every leaf measurement
 regardless of whether a descendant carries a DOFSet, so the parent's free DOF is fully observable on
 its own. A constraint is only needed to resolve the degeneracy of a DOF being free at *both* a parent
-and a child level simultaneously (the case this section opened with); with nothing free below the
-parent, there is no such degeneracy. Use this to align, say, a half-barrel as a single rigid body
+and a descendant level simultaneously (the case of the previous section); with nothing free below
+the parent, at any depth, there is no such degeneracy. Use this to align, say, a half-barrel as a single rigid body
 while keeping its staves/modules/chips fixed to it, without needing to give them any DOF config.
 
 ## TPC Drift

@@ -243,9 +243,17 @@ class Volume
   /// constraints of this volume over its children: the vanishing mean movement of the children in
   /// every free or pinned rigid-body DOF of this volume, see writeRigidBodyConstraints
   void writeChildrenMeanConstraints(std::ostream& os) const;
-  /// add to con the free DOFs of the children, transported with getJP2L() to the DOF iDOF of this
-  /// volume, each scaled by weight
-  void addChildrenMeanTerms(Constraint& con, int iDOF, double weight) const;
+  /// a free-DOF descendant contributing to the mean constraints of this volume, with the jacobian
+  /// transporting its DOFs to the frame of this volume
+  struct MeanContributor {
+    const Volume* vol;
+    Matrix66 jToThis;
+  };
+  /// collect the nearest descendants having a free RB DOF: a child w/o one (no DOF set or all fixed)
+  /// is looked through, its own children being taken with its getJP2L() folded in
+  void collectMeanContributors(const Matrix66& jToThis, std::vector<MeanContributor>& out) const;
+  /// add to con the free DOFs of the contributors feeding the DOF iDOF of this volume, scaled by weight
+  static void addChildrenMeanTerms(Constraint& con, int iDOF, const std::vector<MeanContributor>& contributors, double weight);
 
   std::string mSymName;
   Label mLabel;

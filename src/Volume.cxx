@@ -157,7 +157,7 @@ void Volume::finalise(uint8_t level)
     // A free parent RB DOF with no active children is NOT auto-disabled: it is fully observable
     // from leaf residuals regardless of whether any descendant carries a DOFSet (buildPointGlobals
     // transports the parent-to-child jacobian unconditionally), and it only needs the mean-of-children
-    // constraint (writeChildrenMeanConstraints) when a DOF is free at both this level and a child
+    // constraint (writeChildrenMeanConstraints) when a DOF is free at both this level and a descendant
     // level, which is the actual degeneracy that mechanism breaks. See doc/DOFConfig_rules.md.
     // if (mRigidBody) {
     //   int nActiveChildren = 0;
@@ -192,49 +192,63 @@ void Volume::writeRigidBodyConstraints(std::ostream& os) const
 }
 
 // Thesis A.83: for every free DOF of this volume, the mean of the child DOFs transported to this
-// frame with J^-1 = getJP2L() must vanish. The same equation, which never refers to this volume's
+// frame with J^-1 = getJP2L() must vanish. A child w/o a free RB DOF is looked through, its own
+// children (with the jacobians chained) standing in for it, since the degeneracy is then with them.
+// Limitation: the walk stops at the first descendant with any free DOF, so the deeper free DOFs
+// feeding a DOF fixed at that level are not included. The same equation, which never refers to this volume's
 // own label, also serves a second purpose: for a DOF flagged by mPinChildrenMean (the
 // "pinChildrenMean" DOF config clause) but fixed here, or even w/o a rigid-body DOF set at all, it
 // pins the common mode of the children, there being no parameter of this volume to absorb it.
 void Volume::writeChildrenMeanConstraints(std::ostream& os) const
 {
-  const auto nActiveChildren = std::count_if(mChildren.begin(), mChildren.end(), [](const auto& c) { return c->isActive(); });
+  // the degeneracy is with the nearest free level below, which needs not be the direct children
+  std::vector<MeanContributor> contributors;
+  collectMeanContributors(Matrix66::Identity(), contributors);
   for (int iDOF = 0; iDOF < RigidBodyDOFSet::NDOF; ++iDOF) {
     const bool free = mRigidBody && mRigidBody->isFree(iDOF);
     if (!free && !mPinChildrenMean[iDOF]) {
       continue;
     }
     const char* dofName = RigidBodyDOFSet::RigidBodyDOFNames[iDOF];
-    // a free DOF with no active children needs no constraint: there is no degeneracy to break
-    // (see finalise()) and the fall-through below (con.getSize() == 0, free == true) stays silent
     Constraint con(std::format("DOF {} for {}{}", dofName, mSymName, free ? "" : " (pinned)"), 0.);
-    if (nActiveChildren > 0) {
-      addChildrenMeanTerms(con, iDOF, 1.0 / static_cast<double>(nActiveChildren));
+    if (!contributors.empty()) {
+      addChildrenMeanTerms(con, iDOF, contributors, 1.0 / static_cast<double>(contributors.size()));
     }
     // a single term is a legitimate constraint as well: e.g. for a parent with a single active
     // child it removes the degeneracy of their common rotation
     if (con.getSize() > 0) {
       con.write(os);
-    } else if (!free) { // w/o free child DOFs feeding it, a free parent DOF has no degeneracy to break
-      LOGP(warn, "Ignoring pinChildrenMean of DOF {} for {}: no free child DOF contributes to it", dofName, mSymName);
+    } else if (!free) { // w/o any free descendant DOF feeding it, a free parent DOF has no degeneracy to break
+      LOGP(warn, "Ignoring pinChildrenMean of DOF {} for {}: no free descendant DOF contributes to it", dofName, mSymName);
     }
   }
 }
 
-// add to con the free child DOFs contributing to the DOF iDOF of this volume, scaled by weight
-void Volume::addChildrenMeanTerms(Constraint& con, int iDOF, double weight) const
+void Volume::collectMeanContributors(const Matrix66& jToThis, std::vector<MeanContributor>& out) const
 {
   for (const auto& c : mChildren) {
-    if (!c->mRigidBody) {
+    if (c->mIsPseudo) { // pseudo volumes (ITS3 tiles) carry no RB DOFs and have no children
       continue;
     }
-    for (int jDOF = 0; jDOF < c->mRigidBody->nDOFs(); ++jDOF) {
-      if (!c->mRigidBody->isFree(jDOF)) {
+    const Matrix66 j = jToThis * c->getJP2L();
+    if (c->mRigidBody && c->mRigidBody->nFreeDOFs() > 0) {
+      out.push_back({c.get(), j});
+    } else {
+      c->collectMeanContributors(j, out);
+    }
+  }
+}
+
+void Volume::addChildrenMeanTerms(Constraint& con, int iDOF, const std::vector<MeanContributor>& contributors, double weight)
+{
+  for (const auto& [vol, j] : contributors) {
+    for (int jDOF = 0; jDOF < vol->mRigidBody->nDOFs(); ++jDOF) {
+      if (!vol->mRigidBody->isFree(jDOF)) {
         continue;
       }
-      const double coeff = weight * c->getJP2L()(iDOF, jDOF);
+      const double coeff = weight * j(iDOF, jDOF);
       if (std::abs(coeff) > 1e-16) {
-        con.add(c->getLabel().raw(jDOF), coeff);
+        con.add(vol->getLabel().raw(jDOF), coeff);
       }
     }
   }

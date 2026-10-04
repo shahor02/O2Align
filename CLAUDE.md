@@ -56,8 +56,9 @@ rigid-body DOFs, so unrelated detector branches are never mutually constrained. 
 
 `Volume::finalise()` is the ordering-sensitive heart of the class: it assigns levels, makes sensors
 and fictitious volumes define their own `L2G`/`T2L`, derives each volume's local-to-parent matrix
-`mL2P` and the jacobians `mJL2P`/`mJP2L` from the (possibly pre-aligned) geometry, and auto-disables
-a parent's DOFs when no child is active. Call it only on the root, after the DOF configuration.
+`mL2P` and the jacobians `mJL2P`/`mJP2L` from the (possibly pre-aligned) geometry. It fixes no DOFs:
+a free parent DOF with nothing free below it is legitimate (the subtree is aligned as one rigid
+body). Call it only on the root, after the DOF configuration.
 
 Conventions that are easy to violate:
 - **`isLeaf()` is used as the proxy for "is a sensor"** in the matrix code: a leaf defines its own
@@ -111,7 +112,8 @@ tiles), so a calibration DOF set placed on a leaf or on an envelope is written t
 but does not yet enter the fit.
 
 `writeRigidBodyConstraints` implements the hierarchical constraint: for each free DOF of a parent,
-the weighted mean of the corresponding child DOFs (transported with `getJP2L()`) is required to
+the weighted mean of the corresponding DOFs of its nearest descendants having a free rigid-body DOF
+(children without one are looked through, their jacobians chained with `getJP2L()`) is required to
 vanish. The same constraint is also written for a fixed parent DOF flagged by the `pinChildrenMean`
 clause of the DOF config ([doc/DOFConfig_rules.md](doc/DOFConfig_rules.md)).
 
