@@ -112,7 +112,8 @@ but does not yet enter the fit.
 
 `writeRigidBodyConstraints` implements the hierarchical constraint: for each free DOF of a parent,
 the weighted mean of the corresponding child DOFs (transported with `getJP2L()`) is required to
-vanish.
+vanish. The same constraint is also written for a fixed parent DOF flagged by the `pinChildrenMean`
+clause of the DOF config ([doc/DOFConfig_rules.md](doc/DOFConfig_rules.md)).
 
 ### DOF sets and JSON configuration
 

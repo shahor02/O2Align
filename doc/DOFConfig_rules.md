@@ -18,6 +18,33 @@ Fix all three with:
 
 Keep X, Y, and Z either all free or all fixed: the vertex fit only uses the position labels when all three are free.
 
+## Pinning the Common Mode of Children
+
+`Volume::writeRigidBodyConstraints` forces, for every *free* rigid-body DOF of a parent, the
+weighted mean of its active children's movement in that DOF to vanish. This breaks a real
+degeneracy: moving the parent and moving all its children together in the same direction are
+otherwise indistinguishable. When the parent DOF is fixed instead, that degeneracy doesn't arise,
+so no such constraint is written by default — the children are then free to collectively drift in
+that DOF, which may be a genuinely unconstrained (or only weakly constrained) mode of the fit.
+
+The `pinChildrenMean` clause asks for the same mean-zero constraint on a DOF of the parent even
+though that DOF is fixed there, to remove such a mode explicitly. It takes a boolean (all DOFs), the
+string `"all"`, or an array of DOF names (`TX,TY,TZ,RX,RY,RZ`), and — like `rigidBody`/`calib` — a
+later matching rule replaces the flags of an earlier one rather than merging with them:
+
+```json
+{ "match": "TRD/sm[0-9][0-9]", "rigidBody": "fixed", "pinChildrenMean": ["TY", "RZ"] }
+```
+
+With the chambers free, this pins the mean `TY` shift and `RZ` rotation of the chambers of every
+supermodule to the (fixed) supermodule position, without making the supermodule itself a fit
+parameter. The flags don't depend on the volume's `rigidBody` clause: they also work on a volume with
+no rigid-body DOF set at all. A pinned DOF that no free child DOF contributes to (no active children,
+or none of their free DOFs feeds it through the child-to-parent jacobian) is skipped with a warning.
+`pinChildrenMean` is ignored, with a warning, on a volume that is not rigid-body alignable (the root,
+or an envelope without its own geometry such as `TRD_envelope`), so the common mode of the
+supermodules of a detector can't be pinned this way.
+
 ## TPC Drift
 
 The TPC drift calibration belongs to `TPC_envelope` and is not enabled by default. Enable both `VDRIFT` and `DRIFTOFF` with:

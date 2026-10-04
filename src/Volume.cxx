@@ -177,49 +177,63 @@ void Volume::finalise(uint8_t level)
 
 void Volume::writeRigidBodyConstraints(std::ostream& os) const
 {
-  if (isLeaf() || !mRigidBody || !mRBAllowed) {
-    // recurse even if this node has no RB DOFs: a node which is not rigid-body alignable (the root
-    // of the hierarchy, a detector envelope) imposes no constraint on its branches
-    for (const auto& c : mChildren) {
-      c->writeRigidBodyConstraints(os);
-    }
-    return;
+  // a volume which is not rigid-body alignable (the root of the hierarchy, a detector envelope)
+  // imposes no constraint on its branches, but these may still constrain their own children
+  if (!isLeaf() && mRBAllowed) {
+    writeChildrenMeanConstraints(os);
   }
+  for (const auto& c : mChildren) {
+    c->writeRigidBodyConstraints(os);
+  }
+}
 
-  // thesis A.83: for every free DOF of the parent, the mean of the child DOFs transported to the
-  // parent frame with J^-1 = getJP2L() must vanish
+// Thesis A.83: for every free DOF of this volume, the mean of the child DOFs transported to this
+// frame with J^-1 = getJP2L() must vanish. The same equation, which never refers to this volume's
+// own label, also serves a second purpose: for a DOF flagged by mPinChildrenMean (the
+// "pinChildrenMean" DOF config clause) but fixed here, or even w/o a rigid-body DOF set at all, it
+// pins the common mode of the children, there being no parameter of this volume to absorb it.
+void Volume::writeChildrenMeanConstraints(std::ostream& os) const
+{
   const auto nActiveChildren = std::count_if(mChildren.begin(), mChildren.end(), [](const auto& c) { return c->isActive(); });
-  for (int iDOF = 0; iDOF < mRigidBody->nDOFs(); ++iDOF) {
-    if (!mRigidBody->isFree(iDOF)) {
+  for (int iDOF = 0; iDOF < RigidBodyDOFSet::NDOF; ++iDOF) {
+    const bool free = mRigidBody && mRigidBody->isFree(iDOF);
+    if (!free && !mPinChildrenMean[iDOF]) {
       continue;
     }
-    if (nActiveChildren == 0) {
-      LOGP(fatal, "{} has dof {} active but no active children!", mSymName, mRigidBody->dofName(iDOF));
+    const char* dofName = RigidBodyDOFSet::RigidBodyDOFNames[iDOF];
+    if (free && nActiveChildren == 0) { // finalise() should have fixed such a DOF
+      LOGP(fatal, "{} has dof {} active but no active children!", mSymName, dofName);
     }
-    const double invN = 1.0 / static_cast<double>(nActiveChildren);
-    Constraint con(std::format("DOF {} for {}", mRigidBody->dofName(iDOF), mSymName), 0.);
-    for (const auto& c : mChildren) {
-      if (!c->mRigidBody) {
-        continue;
-      }
-      for (int jDOF = 0; jDOF < c->mRigidBody->nDOFs(); ++jDOF) {
-        if (!c->mRigidBody->isFree(jDOF)) {
-          continue;
-        }
-        const double coeff = invN * c->getJP2L()(iDOF, jDOF);
-        if (std::abs(coeff) > 1e-16) {
-          con.add(c->getLabel().raw(jDOF), coeff);
-        }
-      }
+    Constraint con(std::format("DOF {} for {}{}", dofName, mSymName, free ? "" : " (pinned)"), 0.);
+    if (nActiveChildren > 0) {
+      addChildrenMeanTerms(con, iDOF, 1.0 / static_cast<double>(nActiveChildren));
     }
     // a single term is a legitimate constraint as well: e.g. for a parent with a single active
     // child it removes the degeneracy of their common rotation
     if (con.getSize() > 0) {
       con.write(os);
+    } else if (!free) { // w/o free child DOFs feeding it, a free parent DOF has no degeneracy to break
+      LOGP(warn, "Ignoring pinChildrenMean of DOF {} for {}: no free child DOF contributes to it", dofName, mSymName);
     }
   }
+}
+
+// add to con the free child DOFs contributing to the DOF iDOF of this volume, scaled by weight
+void Volume::addChildrenMeanTerms(Constraint& con, int iDOF, double weight) const
+{
   for (const auto& c : mChildren) {
-    c->writeRigidBodyConstraints(os);
+    if (!c->mRigidBody) {
+      continue;
+    }
+    for (int jDOF = 0; jDOF < c->mRigidBody->nDOFs(); ++jDOF) {
+      if (!c->mRigidBody->isFree(jDOF)) {
+        continue;
+      }
+      const double coeff = weight * c->getJP2L()(iDOF, jDOF);
+      if (std::abs(coeff) > 1e-16) {
+        con.add(c->getLabel().raw(jDOF), coeff);
+      }
+    }
   }
 }
 
@@ -378,18 +392,16 @@ void Volume::applyFreeFixConfig(DOFSet& dofSet, const nlohmann::json& cal)
 // or an object {"dofs": "all" | [names], "fixed": bool}. Returns nullptr for an invalid clause.
 std::unique_ptr<DOFSet> Volume::makeRigidBodyDOFSet(const nlohmann::json& rb, const std::string& pattern)
 {
-  static const std::map<std::string, int> rbNameToIdx = {
-    {"TX", RigidBodyDOFSet::TX}, {"TY", RigidBodyDOFSet::TY}, {"TZ", RigidBodyDOFSet::TZ}, {"RX", RigidBodyDOFSet::RX}, {"RY", RigidBodyDOFSet::RY}, {"RZ", RigidBodyDOFSet::RZ}};
   auto dofSet = std::make_unique<RigidBodyDOFSet>();
   // free (or fix, if fixed) the named DOFs, all the others being fixed
   auto setListed = [&](const nlohmann::json& names, bool fixed) {
     dofSet->setAllFree(false);
     for (const auto& name : names) {
-      const auto it = rbNameToIdx.find(name.get<std::string>());
-      if (it == rbNameToIdx.end()) {
+      const auto idx = RigidBodyDOFSet::dofIndex(name.get<std::string>());
+      if (idx < 0) {
         LOGP(fatal, "Unknown rigid-body DOF '{}' in the rule '{}', allowed are TX,TY,TZ,RX,RY,RZ", name.get<std::string>(), pattern);
       }
-      dofSet->setFree(it->second, !fixed);
+      dofSet->setFree(idx, !fixed);
     }
   };
   if (rb.is_string()) {
@@ -422,6 +434,39 @@ std::unique_ptr<DOFSet> Volume::makeRigidBodyDOFSet(const nlohmann::json& rb, co
   }
   LOGP(fatal, "Invalid rigidBody clause in the rule '{}'", pattern);
   return nullptr;
+}
+
+// Apply the "pinChildrenMean" clause of a rule: a bool (all DOFs), "all", or an array of DOF names.
+// Unlike rigidBody/calib this never creates a DOF set, it only flags DOFs of the volume's own
+// (possibly absent or fixed) RigidBodyDOFSet for writeRigidBodyConstraints. A later matching rule
+// replaces the flags of an earlier one, like the rigidBody/calib clauses.
+void Volume::applyPinChildrenMeanConfig(const nlohmann::json& pin, const std::string& pattern)
+{
+  if (!isRigidBodyAllowed()) {
+    if (pattern.find('*') == std::string::npos) {
+      LOGP(warn, "Ignoring the pinChildrenMean rule '{}': {} is not rigid-body alignable", pattern, mSymName);
+    }
+    return;
+  }
+  mPinChildrenMean.fill(false);
+  if (pin.is_boolean()) {
+    mPinChildrenMean.fill(pin.get<bool>());
+    return;
+  }
+  if (pin.is_string() && pin.get<std::string>() == "all") {
+    mPinChildrenMean.fill(true);
+    return;
+  }
+  if (!pin.is_array()) {
+    LOGP(fatal, "Invalid pinChildrenMean clause in the rule '{}', allowed are a bool, \"all\" or a list of DOF names", pattern);
+  }
+  for (const auto& name : pin) {
+    const auto idx = RigidBodyDOFSet::dofIndex(name.get<std::string>());
+    if (idx < 0) {
+      LOGP(fatal, "Unknown rigid-body DOF '{}' in the pinChildrenMean rule '{}', allowed are TX,TY,TZ,RX,RY,RZ", name.get<std::string>(), pattern);
+    }
+    mPinChildrenMean[idx] = true;
+  }
 }
 
 // Build the calibration DOF set of a rule, with its free/fixed clauses applied
@@ -489,6 +534,9 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
         if (auto dofSet = makeCalibDOFSet(rule["calib"], pattern, sym)) {
           vol->setCalib(std::move(dofSet));
         }
+      }
+      if (rule.contains("pinChildrenMean")) {
+        vol->applyPinChildrenMeanConfig(rule["pinChildrenMean"], pattern);
       }
     }
   });

@@ -33,6 +33,7 @@
 namespace o2::alignrs
 {
 class TimeSlotsSet;
+class Constraint;
 }
 
 namespace o2::alignrs
@@ -235,6 +236,16 @@ class Volume
   /// DOF sets described by the rigidBody / calib clauses of a rule of the DOF configuration
   static std::unique_ptr<DOFSet> makeRigidBodyDOFSet(const nlohmann::json& rb, const std::string& pattern);
   static std::unique_ptr<DOFSet> makeCalibDOFSet(const nlohmann::json& cal, const std::string& pattern, const std::string& sym);
+  /// apply the "pinChildrenMean" clause of a rule: flags rigid-body DOFs (free or fixed) for which
+  /// writeRigidBodyConstraints must still force the weighted mean of the active children's movement
+  /// to vanish, mirroring the "replace, don't merge" semantics of the rigidBody/calib clauses
+  void applyPinChildrenMeanConfig(const nlohmann::json& pin, const std::string& pattern);
+  /// constraints of this volume over its children: the vanishing mean movement of the children in
+  /// every free or pinned rigid-body DOF of this volume, see writeRigidBodyConstraints
+  void writeChildrenMeanConstraints(std::ostream& os) const;
+  /// add to con the free DOFs of the children, transported with getJP2L() to the DOF iDOF of this
+  /// volume, each scaled by weight
+  void addChildrenMeanTerms(Constraint& con, int iDOF, double weight) const;
 
   std::string mSymName;
   Label mLabel;
@@ -245,6 +256,11 @@ class Volume
   int mSensorId{-1}; // RS check if needed
   std::unique_ptr<DOFSet> mRigidBody;
   std::unique_ptr<DOFSet> mCalib;
+  /// per rigid-body DOF: force the weighted mean of the active children's movement (transported to
+  /// this volume's frame) to vanish even though the DOF itself is fixed here, or the volume has no
+  /// rigid-body DOF set at all. Set by the
+  /// "pinChildrenMean" clause of the DOF config; see writeRigidBodyConstraints.
+  std::array<bool, RigidBodyDOFSet::NDOF> mPinChildrenMean{};
   std::vector<Label> mCalibLabels{};            // calibration label per time slot, filled with the slot 0 in the ctor
   size_t mActiveCalibSlot{0};                   // index in mCalibLabels of the slot being processed
   const TimeSlotsSet* mCalibSlots{nullptr};     //! calibration slots, if declared; not owned

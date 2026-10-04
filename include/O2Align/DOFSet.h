@@ -121,6 +121,16 @@ class RigidBodyDOFSet final : public DOFSet
   Type type() const override { return Type::RigidBody; }
   std::string dofName(int idx) const override { return RigidBodyDOFNames[idx]; }
   void fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<Eigen::MatrixXd> out) const override;
+  /// index of a DOF by its name (TX,TY,TZ,RX,RY,RZ), -1 if not one of them
+  static int dofIndex(const std::string& name)
+  {
+    for (int i = 0; i < NDOF; ++i) {
+      if (name == RigidBodyDOFNames[i]) {
+        return i;
+      }
+    }
+    return -1;
+  }
   uint8_t mask() const
   {
     uint8_t m = 0;
