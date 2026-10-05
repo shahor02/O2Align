@@ -90,10 +90,13 @@ void ProcessingStats::Print(Option_t* option) const
 {
   LOGP(info, "Stats: {}", asString());
   const std::string pattern = option == nullptr ? std::string{} : std::string{option};
-  for (const auto& [label, count] : nTrcByLabel) {
-    const auto nameIt = labelToSymName.find(label);
-    if (nameIt != labelToSymName.end() && matchesVolumePattern(pattern, nameIt->second)) {
-      LOGP(info, "\t{}: {}", nameIt->second, count);
+  if (!pattern.empty()) {
+    LOGP(info, "Volume statistics for pattern '{}':", pattern);
+    for (const auto& [label, count] : nTrcByLabel) {
+      const auto nameIt = labelToSymName.find(label);
+      if (nameIt != labelToSymName.end() && matchesVolumePattern(pattern, nameIt->second)) {
+        LOGP(info, "\t{}: {}", nameIt->second, count);
+      }
     }
   }
 }
