@@ -247,6 +247,13 @@ class AlignmentSpec final : public Task
   // method does not modify the original track
   bool getTransportJacobian(const TrackD& track, double xTo, double alphaTo, gbl::Matrix5d& jac, gbl::Matrix5d& err);
 
+  // decide whether the step from the current state of `track` to `frame` should get an extra,
+  // scatterer-only point inserted at its radius midpoint instead of lumping all crossed material
+  // into a single thin scatterer at `frame` (see Params::splitMSThreshold/splitMSStepMinDX).
+  // Runs only a cheap, jacobian-free trial propagation; on true, xMid/alphaMid locate the split
+  // point in the track's current (pre-step) tracking frame, radius being frame-independent.
+  bool needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid) const;
+
   // refit the primary vertex vtxOrig with those tracks of resTracks which are its contributors and
   // were successfully refitted in the current alignment, the result is put to vtxRefit.
   // Returns false if the vertex has too few refitted contributors or the refit failed.
@@ -957,6 +964,27 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
   return true;
 }
 
+bool AlignmentSpec::needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid) const
+{
+  auto prop = o2::base::PropagatorD::Instance();
+  TrackD trial = track;
+  track::TrackLTIntegral ltTrial;
+  ltTrial.setTimeNotNeeded();
+  if (!prop->propagateToAlphaX(trial, nullptr, frame.alpha, frame.x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &ltTrial)) {
+    return false; // let the real propagation below fail and report it
+  }
+  const double rPrev = track.getR(), rNext = trial.getR();
+  if (std::abs(rNext - rPrev) <= mParams->splitMSStepMinDX) {
+    return false;
+  }
+  const float msErrTrial = its::math_utils::MSangle(trial.getPID().getMass(), trial.getP(), ltTrial.getX2X0());
+  if (msErrTrial <= mParams->splitMSThreshold) {
+    return false;
+  }
+  alphaMid = track.getAlpha(); // the split point stays in the pre-step tracking frame
+  return track.getXatLabR(0.5 * (rPrev + rNext), xMid, prop->getNominalBz());
+}
+
 bool AlignmentSpec::refitPV(const PVertex& vtxOrig, const std::vector<Track>& resTracks, PVertex& vtxRefit)
 {
   // Refit the vertex with the tracks refitted in the current alignment. Only the successfully refitted
@@ -1020,13 +1048,39 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
     if (!points.empty()) { // not the 1st accounted point: step to it
       // numerically calculates the transport jacobian from prev. point to this point
       // then we actually do the step to the point and accumulate the material
-      if (!getTransportJacobian(wTrk, frame.x, frame.alpha, jacALICE, err) ||
-          !prop->propagateToAlphaX(wTrk, refLin, frame.alpha, frame.x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt)) {
-        ++mGBLStat.failedProp;
+      auto stepTo = [&](double xTo, double alphaTo, float& msErrOut) -> bool {
+        if (!getTransportJacobian(wTrk, xTo, alphaTo, jacALICE, err) ||
+            !prop->propagateToAlphaX(wTrk, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt)) {
+          ++mGBLStat.failedProp;
+          return false;
+        }
+        msErrOut = its::math_utils::MSangle(wTrk.getPID().getMass(), wTrk.getP(), lt.getX2X0());
+        jacGBL = toGBLOrder(jacALICE);
+        return true;
+      };
+      // a step spanning a wide radial gap with significant crossed material (e.g. the ITS-TPC
+      // transition) gets its scatterer split in two instead of lumping it all at `frame`: a single
+      // scatterer there would have zero lever arm to `frame` but the full gap as lever arm to the
+      // previous point, biasing the correlation GBL builds between the kink and the two offsets.
+      double xMid = 0., alphaMid = 0.;
+      if (needsSplitScatterer(wTrk, frame, xMid, alphaMid)) {
+        float msErr1 = 0.f;
+        if (!stepTo(xMid, alphaMid, msErr1)) {
+          return false;
+        }
+        // the mid point is pushed unconditionally so that the frame's point below always gets its
+        // jacobian from the immediately preceding list point (this leg's, not the full prev->frame
+        // transport): a bare point with no scatterer is a legitimate no-op transport node for GBL.
+        gbl::GblPoint midPoint(jacGBL);
+        if (msErr1 > mParams->minMS) {
+          midPoint.addScatterer(Eigen::Vector2d::Zero(), getScatteringPrecision(wTrk, msErr1));
+          lt.clearFast(); // clear only if accounted; otherwise let it roll into the 2nd leg, as elsewhere
+        }
+        points.push_back(midPoint);
+      }
+      if (!stepTo(frame.x, frame.alpha, msErr)) {
         return false;
       }
-      msErr = its::math_utils::MSangle(wTrk.getPID().getMass(), wTrk.getP(), lt.getX2X0());
-      jacGBL = toGBLOrder(jacALICE);
     }
 
     // wTrk is now in the measurment frame
