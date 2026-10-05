@@ -498,7 +498,7 @@ void AlignmentSpec::process() // collisions
     if (useVertexConstraint) {
       ++mProcessingStats.nPVConstrAcc;
     }
-    buildVertexTrajectories(resTracks, useVertexConstraint && mParams->useMultyTrackPVConstraint, gblTraj);
+    buildVertexTrajectories(resTracks, useVertexConstraint && mParams->useMultiTrackPVConstraint>0, gblTraj);
   }
   mProcessingStats.Print();
   mGBLStat.print();
@@ -609,6 +609,9 @@ void AlignmentSpec::buildVertexTrajectories(std::vector<Track>& resTracks, bool 
       mProcessingStats.nTrcGBLAcc += nAccepted;
       mProcessingStats.nTrcMultiGBLAcc += nAccepted;
     }
+  }
+  if (mParams->useMultiTrackPVConstraint == 2) {
+    return; // only multi-track trajectories are requested, no single-track ones 
   }
   // per-track PV constraint: every track carrying the vertex point gets the mean vertex prior,
   // optionally deweighted by their number for the prior to count once per collision

@@ -58,7 +58,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
 
   // PV constraint
   int usePVConstraintMinTracks = 5; // minimum number of tracks to use PV constraint
-  bool useMultyTrackPVConstraint = true; // use multi-track PV constraint (otherwise use per-track PV constraint)
+  int useMultiTrackPVConstraint = 1; // 0: no multi-track PV constraint, 1: use multi-track PV constraint and allow single tracks for the rest, 2: multi-track PV constraint only
   bool scaleMVPriorWithNTracks = true;   // per-track PV constraint: scale the luminous region covariance of the mean vertex prior by the number of tracks of the vertex, for the prior to count once per collision
   std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
 
@@ -77,8 +77,8 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   float splitMSStepMinDX = 5.f;     // minimum radial gap (cm) of the full step to warrant splitting
 
   // per chip extra error
-  float extraClsErrYITS[7] = {0};
-  float extraClsErrZITS[7] = {0};
+  float extraClsErrYITS[7] = {0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001};
+  float extraClsErrZITS[7] = {0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001};
   // extra systematic errors of the non-ITS measurements
   float extraClsErrYTPC = 0.f;
   float extraClsErrZTPC = 0.f;
