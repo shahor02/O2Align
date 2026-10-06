@@ -195,9 +195,6 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   if (!useITS && !useITSAB) {
     return false;
   }
-  const auto* itsTrack = useITS ? &recoData->getITSTrack(gidITS) : nullptr;
-  auto trFitOut = itsTrack ? convertTrack<double>(itsTrack->getParamIn()) : convertTrack<double>(recoData->getTrackParam(resTrack.gid));
-  auto trFitInw = itsTrack ? convertTrack<double>(itsTrack->getParamOut()) : convertTrack<double>(recoData->getTrackParam(resTrack.gid));
   auto prop = o2::base::PropagatorD::Instance();
   std::array<FrameInfoExt*, 7> frameArr{};
   std::array<FrameInfoExt*, 7> overlapArr{};
@@ -245,7 +242,7 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     clusIDArr[curInfo.lr] = clusID;
     ++nPoints;
   };
-
+  const auto* itsTrack = useITS ? &recoData->getITSTrack(gidITS) : nullptr;
   if (useITS) {
     const auto itsClRefs = recoData->getITSTracksClusterRefs();
     const int nCl = itsTrack->getNClusters();
@@ -266,6 +263,9 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   }
 
   if (allowOverlaps) {
+    auto trFitOut = resTrack.track;
+    auto trFitInw = itsTrack ? convertTrack<double>(itsTrack->getParamOut()) : convertTrack<double>(recoData->getTrackParam(resTrack.gid));
+    trFitInw.setQ2Pt(trFitOut.getQ2Pt());
     resetTrackCovariance(trFitOut);
     resetTrackCovariance(trFitInw);
     o2::track::TrackParD trkOutRef, *refLinOut = nullptr;

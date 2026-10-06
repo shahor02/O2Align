@@ -85,7 +85,7 @@ bool Track::continueFitOutward(int frameStart)
   return fitTrack(frameStart, static_cast<int>(info.size()) - 1, true, false);
 }
 
-bool Track::updateWithVertex(const o2::dataformats::VertexBase& vtx)
+bool Track::updateWithVertex(const o2::dataformats::VertexBase& vtx, double covScale)
 {
   if (info.empty()) {
     return false;
@@ -115,7 +115,14 @@ bool Track::updateWithVertex(const o2::dataformats::VertexBase& vtx)
   frame.cluster = o2::BaseCluster<float>(-1, frame.x, static_cast<float>(-vtx.getX() * sa + vtx.getY() * ca), vtx.getZ(),
                                          static_cast<float>(cov(0, 0)), static_cast<float>(cov(1, 1)), static_cast<float>(cov(0, 1)));
   frame.lr = FrameInfoExt::Vertex;
-  if (!fitTrack(0, 0, false, false)) {
+  const auto vtxPoint = frame.cluster;
+  if (covScale != 1.) { // update with the rescaled covariance, the true one is restored below
+    frame.cluster = o2::BaseCluster<float>(-1, frame.x, vtxPoint.getY(), vtxPoint.getZ(),
+                                           static_cast<float>(covScale * cov(0, 0)), static_cast<float>(covScale * cov(1, 1)), static_cast<float>(covScale * cov(0, 1)));
+  }
+  const bool ok = fitTrack(0, 0, false, false);
+  frame.cluster = vtxPoint;
+  if (!ok) {
     frame.lr = FrameInfoExt::Invalid;
     return false;
   }

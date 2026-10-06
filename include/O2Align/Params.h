@@ -21,14 +21,14 @@ namespace o2::alignrs
 
 struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // Track selection
-  float minPt = 1.f;         // minimum pt required
+  float minPt = 0.5f;        // minimum pt required
   int minITSCls = 7;         // minimum number of ITS clusters
-  float maxITSChi2Ndf = 1.2; // maximum ITS track chi2
+  float maxITSChi2Ndf = 1.2; // maximum ITS track chi2 // RSTODO not used, remove?
 
   bool writeLocalAlignParams = true; // create output AlignParams in local convention.
 
   // ITS overlap handling
-  float ITSOverlapMargin = 0.15;     // consider for overlaps only clusters within this marging from the chip edge (in cm)
+  float ITSOverlapMargin = 0.15;     // consider for overlaps only clusters within this margin from the chip edge (in cm)
   float ITSOverlapMaxChi2 = 16;      // max chi2 between track and overlapping cluster
   float ITSOverlapMaxDZ = 0.3;       // max difference in Z for clusters on overlapping ITS chips to consider as candidate for a double hit
   int ITSOverlapEdgeRows = 1;        // require clusters to not have pixels closer than this distance from the edge
@@ -60,6 +60,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   int usePVConstraintMinTracks = 5; // minimum number of tracks to use PV constraint
   int useMultiTrackPVConstraint = 1; // 0: no multi-track PV constraint, 1: use multi-track PV constraint and allow single tracks for the rest, 2: multi-track PV constraint only
   bool scaleMVPriorWithNTracks = true;   // per-track PV constraint: scale the luminous region covariance of the mean vertex prior by the number of tracks of the vertex, for the prior to count once per collision
+  float vtxRefCovScale = 1e-2f;          // multi-track PV constraint: scale of the vertex covariance in the KF update defining the reference state at the vertex point, for the references of all tracks to pass (almost) through the common vertex. The stored vertex point keeps the true covariance
   std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
 
   // TPC drift calibration
@@ -67,6 +68,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
 
   int verbose = 0; // verbosity level
   bool useStableRef = true; // use input tracks as linearization point
+  float meanPtB0 = 0.3f;    // impose this pT on tracks for B=0 (ignore if <=0)
   float maxChi2Ndf = 10;    // maximum Chi2/Ndf allowed for GBL fit
   float minMS = 1e-6f;      //  minimum scattering to account for
   // A step whose material would otherwise be lumped into a single thin scatterer at its far end is

@@ -86,7 +86,11 @@ struct Track {
   /// to it, in the frame prebooked by the caller in the info[0] slot, then the track is fitted to
   /// it from the innermost measured point. On failure the info[0] slot is flagged as Invalid and
   /// both `track` and `kfFit` stay intact.
-  bool updateWithVertex(const o2::dataformats::VertexBase& vtx);
+  /// covScale: scale of the vertex covariance used in the KF update only, the vertex point stored
+  /// in info[0] keeps the true one. With covScale << 1 the updated state passes (almost) through
+  /// the vertex, as required for the reference of a composed trajectory with the common vertex.
+  /// The chi2 of the vertex point added to `kfFit.chi2` is then that of the scaled covariance.
+  bool updateWithVertex(const o2::dataformats::VertexBase& vtx, double covScale = 1.);
 
   ClassDefNV(Track, 2)
 };

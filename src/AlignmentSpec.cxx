@@ -284,7 +284,7 @@ class AlignmentSpec final : public Task
   // steps of process(), see there
   void collectVertexTracks(const V2TRef& trackRef, bool useVertexConstraint, std::unordered_map<GTrackID, bool>& ambigTable, std::vector<Track>& resTracks);
   void refitTracks(std::vector<Track>& resTracks, bool useVertexConstraint);
-  bool constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks);
+  bool constrainWithVertex(const PVertex& vtx, int ivref, bool useCommonVertex, std::vector<Track>& resTracks);
   void buildVertexTrajectories(std::vector<Track>& resTracks, bool useCommonVertex, std::vector<gbl::GblTrajectory>& gblTraj);
   void writeMilleRecords(std::vector<gbl::GblTrajectory>& gblTraj);
 
@@ -492,7 +492,7 @@ void AlignmentSpec::process() // collisions
     }
     collectVertexTracks(primVer2TRefs[ivref], useVertexConstraint, ambigTable, resTracks);
     refitTracks(resTracks, useVertexConstraint);
-    if (useVertexConstraint && !constrainWithVertex(*vtx, ivref, resTracks)) {
+    if (useVertexConstraint && !constrainWithVertex(*vtx, ivref, mParams->useMultiTrackPVConstraint > 0, resTracks)) {
       useVertexConstraint = false; // the tracks of this vertex are fitted w/o the vertex point
     }
     if (useVertexConstraint) {
@@ -530,6 +530,9 @@ void AlignmentSpec::collectVertexTracks(const V2TRef& trackRef, bool useVertexCo
       auto& tr = resTracks.emplace_back();
       tr.gid = trackIndex;
       tr.track = convertTrack<double>(trPar);
+      if (mFieldOFF && mParams->meanPtB0 > 0.) { // impose user pT for tracks at B0
+        tr.track.setQ2Pt(1. / mParams->meanPtB0);
+      }
       resetTrackCovariance(tr.track);
       tr.kfFit.chi2 = 0.f;       // the detectors accumulate the chi2 of their own points into it
       if (useVertexConstraint) { // reserve a frame for the eventual vertex point
@@ -565,7 +568,10 @@ void AlignmentSpec::refitTracks(std::vector<Track>& resTracks, bool useVertexCon
 
 // Refit the vertex with the refitted tracks and add the refitted vertex as the point prebooked in
 // the info[0] slot of its contributors. Returns false if the vertex refit failed.
-bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks)
+// useCommonVertex: the contributors will form a composed trajectory with the common vertex, whose
+// reference states must all pass through it: their KF update uses the vertex covariance scaled by
+// vtxRefCovScale (the stored vertex point keeps the true one).
+bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, bool useCommonVertex, std::vector<Track>& resTracks)
 {
   PVertex vtxRefit{};
   if (!refitPV(vtx, resTracks, vtxRefit)) {
@@ -574,6 +580,7 @@ bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vect
   if (mParams->verbose > 1) {
     LOGP(info, "refitted vtref {}: {} (original: {})", ivref, vtxRefit.asString(), vtx.asString());
   }
+  const double covScale = useCommonVertex ? mParams->vtxRefCovScale : 1.;
 #ifdef WITH_OPENMP
 #pragma omp parallel for schedule(dynamic) num_threads(mNThreads)
 #endif
@@ -582,7 +589,7 @@ bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vect
     if (!track.gid.isPVContributor()) {
       continue;
     }
-    if (!track.updateWithVertex(vtxRefit)) {
+    if (!track.updateWithVertex(vtxRefit, covScale)) {
       LOGP(debug, "Failed to update track {} with {}", track.gid.asString(), vtxRefit.asString());
       continue;
     }
