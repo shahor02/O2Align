@@ -22,6 +22,7 @@
 
 #include "Framework/Logger.h"
 #include "DetectorsBase/GeometryManager.h"
+#include "DetectorsBase/GRPGeomHelper.h"
 #include "O2Align/Detector.h"
 
 namespace o2::alignrs
@@ -141,6 +142,9 @@ bool isSameMatrix(const TGeoHMatrix& a, const TGeoHMatrix& b, double eps = 1e-12
 /// absent from labelToValue, hence count as 0).
 bool getFittedLocalDelta(const Volume* vol, const std::map<uint32_t, double>& labelToValue, TGeoHMatrix& delta)
 {
+  // RSTODO In principle, if the volume has no rigid-body DOF, it should not have any fitted parameters either. 
+  // So, in the alignment results writing session one could skip initializing the same RB DOFs just for this check,
+  // instead, one can check isRigidBodyAllowed() and then loop as for (int i = 0; i < RigidBodyDOFSet::NDOF; ++i)
   const auto* rb = vol->getRigidBody();
   if (rb == nullptr || !rb->nFreeDOFs()) {
     return false;
@@ -201,10 +205,13 @@ TGeoHMatrix getInitialGlobalDelta(const o2::detectors::AlignParam& par)
 
 /// Step 2: cumulative global delta P^p of the initial alignment for every volume it contains, the
 /// objects being accumulated parents first, like GeometryManager::applyAlignment applies them
-PathMatrices collectInitialCumulativeDeltas(const AlgParVec& initial)
+PathMatrices collectInitialCumulativeDeltas(const AlgParVec* initial)
 {
   std::vector<std::pair<std::string, const o2::detectors::AlignParam*>> byDepth;
-  for (const auto& par : initial) {
+  if (!initial) {
+    return {};
+  }
+  for (const auto& par : *initial) {
     byDepth.emplace_back(getAlignablePath(par.getSymName()), &par);
   }
   std::stable_sort(byDepth.begin(), byDepth.end(), [](const auto& a, const auto& b) { return getPathDepth(a.first) < getPathDepth(b.first); });
@@ -227,13 +234,15 @@ struct OutputEntry {
 
 /// Volumes to write: all those of the initial alignment, then the volumes of the branch which the
 /// new corrections move differently from their TGeo parent. Ordered parents first, as needed by step 3.
-std::vector<OutputEntry> selectOutputVolumes(Volume* top, const AlgParVec& initial, const PathMatrices& newCum)
+std::vector<OutputEntry> selectOutputVolumes(Volume* top, const AlgParVec* initial, const PathMatrices& newCum)
 {
   std::vector<OutputEntry> entries;
   std::unordered_set<std::string> selected;
-  for (const auto& par : initial) {
-    auto& e = entries.emplace_back(par.getSymName(), getAlignablePath(par.getSymName()), par.getAlignableID());
-    selected.insert(e.path);
+  if (initial) {
+    for (const auto& par : *initial) {
+      auto& e = entries.emplace_back(par.getSymName(), getAlignablePath(par.getSymName()), par.getAlignableID());
+      selected.insert(e.path);
+    }
   }
   top->traverse([&](Volume* vol) {
     if (vol->isVirtual()) {
@@ -255,16 +264,23 @@ std::vector<OutputEntry> selectOutputVolumes(Volume* top, const AlgParVec& initi
 
 std::vector<o2::detectors::AlignParam> Detector::MP2AlignParams(const std::map<uint32_t, double>& labelToValue, bool writeLocal) const
 {
-  if (mTopVolume == nullptr) {
+  if (getO2DetID() < 0) {
+    LOGP(fatal, "MP2AlignParams called for {} which has no DetID", getDetName());
+  }
+  if (!mTopVolume) {
     LOGP(fatal, "MP2AlignParams called for {} before attachTo or for a discarded branch", getDetName());
   }
-  std::vector<o2::detectors::AlignParam> dummy;
-  const auto& initial = mInitialAlign ? *mInitialAlign : dummy;
+  auto iniAlg = o2::base::GRPGeomHelper::instance().getAlignment(getO2DetID());
+  if (!iniAlg) {
+    LOGP(warn, "Detector {} has no initial alignment, the MP2AlignParams output will contain only the fitted corrections", getDetName());
+  } else {
+    LOGP(info, "Building MP2AlignParams for detector {} on top of initial alignment", getDetName());
+  }
   // a branch made only of virtual volumes (TPC, mean vertex) produces no new correction, its
   // initial objects, if any, are still rewritten in the requested convention
   const auto newCum = collectNewCumulativeDeltas(mTopVolume, labelToValue);
-  const auto iniCum = collectInitialCumulativeDeltas(initial);
-  const auto entries = selectOutputVolumes(mTopVolume, initial, newCum);
+  const auto iniCum = collectInitialCumulativeDeltas(iniAlg);
+  const auto entries = selectOutputVolumes(mTopVolume, iniAlg, newCum);
 
   // step 3, parents being processed first so that P^c_{a(j)} is known when j is reached
   PathMatrices combinedCum;
@@ -283,7 +299,7 @@ std::vector<o2::detectors::AlignParam> Detector::MP2AlignParams(const std::map<u
     }
     result.emplace_back(e.symName.c_str(), e.algID, delta, !writeLocal, false);
   }
-  LOGP(info, "Converted rigid-body corrections of {} to {} {} AlignParam objects ({} in the initial alignment)", getDetName(), result.size(), writeLocal ? "local" : "global", initial.size());
+  LOGP(info, "Converted rigid-body corrections of {} to {} {} AlignParam objects ({} in the initial alignment)", getDetName(), result.size(), writeLocal ? "local" : "global", iniAlg ? iniAlg->size() : 0);
   return result;
 }
 

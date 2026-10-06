@@ -20,11 +20,11 @@
 #include <vector>
 
 #include "DetectorsCommonDataFormats/AlignParam.h"
+#include "DetectorsCommonDataFormats/DetID.h"
 #include "O2Align/TimeSlotsSet.h"
 #include "O2Align/Volume.h"
 #include "DataFormatsGlobalTracking/RecoContainer.h"
 #include "ReconstructionDataFormats/GlobalTrackID.h"
-
 
 namespace o2::alignrs
 {
@@ -88,9 +88,6 @@ class Detector
   virtual bool setTimeStamp(long tsMS);
   ///@}
 
-  virtual void setInitialAlignment(const std::vector<o2::detectors::AlignParam>& initial) { mInitialAlign = &initial; }
-  virtual const std::vector<o2::detectors::AlignParam>* getInitialAlignment() const { return mInitialAlign; }
-
   /// Convert the rigid-body corrections fitted by Millepede for the branch of this detector into
   /// the AlignParam objects to be applied to the IDEAL geometry (GeometryManager::applyAlignment),
   /// i.e. the fitted corrections combined with the initial alignment the fit started from.
@@ -128,7 +125,6 @@ class Detector
   DetIdx mDetIdx{DetPVT};
   Volume* mTopVolume{nullptr};              // top volume of the detector, owned by the common hierarchy
   std::unique_ptr<TimeSlotsSet> mTimeSlots; // calibration intervals of this detector, if any
-  const std::vector<o2::detectors::AlignParam>* mInitialAlign{nullptr}; // initial alignment of this detector, as provided by the CCDB, nullptr before attachTo
   int mSlotID{-1};                          // calibration slot of the processed TF, -1 before the 1st one  
 };
 

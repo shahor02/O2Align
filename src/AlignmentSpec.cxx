@@ -402,6 +402,8 @@ void AlignmentSpec::init(InitContext& ic)
   #endif
   if (mOutOpt) {
     LOG(info) << mOutOpt.pstring();
+  }
+  if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
     mDBGOut = std::make_unique<o2::utils::TreeStreamRedirector>("debug_alg.root", "recreate");
   }
   if (mUseMC) {
@@ -1545,7 +1547,7 @@ void AlignmentSpec::writeAlignParams(const std::map<uint32_t, double>& labelToVa
   using AlgParVec = std::vector<o2::detectors::AlignParam>;
   
   for (const auto* det : mDetectors) {
-    if (det->getTopVolume() == nullptr) {
+    if (!det->getTopVolume() || det->getO2DetID() < 0) {
       continue; // branch discarded
     }
     auto result = det->MP2AlignParams(labelToValue, mParams->writeLocalAlignParams);
@@ -1564,6 +1566,9 @@ void AlignmentSpec::endOfStream(EndOfStreamContext& /*ec*/)
   if (mDBGOut) {
     mDBGOut->Close();
     mDBGOut.reset();
+  }
+  if (mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
+    return; // the output is written by the Millepede2 task, not here
   }
   mMille.reset(); // flushes and closes the binary
 
@@ -1619,18 +1624,18 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
   }
 }
 
-DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t srcClusters, bool useMC, bool withITS3, bool requestCTPLumi, o2::alignrs::OutputEnum out)
+DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t detectors, bool useMC, bool withITS3, bool requestCTPLumi, o2::alignrs::OutputEnum out)
 {
   auto dataRequest = std::make_shared<DataRequest>();
   std::shared_ptr<o2::base::GRPGeomRequest> ggRequest{nullptr};
-  auto detMask = GTrackID::getSourcesDetectorsMask(srcClusters);
+  auto detMask = GTrackID::getSourcesDetectorsMask(detectors);
 
   if (!out[o2::alignrs::OutputOpt::MilleRes]) {
     dataRequest->requestTracks(srcTracks, useMC);
     if (withITS3) {
       dataRequest->requestIT3Clusters(useMC);
     } else {
-      dataRequest->requestClusters(srcClusters, useMC);
+      dataRequest->requestClusters(detectors, useMC);
     }
     if (requestCTPLumi) {
       dataRequest->inputs.emplace_back("lumiCTP", o2::header::gDataOriginCTP, "LUMICTP", 0, Lifetime::Timeframe);
@@ -1665,8 +1670,12 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
                                                            false,                             // GRPLHCIF
                                                            true,                              // GRPMagField
                                                            false,                             // askMatLUT
-                                                           o2::base::GRPGeomRequest::Aligned, // geometry
-                                                           dataRequest->inputs);
+                                                           o2::base::GRPGeomRequest::Alignments, // geometry + alignments
+                                                           dataRequest->inputs,
+                                                           true,                              // askOnce
+                                                           false,                             // propagatorD
+                                                           DetID::getNames(detMask)           // alignmenst to load
+                                                          );
   }
 
   Options opts{
