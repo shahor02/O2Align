@@ -90,6 +90,7 @@ void DetectorTOF::prepareData(o2::globaltracking::RecoContainer* recoData)
 
     auto& pnt = mTOFPointsInfo[ic];
     pnt.lr = 0;
+    pnt.detIdx = mDetIdx;
     pnt.label = Label(mDetIdx, sid, true);
     pnt.x = static_cast<float>(tra[0]);
     pnt.alpha = static_cast<float>(o2::math_utils::detail::sector2Angle<double>(clus.getSector()));

@@ -173,6 +173,7 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     mRecoParam.recalcTrkltCov(static_cast<float>(tilt), static_cast<float>(trkParam.getSnp()), static_cast<float>(padLength), cov);
 
     auto& pnt = resTrack.info.emplace_back();
+    pnt.detIdx = mDetIdx;
     pnt.lr = static_cast<int8_t>(o2::trd::Geometry::getLayer(trkltDet));
     pnt.label = Label(mDetIdx, trkltDet, true);
     pnt.x = static_cast<float>(traXYZ[0]);

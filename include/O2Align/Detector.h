@@ -37,7 +37,7 @@ class Detector
 {
  public:
   /// detector index, stored in the DET bits of the Millepede Label
-  enum DetIdx : uint32_t {
+  enum DetIdx : int8_t {
     DetPVT = 0, // PVT is a virtual detector, used for the primary vertex
     DetITS,
     DetTPC,

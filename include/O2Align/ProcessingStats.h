@@ -3,6 +3,7 @@
 
 #include <TObject.h>
 #include <TH1F.h>
+#include <array>
 #include <map>
 #include <string>
 
@@ -22,6 +23,12 @@ struct ProcessingStats : public TObject {
   uint32_t nTrcSingleGBLAcc{0};     // tracks accepted by a single-track GBL fit
   uint32_t nTrcMultiGBLAcc{0};      // contributors accepted by a composed multi-track GBL fit
 
+  std::array<uint32_t, 7> nITSLrPoints{0}; // number of ITS points per layer contribuing
+  std::array<uint32_t, 7> nITSLrPointsOvl{0}; // number of ITS overlap points per layer contribuing
+  std::array<uint32_t, 6> nTRDLrPoints{0}; // number of TRD points per layer contribuing
+  uint32_t nTPCPoints{0}; // number of TPC points contribuing
+  uint32_t nTOFPoints{0}; // number of TOF points contribuing
+
   std::map<int, uint32_t> nTrcByLabel; // number of tracks accepted by GBL fit, indexed by the int label of the volume they belong to
   std::map<int, std::string> labelToSymName; // optional symbolic name of the volume corresponding to the int label
   std::map<std::string, int> symNameToLabel; // optional int label of the volume corresponding to the symbolic name
@@ -32,7 +39,7 @@ struct ProcessingStats : public TObject {
   TH1F createStatHisto(const std::string& pattern) const;
   void Print(Option_t* option = "") const override;
 
-  ClassDefOverride(ProcessingStats, 1);
+  ClassDefOverride(ProcessingStats, 2);
 };
 } // namespace o2::alignrs
 

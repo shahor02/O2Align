@@ -18,6 +18,7 @@
 #include "O2Align/AlignmentTypes.h"
 #include "O2Align/Params.h"
 #include "O2Align/TrackFit.h"
+#include "O2Align/Detector.h"
 
 namespace o2::alignrs
 {
@@ -115,6 +116,7 @@ bool Track::updateWithVertex(const o2::dataformats::VertexBase& vtx, double covS
   frame.cluster = o2::BaseCluster<float>(-1, frame.x, static_cast<float>(-vtx.getX() * sa + vtx.getY() * ca), vtx.getZ(),
                                          static_cast<float>(cov(0, 0)), static_cast<float>(cov(1, 1)), static_cast<float>(cov(0, 1)));
   frame.lr = FrameInfoExt::Vertex;
+  frame.detIdx = Detector::DetPVT;
   const auto vtxPoint = frame.cluster;
   if (covScale != 1.) { // update with the rescaled covariance, the true one is restored below
     frame.cluster = o2::BaseCluster<float>(-1, frame.x, vtxPoint.getY(), vtxPoint.getZ(),

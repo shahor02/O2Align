@@ -17,7 +17,6 @@
 #include "ReconstructionDataFormats/Track.h"
 #include "ReconstructionDataFormats/Vertex.h"
 #include "ReconstructionDataFormats/VtxTrackIndex.h"
-#include "DataFormatsITS/TrackITS.h"
 #include "O2Align/Label.h"
 
 namespace o2::alignrs
@@ -38,7 +37,13 @@ struct FrameInfoExt final {
     Invalid = -2, // the point is not usable
     Vertex = -1   // the point is the primary vertex
   };
+  enum {
+    ITSOverlapBit = 0, // the point is on an ITS overlap
+    NUserBits
+  };
   int8_t lr = Invalid;            // detector-specific layer-like index, -1 = vtx, -2 = invalid point
+  int8_t detIdx = Invalid;        // detector index, stored in the DET bits of the Millepede Label
+  uint8_t userBits{0};            // user flags, detector-specific
   Label label{};                  // label of the sensitive volume this point belongs to
   float x{-999.f};                // X of the measurement in the tracking frame
   float alpha{-999.f};            // rotation angle of the tracking frame
@@ -47,6 +52,9 @@ struct FrameInfoExt final {
   std::string asString() const;
   bool isValid() const { return lr > Invalid; }
   bool isVertex() const { return lr == Vertex; }
+  
+  bool isITSOverlap() const { return userBits & (0x1 << ITSOverlapBit); }  
+  void setITSOverlap() { userBits |= (0x1 << ITSOverlapBit); }
   ClassDefNV(FrameInfoExt, 3)
 };
 
@@ -59,11 +67,10 @@ struct FitInfo final {
 
 struct Track {
   o2::dataformats::VtxTrackIndex gid; // global track ID
-  o2::its::TrackITS its;           // original ITS track
   o2::track::TrackParCovD track;   // prepared track state
   FitInfo kfFit;                   // kf fit information
   FitInfo gblFit;                  // gbl fit information
-  std::vector<Measurement> points; // measurment point
+  std::vector<Measurement> points; // measurment point, at the moment filled in parallel to GBL points but not used (might be used in the future for validation/debug output)
   std::vector<FrameInfoExt> info;  // frame info, owned by the track (detectors append to it)
 
   /// KF refit over the frames in the inclusive [frameStart, frameStop] slot range of `info`,

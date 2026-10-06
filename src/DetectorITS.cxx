@@ -106,6 +106,7 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
       math_utils::bringToPMPid(alpha);
       o2::BaseCluster<float> clus(sensID, trkXYZ, sigmaY2, sigmaZ2, 0.f);
       auto& pointInfo = mITSPointsInfo.emplace_back();
+      pointInfo.detIdx = mDetIdx;
       pointInfo.lr = lay;
       pointInfo.label = Label(mDetIdx, sensID, true);
       pointInfo.x = x;
@@ -327,6 +328,7 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     resTrack.info.push_back(*frameArr[i]);
     if (overlapArr[i]) {
       resTrack.info.push_back(*overlapArr[i]);
+      resTrack.info.back().setITSOverlap();
     }
   }
   // the overlap frames are interleaved with their host layer frames, order them along the track

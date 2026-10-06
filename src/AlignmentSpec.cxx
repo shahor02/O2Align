@@ -144,6 +144,38 @@ Matrix26 getLeafRigidBodyDerivatives(const Volume& leaf, const FrameInfoExt& fra
   return getRigidBodyBaseDerivatives(ctx) * jacL2T;
 }
 
+void countDetectorPoints(ProcessingStats& stats, const Track& track)
+{
+  for (const auto& frame : track.info) {
+    if (!frame.isValid() || frame.isVertex()) {
+      continue;
+    }
+    switch (frame.detIdx) {
+      case Detector::DetITS:
+        if (frame.lr >= 0) {
+          ++stats.nITSLrPoints[frame.lr];
+          if (frame.isITSOverlap()) {
+            ++stats.nITSLrPointsOvl[frame.lr];
+          }
+        }
+        break;
+      case Detector::DetTPC:
+        ++stats.nTPCPoints;
+        break;
+      case Detector::DetTRD:
+        if (frame.lr >= 0) {
+          ++stats.nTRDLrPoints[frame.lr];
+        }
+        break;
+      case Detector::DetTOF:
+        ++stats.nTOFPoints;
+        break;
+      default:
+        break;
+    }
+  }
+}
+
 /// precision matrix of a 2D measurement in the tracking frame, accounting for the Y-Z correlation
 /// (e.g. the pad tilt of the TRD). Returns false if the covariance is not positive definite.
 bool getMeasurementPrecision(const o2::BaseCluster<float>& cluster, Eigen::Matrix2d& prec)
@@ -1218,6 +1250,7 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
   for (auto* volume : contributingVolumes) {
     volume->incDataCounter();
   }
+  countDetectorPoints(mProcessingStats, resTrack);
   return true;
 }
 
@@ -1348,6 +1381,7 @@ size_t AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, st
   }
   for (size_t iTrack = 0; iTrack < used.size(); ++iTrack) {
     used[iTrack]->gblFit = fit;
+    countDetectorPoints(mProcessingStats, *used[iTrack]);
     for (auto* volume : volumesByTrack[iTrack]) {
       volume->incDataCounter();
     }

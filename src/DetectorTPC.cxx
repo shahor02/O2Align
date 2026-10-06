@@ -237,6 +237,7 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     }
 
     auto& pnt = resTrack.info.emplace_back();
+    pnt.detIdx = mDetIdx;
     pnt.lr = static_cast<int8_t>(getStack(meanRow));
     pnt.label = Label(mDetIdx, sc.sector, true);
     pnt.x = pnt3D[0];
