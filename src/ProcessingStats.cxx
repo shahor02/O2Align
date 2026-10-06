@@ -34,9 +34,9 @@ Long64_t ProcessingStats::Merge(TCollection* collection)
     nPVConstrAcc += other->nPVConstrAcc;
     nPVGBLAcc += other->nPVGBLAcc;
     nTrc += other->nTrc;
-    nTrcGBLAcc += other->nTrcGBLAcc;
-    nTrcSingleGBLAcc += other->nTrcSingleGBLAcc;
-    nTrcMultiGBLAcc += other->nTrcMultiGBLAcc;
+    nTrcMultiPVAcc += other->nTrcMultiPVAcc;
+    nTrcSinglePVAcc += other->nTrcSinglePVAcc;
+    nTrcNoPVAcc += other->nTrcNoPVAcc;
     for (size_t iLayer = 0; iLayer < nITSLrPoints.size(); ++iLayer) {
       nITSLrPoints[iLayer] += other->nITSLrPoints[iLayer];
       nITSLrPointsOvl[iLayer] += other->nITSLrPointsOvl[iLayer];
@@ -58,8 +58,8 @@ Long64_t ProcessingStats::Merge(TCollection* collection)
 
 std::string ProcessingStats::asString() const
 {
-  return fmt::format("TF={}, PV={} PVConstrAcc={} PVGBLAcc={} trc={} trcGBLAcc={} trcSingleGBLAcc={} trcMultiGBLAcc={}",
-                     nTF, nPV, nPVConstrAcc, nPVGBLAcc, nTrc, nTrcGBLAcc, nTrcSingleGBLAcc, nTrcMultiGBLAcc);
+  return fmt::format("TF={}, PV={} PVConstrAcc={} PVGBLAcc={} trc={} trcMultiPVAcc={} trcSinglePVAcc={} trcNoPVAcc={}",
+                     nTF, nPV, nPVConstrAcc, nPVGBLAcc, nTrc, nTrcMultiPVAcc, nTrcSinglePVAcc, nTrcNoPVAcc);
 }
 
 TH1F ProcessingStats::createStatHisto(const std::string& pattern) const
@@ -77,8 +77,8 @@ TH1F ProcessingStats::createStatHisto(const std::string& pattern) const
   constexpr int nCounters = nBaseCounters + nDetectorCounters;
   TH1F histogram("Stats", fmt::format("statistics: {}", pattern).c_str(), nCounters + nVolumeCounters, 0., nCounters + nVolumeCounters);
   histogram.SetDirectory(nullptr);
-  const uint32_t counterValues[] = {nTF, nPV, nPVConstrAcc, nPVGBLAcc, nTrc, nTrcGBLAcc, nTrcSingleGBLAcc, nTrcMultiGBLAcc};
-  const char* counterNames[] = {"nTF", "nPV", "nPVConstrAcc", "nPVGBLAcc", "nTrc", "nTrcGBLAcc", "nTrcSingleGBLAcc", "nTrcMultiGBLAcc"};
+  const uint32_t counterValues[] = {nTF, nPV, nPVConstrAcc, nPVGBLAcc, nTrc, nTrcMultiPVAcc, nTrcSinglePVAcc, nTrcNoPVAcc};
+  const char* counterNames[] = {"nTF", "nPV", "nPVConstrAcc", "nPVGBLAcc", "nTrc", "nTrcMultiPVAcc", "nTrcSinglePVAcc", "nTrcNoPVAcc"};
   int bin{1};
   for (size_t iCounter = 0; iCounter < nBaseCounters; ++iCounter) {
     histogram.SetBinContent(bin, counterValues[iCounter]);

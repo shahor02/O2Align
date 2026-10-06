@@ -58,9 +58,15 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
 
   // PV constraint
   int usePVConstraintMinTracks = 5; // minimum number of tracks to use PV constraint
-  int useMultiTrackPVConstraint = 1; // 0: no multi-track PV constraint, 1: use multi-track PV constraint and allow single tracks for the rest, 2: multi-track PV constraint only
-  bool scaleMVPriorWithNTracks = true;   // per-track PV constraint: scale the luminous region covariance of the mean vertex prior by the number of tracks of the vertex, for the prior to count once per collision
-  float vtxRefCovScale = 1e-2f;          // multi-track PV constraint: scale of the vertex covariance in the KF update defining the reference state at the vertex point, for the references of all tracks to pass (almost) through the common vertex. The stored vertex point keeps the true covariance
+  // steering of multi-track PV constraint:
+  // 0: no multi-track PV constraint, 
+  // 1: use multi-track PV constraint (at most 1st maxTracksPerMultiTrackPV) and allow single tracks with eventual PV constraint for the rest
+  // 2: use multi-track PV constraint (at most 1st maxTracksPerMultiTrackPV) and use the rest w/o PV constraint at all
+  // 3: multi-track PV constraint only (at most 1st maxTracksPerMultiTrackPV), no single-track at all
+  int useMultiTrackPVConstraint = 1; 
+  int maxTracksPerMultiTrackPV = 15;       // maximum number of tracks to use for multi-track PV constraint, 
+  bool scaleMVPriorWithNTracks = true;     // per-track PV constraint: scale the luminous region covariance of the mean vertex prior by the number of tracks of the vertex, for the prior to count once per collision
+  float vtxMultiTrackRefCovScale = 1e-2f;  // multi-track PV constraint: scale of the vertex covariance in the KF update defining the reference state at the vertex point, for the references of all tracks to pass (almost) through the common vertex. The stored vertex point keeps the true covariance
   std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
 
   // TPC drift calibration
@@ -116,8 +122,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   std::string milleResOutJson = "result.json";
 
   // conversion of the fitted rigid-body corrections to o2::detectors::AlignParam (MilleRes stage)
-  std::string algParamsInitial; // comma-separated DET:file (e.g. ITS:ITSalg.root,TRD:TRDalg.root) with the CCDB std::vector<o2::detectors::AlignParam> ("ccdb_object") the fit started from, a detector w/o entry is assumed ideal
-  std::string algParamsOutFile; // if not empty, write the combined alignment of each detector to <DET>_<algParamsOutFile>, to be applied to the ideal geometry
+  std::string algParamsOutFile = "alignment.root"; // if not empty, write the combined alignment of each detector to <DET>_<algParamsOutFile>, to be applied to the ideal geometry
 
   O2ParamDef(Params, "AlignParams");
 };

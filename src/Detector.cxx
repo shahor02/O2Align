@@ -253,11 +253,13 @@ std::vector<OutputEntry> selectOutputVolumes(Volume* top, const AlgParVec& initi
 
 } // namespace
 
-std::vector<o2::detectors::AlignParam> Detector::MP2AlignParams(const std::map<uint32_t, double>& labelToValue, const std::vector<o2::detectors::AlignParam>& initial, bool writeLocal) const
+std::vector<o2::detectors::AlignParam> Detector::MP2AlignParams(const std::map<uint32_t, double>& labelToValue, bool writeLocal) const
 {
   if (mTopVolume == nullptr) {
     LOGP(fatal, "MP2AlignParams called for {} before attachTo or for a discarded branch", getDetName());
   }
+  std::vector<o2::detectors::AlignParam> dummy;
+  const auto& initial = mInitialAlign ? *mInitialAlign : dummy;
   // a branch made only of virtual volumes (TPC, mean vertex) produces no new correction, its
   // initial objects, if any, are still rewritten in the requested convention
   const auto newCum = collectNewCumulativeDeltas(mTopVolume, labelToValue);

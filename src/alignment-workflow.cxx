@@ -51,7 +51,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
   const GID::mask_t allowedSourcesTrc = GID::getSourcesMask("ITS,TPC,ITS-TPC,ITS-TPC-TRD,ITS-TPC-TOF,ITS-TPC-TRD-TOF");
   const GID::mask_t allowedSourcesClus = GID::getSourcesMask("ITS,TPC,TRD,TOF");
   GID::mask_t srcTrc = allowedSourcesTrc & GID::getSourcesMask(cfg.options().get<std::string>("track-sources"));
-  GID::mask_t srcCls = allowedSourcesClus & GID::getSourcesMask(cfg.options().get<std::string>("detectors"));
+  GID::mask_t dets = allowedSourcesClus & GID::getSourcesMask(cfg.options().get<std::string>("detectors"));
   const auto useMC = !cfg.options().get<bool>("disable-mc");
   const auto withITS3 = cfg.options().get<bool>("with-its3");
   const o2::alignrs::OutputEnum output(cfg.options().get<std::string>("output"));
@@ -61,19 +61,19 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
   bool requestCTPLumi = false;
   
   if (!output[o2::alignrs::OutputOpt::MilleRes]) {
-    if (srcCls[GID::TPC]) { // the TPC cluster transformation needs the scalers
+    if (dets[GID::TPC]) { // the TPC cluster transformation needs the scalers
       auto sclOpt = o2::tpc::CorrectionMapsOptions::parseGlobalOptions(cfg.options());
       requestCTPLumi = sclOpt.requestCTPLumi;
       srcTrc = srcTrc | GID::getSourcesMask("CTP");
       specs.emplace_back(o2::tpc::getTPCScalerSpec(sclOpt));
     }    
-    o2::globaltracking::InputHelper::addInputSpecs(cfg, specs, srcCls, srcTrc, srcTrc, useMC);
+    o2::globaltracking::InputHelper::addInputSpecs(cfg, specs, dets, srcTrc, srcTrc, useMC);
     o2::globaltracking::InputHelper::addInputSpecsPVertex(cfg, specs, useMC);
   } else {
     specs.emplace_back(o2::globaltracking::getNoInpDummyOutSpec(0));
   }
   
-  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, srcCls, useMC, withITS3, requestCTPLumi, output));
+  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, dets, useMC, withITS3, requestCTPLumi, output));
 
   o2::raw::HBFUtilsInitializer hbfIni(cfg, specs);
   return std::move(specs);

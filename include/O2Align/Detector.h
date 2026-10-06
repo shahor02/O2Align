@@ -88,6 +88,9 @@ class Detector
   virtual bool setTimeStamp(long tsMS);
   ///@}
 
+  virtual void setInitialAlignment(const std::vector<o2::detectors::AlignParam>& initial) { mInitialAlign = &initial; }
+  virtual const std::vector<o2::detectors::AlignParam>* getInitialAlignment() const { return mInitialAlign; }
+
   /// Convert the rigid-body corrections fitted by Millepede for the branch of this detector into
   /// the AlignParam objects to be applied to the IDEAL geometry (GeometryManager::applyAlignment),
   /// i.e. the fitted corrections combined with the initial alignment the fit started from.
@@ -103,7 +106,7 @@ class Detector
   ///                     fit, ordered by the geometry level.
   /// Must be called after attachTo, with the geometry the fit was done on loaded; the ideal geometry
   /// itself is not needed. The derivation (thesis A.7, A.8) is documented in Detector.cxx.
-  virtual std::vector<o2::detectors::AlignParam> MP2AlignParams(const std::map<uint32_t, double>& labelToValue, const std::vector<o2::detectors::AlignParam>& initial, bool writeLocal) const;
+  virtual std::vector<o2::detectors::AlignParam> MP2AlignParams(const std::map<uint32_t, double>& labelToValue, bool writeLocal) const;
 
   /// Compact, human-readable summary of how many volumes of this detector's branch have at least
   /// one free rigid-body and/or calibration DOF, one line per hierarchy level: "<Nrb>/<Ncal>/<N>"
@@ -125,7 +128,8 @@ class Detector
   DetIdx mDetIdx{DetPVT};
   Volume* mTopVolume{nullptr};              // top volume of the detector, owned by the common hierarchy
   std::unique_ptr<TimeSlotsSet> mTimeSlots; // calibration intervals of this detector, if any
-  int mSlotID{-1};                          // calibration slot of the processed TF, -1 before the 1st one
+  const std::vector<o2::detectors::AlignParam>* mInitialAlign{nullptr}; // initial alignment of this detector, as provided by the CCDB, nullptr before attachTo
+  int mSlotID{-1};                          // calibration slot of the processed TF, -1 before the 1st one  
 };
 
 } // namespace o2::alignrs

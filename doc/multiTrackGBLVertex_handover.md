@@ -97,7 +97,7 @@ Fixing the gauge cures the divergence. The `IEEE_DENORMAL` floating-point warnin
 **The change in the working tree:**
 
 - `Track::updateWithVertex(vtx, covScale)` ([AlignmentTypes.cxx](../src/AlignmentTypes.cxx)) updates the track with the vertex covariance scaled by `covScale`. The vertex point stored in `info[0]` keeps the true covariance.
-- `constrainWithVertex(vtx, ivref, useCommonVertex, resTracks)` ([AlignmentSpec.cxx](../src/AlignmentSpec.cxx)) applies the new parameter `AlignParams.vtxRefCovScale` (default 1e-2) only when a common vertex is used. Otherwise the scale is 1.
+- `constrainWithVertex(vtx, ivref, useCommonVertex, resTracks)` ([AlignmentSpec.cxx](../src/AlignmentSpec.cxx)) applies the new parameter `AlignParams.vtxMultiTrackRefCovScale` (default 1e-2) only when a common vertex is used. Otherwise the scale is 1.
 
 **Expected effect.** Some hidden freedom is removed, so the multi-track chi² should rise a little.
 
@@ -107,7 +107,7 @@ Fixing the gauge cures the divergence. The `IEEE_DENORMAL` floating-point warnin
 
 1. **Fix the gauge** whenever the multi-track vertex constraint is used with a free mean vertex. Either fix the ITS envelope translations and rotations, or fix the mean vertex. Put this in the DOF config. Ideally also add a warning in the code when both are free and `useMultiTrackPVConstraint > 0`.
 2. **Next test:**
-   - Regenerate the records with the ITS envelope fixed, `meanPtB0 = 0.3` (try 0.25 as well) and the new `vtxRefCovScale`.
+   - Regenerate the records with the ITS envelope fixed, `meanPtB0 = 0.3` (try 0.25 as well) and the new `vtxMultiTrackRefCovScale`.
    - Check that the multi-track chi²/Ndf ends near 1 and that pede converges with down-weighting on.
    - A conservative (low) momentum is preferable. High-momentum tracks then come out with chi²/Ndf < 1, which pede tolerates; too high a momentum gets the soft tracks rejected.
 3. **If chi²/Ndf is still well above 1:**

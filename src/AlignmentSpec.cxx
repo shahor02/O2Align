@@ -16,7 +16,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
-
+//#undef WITH_OPENMP // for testing without OpenMP
 #ifdef WITH_OPENMP
 #include <omp.h>
 #endif
@@ -310,14 +310,14 @@ class AlignmentSpec final : public Task
   // impose the prior of the mean interaction point on the vertex point of one track of a collision
   void addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint, double covScale = 1.);
 
-  // build and fit a single composed GBL trajectory for all tracks of one collision, with their
-  // common vertex position as parameters shared by all of them
+  // build and fit a single composed GBL trajectory for the selected tracks of one collision,
+  // with their common vertex position as parameters shared by all of them
   size_t buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj);
   // steps of process(), see there
   void collectVertexTracks(const V2TRef& trackRef, bool useVertexConstraint, std::unordered_map<GTrackID, bool>& ambigTable, std::vector<Track>& resTracks);
   void refitTracks(std::vector<Track>& resTracks, bool useVertexConstraint);
-  bool constrainWithVertex(const PVertex& vtx, int ivref, bool useCommonVertex, std::vector<Track>& resTracks);
-  void buildVertexTrajectories(std::vector<Track>& resTracks, bool useCommonVertex, std::vector<gbl::GblTrajectory>& gblTraj);
+  bool constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks, std::vector<Track*>& commonVertexTracks);
+  void buildVertexTrajectories(std::vector<Track>& resTracks, bool hasPVConstraint, const std::vector<Track*>& commonVertexTracks, std::vector<gbl::GblTrajectory>& gblTraj);
   void writeMilleRecords(std::vector<gbl::GblTrajectory>& gblTraj);
 
   // build track to vertex association
@@ -402,12 +402,12 @@ void AlignmentSpec::init(InitContext& ic)
   #endif
   if (mOutOpt) {
     LOG(info) << mOutOpt.pstring();
-    mDBGOut = std::make_unique<o2::utils::TreeStreamRedirector>("its3_debug_alg.root", "recreate");
+    mDBGOut = std::make_unique<o2::utils::TreeStreamRedirector>("debug_alg.root", "recreate");
   }
   if (mUseMC) {
     mcReader = std::make_unique<steer::MCKinematicsReader>("collisioncontext.root");
   }
-  for (int src = GTrackID::NSources; src--;) {
+  for (int src = GTrackID::NSources; src--;) { // do this in reverse order to have the most global tracks 1st
     if (mTracksSrcMask[src]) {
       mTrackSources.push_back(src);
     }
@@ -524,13 +524,11 @@ void AlignmentSpec::process() // collisions
     }
     collectVertexTracks(primVer2TRefs[ivref], useVertexConstraint, ambigTable, resTracks);
     refitTracks(resTracks, useVertexConstraint);
-    if (useVertexConstraint && !constrainWithVertex(*vtx, ivref, mParams->useMultiTrackPVConstraint > 0, resTracks)) {
+    std::vector<Track*> commonVertexTracks;
+    if (useVertexConstraint && !constrainWithVertex(*vtx, ivref, resTracks, commonVertexTracks)) {
       useVertexConstraint = false; // the tracks of this vertex are fitted w/o the vertex point
     }
-    if (useVertexConstraint) {
-      ++mProcessingStats.nPVConstrAcc;
-    }
-    buildVertexTrajectories(resTracks, useVertexConstraint && mParams->useMultiTrackPVConstraint>0, gblTraj);
+    buildVertexTrajectories(resTracks, useVertexConstraint, commonVertexTracks, gblTraj);
   }
   mProcessingStats.Print();
   mGBLStat.print();
@@ -600,19 +598,30 @@ void AlignmentSpec::refitTracks(std::vector<Track>& resTracks, bool useVertexCon
 
 // Refit the vertex with the refitted tracks and add the refitted vertex as the point prebooked in
 // the info[0] slot of its contributors. Returns false if the vertex refit failed.
-// useCommonVertex: the contributors will form a composed trajectory with the common vertex, whose
-// reference states must all pass through it: their KF update uses the vertex covariance scaled by
-// vtxRefCovScale (the stored vertex point keeps the true one).
-bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, bool useCommonVertex, std::vector<Track>& resTracks)
+// Tracks selected for the composed trajectory use vtxMultiTrackRefCovScale so their reference
+// states pass through the common vertex. Mode 1 also updates the remaining contributors with the
+// unscaled vertex covariance for their individual trajectories.
+bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks, std::vector<Track*>& commonVertexTracks)
 {
   PVertex vtxRefit{};
   if (!refitPV(vtx, resTracks, vtxRefit)) {
     return false;
   }
+  ++mProcessingStats.nPVConstrAcc;
   if (mParams->verbose > 1) {
     LOGP(info, "refitted vtref {}: {} (original: {})", ivref, vtxRefit.asString(), vtx.asString());
   }
-  const double covScale = useCommonVertex ? mParams->vtxRefCovScale : 1.;
+  commonVertexTracks.clear();
+  std::vector<uint8_t> useForCommonVertex(resTracks.size(), 0);
+  int nCommonTracks{0};
+  if (mParams->useMultiTrackPVConstraint > 0) {
+    for (size_t itr = 0; itr < resTracks.size() && nCommonTracks < mParams->maxTracksPerMultiTrackPV; ++itr) {
+      if (resTracks[itr].gid.isPVContributor()) {
+        useForCommonVertex[itr] = 1;
+        ++nCommonTracks;
+      }
+    }
+  }
 #ifdef WITH_OPENMP
 #pragma omp parallel for schedule(dynamic) num_threads(mNThreads)
 #endif
@@ -621,9 +630,20 @@ bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, bool useC
     if (!track.gid.isPVContributor()) {
       continue;
     }
+    const bool useTrackForCommonVertex = useForCommonVertex[itr];
+    const bool updateSingleTrack = mParams->useMultiTrackPVConstraint == 0 || (mParams->useMultiTrackPVConstraint == 1 && !useTrackForCommonVertex);
+    if (!useTrackForCommonVertex && !updateSingleTrack) {
+      continue;
+    }
+    const double covScale = useTrackForCommonVertex ? mParams->vtxMultiTrackRefCovScale : 1.;
     if (!track.updateWithVertex(vtxRefit, covScale)) {
       LOGP(debug, "Failed to update track {} with {}", track.gid.asString(), vtxRefit.asString());
       continue;
+    }
+  }
+  for (size_t itr = 0; itr < resTracks.size(); ++itr) {
+    if (useForCommonVertex[itr] && resTracks[itr].gid.isIndexSet() && !resTracks[itr].info.empty() && resTracks[itr].info.front().isVertex()) {
+      commonVertexTracks.push_back(&resTracks[itr]);
     }
   }
   return true;
@@ -634,44 +654,41 @@ bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, bool useC
 // vertex point. Then the remaining tracks, each separately: those carrying the vertex point are
 // fitted from it on, treating it as an ordinary measured point of this track only, the others from
 // their 1st measured point.
-void AlignmentSpec::buildVertexTrajectories(std::vector<Track>& resTracks, bool useCommonVertex, std::vector<gbl::GblTrajectory>& gblTraj)
+void AlignmentSpec::buildVertexTrajectories(std::vector<Track>& resTracks, bool hasPVConstraint, const std::vector<Track*>& commonVertexTracks, std::vector<gbl::GblTrajectory>& gblTraj)
 {
-  if (useCommonVertex) {
-    std::vector<Track*> contributors;
-    for (auto& resTrack : resTracks) {
-      if (resTrack.gid.isIndexSet() && !resTrack.info.empty() && resTrack.info.front().isVertex()) {
-        contributors.push_back(&resTrack);
-      }
-    }
-    if (const auto nAccepted = buildGBLVertex(contributors, gblTraj); nAccepted > 0) {
+  if (!commonVertexTracks.empty()) {
+    if (const auto nAccepted = buildGBLVertex(commonVertexTracks, gblTraj); nAccepted > 0) {
       ++mProcessingStats.nPVGBLAcc;
-      mProcessingStats.nTrcGBLAcc += nAccepted;
-      mProcessingStats.nTrcMultiGBLAcc += nAccepted;
+      mProcessingStats.nTrcMultiPVAcc += nAccepted;
     }
   }
-  if (mParams->useMultiTrackPVConstraint == 2) {
+  if (hasPVConstraint && mParams->useMultiTrackPVConstraint == 3) {
     return; // only multi-track trajectories are requested, no single-track ones 
   }
   // per-track PV constraint: every track carrying the vertex point gets the mean vertex prior,
   // optionally deweighted by their number for the prior to count once per collision
   double mvPriorCovScale = 0.;
-  if (!useCommonVertex) {
-    const auto nWithVertex = std::count_if(resTracks.begin(), resTracks.end(), [](const Track& t) { return t.gid.isIndexSet() && !t.info.empty() && t.info.front().isVertex(); });
-    if (nWithVertex > 0) {
-      mvPriorCovScale = mParams->scaleMVPriorWithNTracks ? static_cast<double>(nWithVertex) : 1.;
-    }
+  const auto nWithVertex = std::count_if(resTracks.begin(), resTracks.end(), [&commonVertexTracks](const Track& t) {
+    return t.gid.isIndexSet() && !t.info.empty() && t.info.front().isVertex() &&
+           std::find(commonVertexTracks.begin(), commonVertexTracks.end(), &t) == commonVertexTracks.end();
+  });
+  if (nWithVertex > 0) {
+    mvPriorCovScale = mParams->scaleMVPriorWithNTracks ? static_cast<double>(nWithVertex) : 1.;
   }
   for (auto& resTrack : resTracks) {
     if (!resTrack.gid.isIndexSet() || resTrack.info.empty()) {
       continue; // failed track
     }
-    if (useCommonVertex && resTrack.info.front().isVertex()) {
+    if (std::find(commonVertexTracks.begin(), commonVertexTracks.end(), &resTrack) != commonVertexTracks.end()) {
       continue; // already accounted with the common vertex constraint
     }
     const bool hasVertex = resTrack.info.front().isVertex();
     if (buildGBLTrack(resTrack, resTrack.info.front().isValid() ? 0 : 1, gblTraj, hasVertex ? mvPriorCovScale : 0.)) {
-      ++mProcessingStats.nTrcGBLAcc;
-      ++mProcessingStats.nTrcSingleGBLAcc;
+      if (hasVertex) {
+        ++mProcessingStats.nTrcSinglePVAcc;
+      } else {
+        ++mProcessingStats.nTrcNoPVAcc;
+      }
     }
   }
 }
@@ -696,8 +713,9 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
 {
   mTimeInfo = pc.services().get<o2::framework::TimingInfo>();
   o2::base::GRPGeomHelper::instance().checkUpdates(pc);
-  mFieldOFF = std::abs(o2::base::PropagatorD::Instance()->getNominalBz()) < 0.1;
   mTimeStamp = (o2::base::GRPGeomHelper::instance().getOrbitResetTimeMUS() +  static_cast<long>(mTimeInfo.firstTForbit * o2::constants::lhc::LHCOrbitMUS)) * 1e-3;
+
+  mFieldOFF = std::abs(o2::base::PropagatorD::Instance()->getNominalBz()) < 0.1;
   if (static bool initOnce{false}; !initOnce) {
     initOnce = true;
     initOnFirstTF();
@@ -746,7 +764,9 @@ void AlignmentSpec::initOnFirstTF()
   if (mTRD) {
     mTRD->initCalib();
   }
-  initVertexer();
+  if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
+    initVertexer();
+  }
   initMisalignment();
 }
 
@@ -1523,32 +1543,12 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
 void AlignmentSpec::writeAlignParams(const std::map<uint32_t, double>& labelToValue) const
 {
   using AlgParVec = std::vector<o2::detectors::AlignParam>;
-  std::map<std::string, std::string> initialFiles; // detector name -> file
-  for (const auto& item : o2::utils::Str::tokenize(mParams->algParamsInitial, ',')) {
-    const auto pos = item.find(':');
-    if (pos == std::string::npos) {
-      LOGP(fatal, "algParamsInitial entry '{}' is not of the form DET:file", item);
-    }
-    initialFiles[item.substr(0, pos)] = item.substr(pos + 1);
-  }
-
+  
   for (const auto* det : mDetectors) {
     if (det->getTopVolume() == nullptr) {
       continue; // branch discarded
     }
-    AlgParVec initial;
-    if (auto it = initialFiles.find(det->getDetName()); it != initialFiles.end()) {
-      TFile fin(it->second.c_str());
-      std::unique_ptr<AlgParVec> pars{fin.IsZombie() ? nullptr : fin.Get<AlgParVec>("ccdb_object")};
-      if (pars == nullptr) {
-        LOGP(fatal, "Failed to read the initial alignment of {} from {}", det->getDetName(), it->second);
-      }
-      initial = std::move(*pars);
-      LOGP(info, "Read {} initial AlignParam objects of {} from {}", initial.size(), det->getDetName(), it->second);
-    } else {
-      LOGP(warn, "No initial alignment provided for {}: the geometry the fit was done on is assumed to be the ideal one", det->getDetName());
-    }
-    auto result = det->MP2AlignParams(labelToValue, initial, mParams->writeLocalAlignParams);
+    auto result = det->MP2AlignParams(labelToValue, mParams->writeLocalAlignParams);
     if (result.empty()) {
       continue; // nothing to align, e.g. a detector made only of virtual volumes and never aligned
     }
@@ -1663,7 +1663,7 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
     ggRequest = std::make_shared<o2::base::GRPGeomRequest>(true,                              // orbitResetTime
                                                            false,                             // GRPECS=true
                                                            false,                             // GRPLHCIF
-                                                           false,                             // GRPMagField
+                                                           true,                              // GRPMagField
                                                            false,                             // askMatLUT
                                                            o2::base::GRPGeomRequest::Aligned, // geometry
                                                            dataRequest->inputs);
