@@ -21,10 +21,12 @@ namespace o2::alignrs
 
 struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // Track selection
-  float minPt = 0.5f;        // minimum pt required
+  float minPt = 0.5f;        // minimum pt required  
   int minITSCls = 7;         // minimum number of ITS clusters
   float maxITSChi2Ndf = 1.2; // maximum ITS track chi2 // RSTODO not used, remove?
 
+  int minGBLPoints = 4;      // minimum number of GBL points per track
+  
   bool writeLocalAlignParams = true; // create output AlignParams in local convention.
 
   // ITS overlap handling

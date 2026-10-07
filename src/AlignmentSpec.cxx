@@ -16,7 +16,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
-#undef WITH_OPENMP // for testing without OpenMP
+//#undef WITH_OPENMP // for testing without OpenMP
 #ifdef WITH_OPENMP
 #include <omp.h>
 #endif
@@ -1089,8 +1089,11 @@ bool AlignmentSpec::refitPV(const PVertex& vtxOrig, const std::vector<Track>& re
 // a composed trajectory, whose position enters via the inner transformation instead.
 bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, std::vector<Volume*>& contributingVolumes, GBLStat& gblStat, double mvPriorCovScale)
 {
-  auto prop = o2::base::PropagatorD::Instance();
   const int np = (int)resTrack.info.size();
+  if (np - ipStart < mParams->minGBLPoints) {
+    return false;
+  }
+  auto prop = o2::base::PropagatorD::Instance();
   auto wTrk = resTrack.track; // working copy, the seed must be preserved
   o2::track::TrackParD trkRef, *refLin = nullptr;
   if (mParams->useStableRef) {
@@ -1240,6 +1243,10 @@ bool AlignmentSpec::fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, 
   int ndf = 0;
   if (auto ierr = traj.fit(chi2, ndf, lostWeight); ierr) {
     ++gblStat.fitFail;
+    if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
+      LOGP(error, "GBL fit failed with ierr={}", ierr);
+      traj.printTrajectory(5);
+    }
     return false;
   }
   if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
@@ -1273,6 +1280,10 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
   std::vector<gbl::GblPoint> points;
   std::vector<Volume*> contributingVolumes;
   if (!fillGBLPoints(resTrack, ipStart, false, points, contributingVolumes, mGBLStatSingle, mvPriorCovScale)) {
+    return false;
+  }
+  if (points.size() < mParams->minGBLPoints) {
+    ++mGBLStatSingle.construct;
     return false;
   }
   gbl::GblTrajectory traj(points, !mFieldOFF); // no curvature w/o field
