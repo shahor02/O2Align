@@ -229,7 +229,7 @@ class AlignmentSpec final : public Task
     int ndfSum{0};           // sum of the ndf of the accepted fits
     void print(const std::string& prefix) const
     {
-      LOGP(info, "\t{} GBL SUMMARY: fitted {}, constr.failed {}, fit failed {}, chi2Ndf rej {}, prop.failed {} GBL Chi2/Ndf = {}, LostWeight = {}",
+      LOGP(info, "\t{} GBL SUMMARY: fitted {}, constr.failed {}, fit failed {}, chi2Ndf rej {}, prop.failed {} GBL Chi2/Ndf = {:.3f}, LostWeight = {:.3f}",
            prefix, fit, construct, fitFail, chi2Rej, failedProp, ndfSum ? chi2Sum / ndfSum : -1., lostWeightSum);
     }
   };
