@@ -307,6 +307,8 @@ class AlignmentSpec final : public Task
   static Eigen::MatrixXd computeVertexTransformation(const Track& resTrack);
   static Eigen::MatrixXd makeZeroFieldInnerTransformation(const Eigen::MatrixXd& vtxTrans, int iTrk, int nTrk);
 
+  // the last measurement added to vtxPoint moves with the mean vertex position (if it is aligned)
+  void addMeanVertexDerivatives(gbl::GblPoint& vtxPoint, const Eigen::MatrixXd& trans);
   // impose the prior of the mean interaction point on the vertex point of one track of a collision
   void addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint, double covScale = 1.);
 
@@ -1186,13 +1188,20 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
     if (!frame.isVertex()) { // the vertex point has no alignable volume behind it
       const auto globals = buildPointGlobals(frame, wTrk, contributingVolumes);
       point.addGlobals(globals.labels, globals.der);
-    } else if (addMeas && mvPriorCovScale > 0.) {
+    } else if (addMeas) {
       // Per-track PV constraint: the track passes through the true vertex V, measured (i) by the
-      // refitted vertex with its fit covariance, added above w/o global derivatives: it does not move
-      // with the mean vertex, and (ii) by the mean vertex mu with the luminous region covariance,
-      // V ~ N(mu, Sigma_lumi), which carries the derivatives wrt mu. Integrating V out, the
-      // information on mu comes from (V_refit - mu) ~ N(0, Sigma_fit + Sigma_lumi).
-      addMeanVertexPrior(resTrack, computeVertexTransformation(resTrack), point, mvPriorCovScale);
+      // refitted vertex with its fit covariance, added above, and (ii) by the mean vertex mu with the
+      // luminous region covariance, V ~ N(mu, Sigma_lumi). Integrating V out, the information on mu
+      // comes from (V_refit - mu) ~ N(0, Sigma_fit + Sigma_lumi). A correction of mu is applied to
+      // the refitted vertex too (refitVtxFollowsMV), otherwise it anchors the frame of the starting
+      // geometry. Its globals must be added before the prior: they go to the last measurement.
+      const auto trans = computeVertexTransformation(resTrack);
+      if (mParams->refitVtxFollowsMV) {
+        addMeanVertexDerivatives(point, trans);
+      }
+      if (mvPriorCovScale > 0.) {
+        addMeanVertexPrior(resTrack, trans, point, mvPriorCovScale);
+      }
     }
 
     if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
@@ -1345,9 +1354,18 @@ void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::Matri
     return;
   }
   vtxPoint.addMeasurement(res, Eigen::Matrix2d(cov.inverse()));
-  if (!mPVT->getPositionLabels().empty()) { // the mean vertex position is aligned as well
-    // Millepede expects the derivatives of the prediction, i.e. minus those of the residual. Here it
-    // is the measurement, the mean vertex, which moves with the parameter: d(res)/d(MV) = +trans.
+  addMeanVertexDerivatives(vtxPoint, trans);
+}
+
+// Millepede expects the derivatives of the prediction, i.e. minus those of the residual. For a
+// measurement which moves with the mean vertex position (the prior itself, or the refitted vertex
+// of a single-track record following the correction of the mean vertex) it is the measurement which
+// depends on the parameter: d(res)/d(MV) = +trans. GBL attaches the globals to the last measurement
+// of the point, so this must be called right after the measurement they belong to. No-op if the
+// mean vertex position is fixed.
+void AlignmentSpec::addMeanVertexDerivatives(gbl::GblPoint& vtxPoint, const Eigen::MatrixXd& trans)
+{
+  if (!mPVT->getPositionLabels().empty()) {
     vtxPoint.addGlobals(mPVT->getPositionLabels(), Eigen::MatrixXd(-trans));
   }
 }

@@ -65,6 +65,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // 3: multi-track PV constraint only (at most 1st maxTracksPerMultiTrackPV), no single-track at all
   int useMultiTrackPVConstraint = 1; 
   int maxTracksPerMultiTrackPV = 15;       // maximum number of tracks to use for multi-track PV constraint, 
+  bool refitVtxFollowsMV = true;           // per-track PV constraint: the refitted vertex moves with the correction of the mean vertex position (same global derivatives as the prior), otherwise it anchors the frame of the starting geometry
   bool scaleMVPriorWithNTracks = true;     // per-track PV constraint: scale the luminous region covariance of the mean vertex prior by the number of tracks of the vertex, for the prior to count once per collision
   float vtxMultiTrackRefCovScale = 1e-2f;  // multi-track PV constraint: scale of the vertex covariance in the KF update defining the reference state at the vertex point, for the references of all tracks to pass (almost) through the common vertex. The stored vertex point keeps the true covariance
   std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
