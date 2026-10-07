@@ -21,7 +21,11 @@ namespace o2::alignrs
 void Constraint::write(std::ostream& os) const
 {
   os << "!!! " << mName << '\n';
-  os << std::format("Constraint {:.12g}\n", mValue);
+  if (isMeasurement()) {
+    os << std::format("Measurement {:.12g} {:.12g}\n", mValue, mSigma);
+  } else {
+    os << std::format("Constraint {:.12g}\n", mValue);
+  }
   for (size_t i{0}; i < mLabels.size(); ++i) {
     // full precision: the coefficients mix rotations with lever arms of up to a few metres
     os << std::format("{} {:.12g}\n", mLabels[i], mCoeffs[i]);

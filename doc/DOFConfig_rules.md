@@ -49,6 +49,28 @@ or none of the free DOFs feeds it through the chained jacobians) is skipped with
 or an envelope without its own geometry such as `TRD_envelope`), so the common mode of the
 supermodules of a detector can't be pinned this way.
 
+## Measurements of Rigid-Body DOFs
+
+The `measurement` clause supplies an external measurement (e.g. from a survey) of rigid-body DOFs of
+the matching volumes. It is written to `mp2con.txt` as a Millepede `Measurement` record
+(`Measurement value sigma`, followed by the label of the DOF with coefficient 1), i.e. a soft constraint
+`p = value ± sigma` which, unlike a `Constraint`, does not fix the parameter. It is an object
+`DOF name -> [value, sigma]` (or `{"value": v, "sigma": s}`), in cm for `TX,TY,TZ` and rad for `RX,RY,RZ`,
+relative to the geometry used by the fit:
+
+```json
+{ "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel?", "rigidBody": ["TX", "TY"] },
+{ "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel?", "measurement": { "TX": [0.01, 0.005], "TY": {"value": -0.02, "sigma": 0.01} } }
+```
+
+A `rigidBody` clause *defines* the DOF set (listed DOFs free, all the others fixed), while `measurement`
+only adds a prior to DOFs that are already free. A rule containing both is therefore rejected (fatal):
+put the measurement in its own rule, after the one defining the DOFs.
+
+As for `pinChildrenMean`, no DOF set is created and a later matching rule replaces all the
+measurements of an earlier one. `sigma` must be positive. A measurement of a DOF which is not free at the
+time of writing, as well as the clause on a volume that is not rigid-body alignable, is ignored with a warning.
+
 ## Aligning a Subtree as One Rigid Body
 
 The opposite situation to `pinChildrenMean` is freeing a parent's rigid-body DOF while giving none

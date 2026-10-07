@@ -186,6 +186,7 @@ void Volume::writeRigidBodyConstraints(std::ostream& os) const
   if (!isLeaf() && mRBAllowed) {
     writeChildrenMeanConstraints(os);
   }
+  writeRigidBodyDOFMeasurements(os); // a sensor may be measured too
   for (const auto& c : mChildren) {
     c->writeRigidBodyConstraints(os);
   }
@@ -221,6 +222,24 @@ void Volume::writeChildrenMeanConstraints(std::ostream& os) const
     } else if (!free) { // w/o any free descendant DOF feeding it, a free parent DOF has no degeneracy to break
       LOGP(warn, "Ignoring pinChildrenMean of DOF {} for {}: no free descendant DOF contributes to it", dofName, mSymName);
     }
+  }
+}
+
+void Volume::writeRigidBodyDOFMeasurements(std::ostream& os) const
+{
+  for (int iDOF = 0; iDOF < RigidBodyDOFSet::NDOF; ++iDOF) {
+    const auto& m = mDOFMeasurement[iDOF];
+    if (m.sigma <= 0.) {
+      continue;
+    }
+    const char* dofName = RigidBodyDOFSet::RigidBodyDOFNames[iDOF];
+    if (!mRigidBody || !mRigidBody->isFree(iDOF)) { // the label is not a parameter of the fit
+      LOGP(warn, "Ignoring the measurement of DOF {} for {}: the DOF is not free", dofName, mSymName);
+      continue;
+    }
+    Constraint con(std::format("Measurement of DOF {} for {}", dofName, mSymName), m.value, m.sigma);
+    con.add(mLabel.raw(iDOF), 1.);
+    con.write(os);
   }
 }
 
@@ -486,6 +505,41 @@ void Volume::applyPinChildrenMeanConfig(const nlohmann::json& pin, const std::st
   }
 }
 
+// Apply the "measurement" clause of a rule: an object DOF name -> [value, sigma] or {"value", "sigma"}.
+// Like pinChildrenMean it creates no DOF set: the measurement is written only if the DOF is free at
+// the time of writing. A later matching rule replaces all the measurements of an earlier one.
+void Volume::applyMeasurementConfig(const nlohmann::json& meas, const std::string& pattern)
+{
+  if (!isRigidBodyAllowed()) {
+    if (pattern.find('*') == std::string::npos) {
+      LOGP(warn, "Ignoring the measurement rule '{}': {} is not rigid-body alignable", pattern, mSymName);
+    }
+    return;
+  }
+  if (!meas.is_object()) {
+    LOGP(fatal, "Invalid measurement clause in the rule '{}', an object DOF name -> [value, sigma] is expected", pattern);
+  }
+  mDOFMeasurement.fill({});
+  for (const auto& [name, item] : meas.items()) {
+    const auto idx = RigidBodyDOFSet::dofIndex(name);
+    if (idx < 0) {
+      LOGP(fatal, "Unknown rigid-body DOF '{}' in the measurement rule '{}', allowed are TX,TY,TZ,RX,RY,RZ", name, pattern);
+    }
+    DOFMeasurement m;
+    if (item.is_array() && item.size() == 2) {
+      m = {item[0].get<double>(), item[1].get<double>()};
+    } else if (item.is_object() && item.contains("value") && item.contains("sigma")) {
+      m = {item["value"].get<double>(), item["sigma"].get<double>()};
+    } else {
+      LOGP(fatal, "Invalid measurement of {} in the rule '{}', allowed are [value, sigma] or {{\"value\": v, \"sigma\": s}}", name, pattern);
+    }
+    if (!(m.sigma > 0.)) {
+      LOGP(fatal, "Measurement of {} in the rule '{}' needs sigma > 0, got {}", name, pattern, m.sigma);
+    }
+    mDOFMeasurement[idx] = m;
+  }
+}
+
 // Build the calibration DOF set of a rule, with its free/fixed clauses applied
 std::unique_ptr<DOFSet> Volume::makeCalibDOFSet(const nlohmann::json& cal, const std::string& pattern, const std::string& sym)
 {
@@ -522,6 +576,16 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
     rules.insert(rules.begin(), defRule);
   }
 
+  // a rigidBody clause defines the DOF set (and replaces an earlier one), a measurement only adds a prior
+  // to DOFs which are already free: in one rule the DOF list would be read as the definition and silently
+  // fix all the unlisted DOFs, hence the measurement must come in a rule of its own, after the definition
+  for (const auto& rule : rules) {
+    if (rule.contains("measurement") && rule.contains("rigidBody")) {
+      LOGP(fatal, "The rule '{}' has both rigidBody and measurement clauses: put the measurement in a separate rule following the DOF definition",
+           rule.value("match", std::string("?")));
+    }
+  }
+
   // the pattern is also tried with an implicit leading "*"
   auto matchPattern = [](const std::string& pattern, const std::string& sym) -> bool {
     return fnmatch(pattern.c_str(), sym.c_str(), 0) == 0 || fnmatch(("*" + pattern).c_str(), sym.c_str(), 0) == 0;
@@ -554,6 +618,9 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
       }
       if (rule.contains("pinChildrenMean")) {
         vol->applyPinChildrenMeanConfig(rule["pinChildrenMean"], pattern);
+      }
+      if (rule.contains("measurement")) {
+        vol->applyMeasurementConfig(rule["measurement"], pattern);
       }
     }
   });
