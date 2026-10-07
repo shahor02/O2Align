@@ -1,0 +1,133 @@
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x000077a79a7108d7 in wait4 () from /lib/x86_64-linux-gnu/libc.so.6
+warning: Unsupported auto-load script at offset 0 in section .debug_gdb_scripts
+of file /home/shahoian/alice/sw/ubuntu2404_x86-64/O2/dev-local7/lib/libO2MCHSimulation.so.
+Use `info auto-load python-scripts [REGEXP]' to list them.
+#0  0x000077a79a7108d7 in wait4 () from /lib/x86_64-linux-gnu/libc.so.6
+#1  0x000077a79a6585bb in ?? () from /lib/x86_64-linux-gnu/libc.so.6
+#2  0x000077a79b16567a in TUnixSystem::Exec (this=0x1dbfd400, shellcmd=<optimized out>) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/unix/src/TUnixSystem.cxx:2157
+#3  TUnixSystem::StackTrace (this=0x1dbfd400) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/unix/src/TUnixSystem.cxx:2448
+#4  0x000077a79b164fc4 in TUnixSystem::DispatchSignals (this=0x1dbfd400, sig=kSigSegmentationViolation) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/unix/src/TUnixSystem.cxx:3668
+#5  <signal handler called>
+#6  0x000077a7938fadee in clang::CXXRecordDecl::getLambdaStaticInvoker() const [clone .cold] () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#7  0x000077a7972c4da6 in (anonymous namespace)::CXXNameMangler::mangleLambdaSig(clang::CXXRecordDecl const*) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#8  0x000077a7972c3434 in (anonymous namespace)::CXXNameMangler::mangleUnqualifiedName(clang::GlobalDecl, clang::DeclarationName, clang::DeclContext const*, unsigned int, llvm::SmallVector<llvm::StringRef, 4u> const*) [clone .constprop.0] [clone .isra.0] () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#9  0x000077a7972b31b8 in (anonymous namespace)::CXXNameMangler::mangleLocalName(clang::GlobalDecl, llvm::SmallVector<llvm::StringRef, 4u> const*) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#10 0x000077a7972b5fd2 in (anonymous namespace)::CXXNameMangler::mangleType(clang::QualType) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#11 0x000077a7972c6070 in (anonymous namespace)::CXXNameMangler::mangleTemplateArg(clang::TemplateArgument, bool) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#12 0x000077a7972c24f9 in (anonymous namespace)::CXXNameMangler::mangleTemplateArgs(clang::TemplateName, clang::TemplateArgumentList const&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#13 0x000077a7972bda8f in (anonymous namespace)::CXXNameMangler::mangleFunctionEncoding(clang::GlobalDecl) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#14 0x000077a7972bfc86 in (anonymous namespace)::ItaniumMangleContextImpl::mangleCXXName(clang::GlobalDecl, llvm::raw_ostream&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#15 0x000077a793caea99 in cling::utils::Analyze::maybeMangleDeclName(clang::GlobalDecl const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#16 0x000077a793bf806f in cling::DeclUnloader::MaybeRemoveDeclFromModule(clang::GlobalDecl&) const () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#17 0x000077a793bfc49a in cling::DeclUnloader::VisitFunctionDecl(clang::FunctionDecl*, bool) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#18 0x000077a793bbfc25 in cling::TransactionUnloader::unloadDeserializedDeclarations(cling::Transaction*, cling::DeclUnloader&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#19 0x000077a793bbff23 in cling::TransactionUnloader::RevertTransaction(cling::Transaction*) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#20 0x000077a793b9edab in cling::Interpreter::unload(cling::Transaction&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#21 0x000077a793bbf8f3 in cling::TransactionUnloader::unloadDeclarations(cling::Transaction*, cling::DeclUnloader&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#22 0x000077a793bbff12 in cling::TransactionUnloader::RevertTransaction(cling::Transaction*) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#23 0x000077a793b9edab in cling::Interpreter::unload(cling::Transaction&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#24 0x000077a793c37898 in cling::IncrementalParser::commitTransaction(llvm::PointerIntPair<cling::Transaction*, 2u, cling::IncrementalParser::EParseResult, llvm::PointerLikeTypeTraits<cling::Transaction*>, llvm::PointerIntPairInfo<cling::Transaction*, 2u, llvm::PointerLikeTypeTraits<cling::Transaction*> > >&, bool) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#25 0x000077a793c39098 in cling::IncrementalParser::Compile(llvm::StringRef, cling::CompilationOptions const&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#26 0x000077a793ba2cb1 in cling::Interpreter::EvaluateInternal(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, cling::CompilationOptions, cling::Value*, cling::Transaction**, unsigned long) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#27 0x000077a793ba308b in cling::Interpreter::process(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, cling::Value*, cling::Transaction**, bool) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#28 0x000077a793c91427 in cling::MetaProcessor::process(llvm::StringRef, cling::Interpreter::CompilationResult&, cling::Value*, bool) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#29 0x000077a793a8c0fa in HandleInterpreterException (metaProcessor=0x1ebfbb70, input_line=0x25522b20 "#line 1 \"ROOT_prompt_0\"\nauto cc = o2::ccdb::BasicCCDBManager::Instance()", compRes=@0x7fffc02ae9b4: cling::Interpreter::kSuccess, result=result@entry=0x7fffc02aeae0) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/metacling/src/TCling.cxx:2477
+#30 0x000077a793aa4df8 in TCling::ProcessLine (this=0x1dc746b0, line=<optimized out>, error=0x7fffc02aed6c) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/ubuntu2404_x86-64/GCC-Toolchain/v14.2.0-alice2-1/include/c++/14.2.0/bits/unique_ptr.h:193
+#31 0x000077a79b4ad8fa in TRint::ProcessLineNr (this=this@entry=0x1dc3c340, filestem=filestem@entry=0x77a79b4bd13f "ROOT_prompt_", line=0x24807170 "auto cc = o2::ccdb::BasicCCDBManager::Instance()", error=0x7fffc02aed6c, error@entry=0x0) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/rint/src/TRint.cxx:794
+#32 0x000077a79b4adcd4 in TRint::HandleTermInput (this=0x1dc3c340) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/rint/src/TRint.cxx:641
+#33 0x000077a79b15fe9a in TUnixSystem::CheckDescriptors (this=this@entry=0x1dbfd400) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/unix/src/TUnixSystem.cxx:1354
+#34 0x000077a79b164d78 in TUnixSystem::DispatchOneEvent (this=0x1dbfd400, pendingOnly=<optimized out>) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/unix/src/TUnixSystem.cxx:1109
+#35 0x000077a79b07a699 in TSystem::InnerLoop (this=0x1dbfd400) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/base/src/TSystem.cxx:403
+#36 TSystem::Run (this=0x1dbfd400) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/base/src/TSystem.cxx:353
+#37 0x000077a79b008253 in TApplication::Run (this=this@entry=0x1dc3c340, retrn=retrn@entry=false) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/base/src/TApplication.cxx:1896
+#38 0x000077a79b4aeda3 in TRint::Run (this=this@entry=0x1dc3c340, retrn=retrn@entry=false) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/rint/src/TRint.cxx:501
+#39 0x00000000004011bd in main (argc=<optimized out>, argv=0x7fffc02b11f8) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/main/src/rmain.cxx:84
+[Inferior 1 (process 1145982) detached]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x0000773db3f108d7 in wait4 () from /lib/x86_64-linux-gnu/libc.so.6
+warning: Unsupported auto-load script at offset 0 in section .debug_gdb_scripts
+of file /home/shahoian/alice/sw/ubuntu2404_x86-64/O2/dev-local7/lib/libO2CommonUtils.so.
+Use `info auto-load python-scripts [REGEXP]' to list them.
+#0  0x0000773db3f108d7 in wait4 () from /lib/x86_64-linux-gnu/libc.so.6
+#1  0x0000773db3e585bb in ?? () from /lib/x86_64-linux-gnu/libc.so.6
+#2  0x0000773db496567a in TUnixSystem::Exec (this=0x15894400, shellcmd=<optimized out>) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/unix/src/TUnixSystem.cxx:2157
+#3  TUnixSystem::StackTrace (this=0x15894400) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/unix/src/TUnixSystem.cxx:2448
+#4  0x0000773db4964fc4 in TUnixSystem::DispatchSignals (this=0x15894400, sig=kSigSegmentationViolation) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/unix/src/TUnixSystem.cxx:3668
+#5  <signal handler called>
+#6  0x0000773dad0fadee in clang::CXXRecordDecl::getLambdaStaticInvoker() const [clone .cold] () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#7  0x0000773db0ac4da6 in (anonymous namespace)::CXXNameMangler::mangleLambdaSig(clang::CXXRecordDecl const*) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#8  0x0000773db0ac3434 in (anonymous namespace)::CXXNameMangler::mangleUnqualifiedName(clang::GlobalDecl, clang::DeclarationName, clang::DeclContext const*, unsigned int, llvm::SmallVector<llvm::StringRef, 4u> const*) [clone .constprop.0] [clone .isra.0] () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#9  0x0000773db0ab31b8 in (anonymous namespace)::CXXNameMangler::mangleLocalName(clang::GlobalDecl, llvm::SmallVector<llvm::StringRef, 4u> const*) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#10 0x0000773db0ab5fd2 in (anonymous namespace)::CXXNameMangler::mangleType(clang::QualType) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#11 0x0000773db0ac6070 in (anonymous namespace)::CXXNameMangler::mangleTemplateArg(clang::TemplateArgument, bool) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#12 0x0000773db0ac24f9 in (anonymous namespace)::CXXNameMangler::mangleTemplateArgs(clang::TemplateName, clang::TemplateArgumentList const&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#13 0x0000773db0abda8f in (anonymous namespace)::CXXNameMangler::mangleFunctionEncoding(clang::GlobalDecl) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#14 0x0000773db0abfc86 in (anonymous namespace)::ItaniumMangleContextImpl::mangleCXXName(clang::GlobalDecl, llvm::raw_ostream&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#15 0x0000773dad4aea99 in cling::utils::Analyze::maybeMangleDeclName(clang::GlobalDecl const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#16 0x0000773dad3f806f in cling::DeclUnloader::MaybeRemoveDeclFromModule(clang::GlobalDecl&) const () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#17 0x0000773dad3fc49a in cling::DeclUnloader::VisitFunctionDecl(clang::FunctionDecl*, bool) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#18 0x0000773dad3bfc25 in cling::TransactionUnloader::unloadDeserializedDeclarations(cling::Transaction*, cling::DeclUnloader&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#19 0x0000773dad3bff23 in cling::TransactionUnloader::RevertTransaction(cling::Transaction*) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#20 0x0000773dad39edab in cling::Interpreter::unload(cling::Transaction&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#21 0x0000773dad3bf8f3 in cling::TransactionUnloader::unloadDeclarations(cling::Transaction*, cling::DeclUnloader&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#22 0x0000773dad3bff12 in cling::TransactionUnloader::RevertTransaction(cling::Transaction*) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#23 0x0000773dad39edab in cling::Interpreter::unload(cling::Transaction&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#24 0x0000773dad437898 in cling::IncrementalParser::commitTransaction(llvm::PointerIntPair<cling::Transaction*, 2u, cling::IncrementalParser::EParseResult, llvm::PointerLikeTypeTraits<cling::Transaction*>, llvm::PointerIntPairInfo<cling::Transaction*, 2u, llvm::PointerLikeTypeTraits<cling::Transaction*> > >&, bool) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#25 0x0000773dad439098 in cling::IncrementalParser::Compile(llvm::StringRef, cling::CompilationOptions const&) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#26 0x0000773dad3a2cb1 in cling::Interpreter::EvaluateInternal(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, cling::CompilationOptions, cling::Value*, cling::Transaction**, unsigned long) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#27 0x0000773dad3a308b in cling::Interpreter::process(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, cling::Value*, cling::Transaction**, bool) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#28 0x0000773dad491427 in cling::MetaProcessor::process(llvm::StringRef, cling::Interpreter::CompilationResult&, cling::Value*, bool) () from /home/shahoian/alice/sw/ubuntu2404_x86-64/ROOT/v6-36-10-alice2-1/lib/libCling.so
+#29 0x0000773dad28c0fa in HandleInterpreterException (metaProcessor=0x16892b70, input_line=0x1c4be3f0 "#line 1 \"ROOT_prompt_0\"\nauto cc = o2::ccdb::BasicCCDBManager::instance()", compRes=@0x7fff4ec55774: cling::Interpreter::kSuccess, result=result@entry=0x7fff4ec558a0) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/metacling/src/TCling.cxx:2477
+#30 0x0000773dad2a4df8 in TCling::ProcessLine (this=0x1590b6b0, line=<optimized out>, error=0x7fff4ec55b2c) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/ubuntu2404_x86-64/GCC-Toolchain/v14.2.0-alice2-1/include/c++/14.2.0/bits/unique_ptr.h:193
+#31 0x0000773db4b878fa in TRint::ProcessLineNr (this=this@entry=0x158d3340, filestem=filestem@entry=0x773db4b9713f "ROOT_prompt_", line=0x1c49fe90 "auto cc = o2::ccdb::BasicCCDBManager::instance()", error=0x7fff4ec55b2c, error@entry=0x0) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/rint/src/TRint.cxx:794
+#32 0x0000773db4b87cd4 in TRint::HandleTermInput (this=0x158d3340) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/rint/src/TRint.cxx:641
+#33 0x0000773db495fe9a in TUnixSystem::CheckDescriptors (this=this@entry=0x15894400) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/unix/src/TUnixSystem.cxx:1354
+#34 0x0000773db4964d78 in TUnixSystem::DispatchOneEvent (this=0x15894400, pendingOnly=<optimized out>) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/unix/src/TUnixSystem.cxx:1109
+#35 0x0000773db487a699 in TSystem::InnerLoop (this=0x15894400) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/base/src/TSystem.cxx:403
+#36 TSystem::Run (this=0x15894400) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/base/src/TSystem.cxx:353
+#37 0x0000773db4808253 in TApplication::Run (this=this@entry=0x158d3340, retrn=retrn@entry=false) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/base/src/TApplication.cxx:1896
+#38 0x0000773db4b88da3 in TRint::Run (this=this@entry=0x158d3340, retrn=retrn@entry=false) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/core/rint/src/TRint.cxx:501
+#39 0x00000000004011bd in main (argc=<optimized out>, argv=0x7fff4ec57fb8) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.6nQ0l0Df3h/SOURCES/ROOT/v6-36-10-alice2/v6-36-10-alice2/main/src/rmain.cxx:84
+[Inferior 1 (process 1146207) detached]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x000070e6f2b108d7 in wait4 () from /lib/x86_64-linux-gnu/libc.so.6
+warning: Unsupported auto-load script at offset 0 in section .debug_gdb_scripts
+of file /home/shahoian/alice/O2Align/install/bin/o2-its3-alignment-workflow.
+Use `info auto-load python-scripts [REGEXP]' to list them.
+#0  0x000070e6f2b108d7 in wait4 () from /lib/x86_64-linux-gnu/libc.so.6
+#1  0x000070e6f2a585bb in ?? () from /lib/x86_64-linux-gnu/libc.so.6
+#2  0x000070e6f356567a in TUnixSystem::Exec (this=0x2d6e5210, shellcmd=<optimized out>) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.o3vA2tcf2Y/SOURCES/ROOT/v6-36-10-alice3/v6-36-10-alice3/core/unix/src/TUnixSystem.cxx:2157
+#3  TUnixSystem::StackTrace (this=0x2d6e5210) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.o3vA2tcf2Y/SOURCES/ROOT/v6-36-10-alice3/v6-36-10-alice3/core/unix/src/TUnixSystem.cxx:2448
+#4  0x000070e6f541f18a in FairLogger::LogFatalMessage () at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.o3vA2tcf2Y/SOURCES/FairRoot/v18.4.9-alice3/v18.4.9-alice3/fairtools/FairLogger.cxx:195
+#5  0x000070e6f5c70a88 in std::function<void()>::operator() (this=0x70e6f5c825e0 <fair::Logger::fFatalCallback>) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.HA0tju9xGg/ubuntu2404_x86-64/GCC-Toolchain/v14.2.0-alice2-1/include/c++/14.2.0/bits/std_function.h:587
+#6  fair::Logger::~Logger (this=0x7fff14cf71f0, __in_chrg=<optimized out>) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.HA0tju9xGg/SOURCES/FairLogger/v2.3.1/v2.3.1/logger/Logger.cxx:279
+#7  0x000070e6f5769e54 in o2::conf::ConfigurableParamReaders::readConfigFile (filepath=...) at /home/shahoian/alice/sw/ubuntu2404_x86-64/FairLogger/v2.3.1-5/include/fairlogger/Logger.h:312
+#8  0x000070e6f5978308 in o2::conf::ConfigurableParam::updateFromFile (configFile=..., paramsList=..., unchangedOnly=unchangedOnly@entry=true) at /home/shahoian/alice/sw/SOURCES/O2/dev/0/Common/Utils/src/ConfigurableParam.cxx:969
+#9  0x000070e6fd387b4d in operator() (__closure=<synthetic pointer>) at /home/shahoian/alice/sw/ubuntu2404_x86-64/GCC-Toolchain/v14.2.0-alice2-1/include/c++/14.2.0/bits/basic_string.tcc:242
+#10 o2::raw::HBFUtilsInitializer::HBFUtilsInitializer (this=this@entry=0x7fff14cf81c0, configcontext=..., wf=...) at /home/shahoian/alice/sw/SOURCES/O2/dev/0/Detectors/Raw/src/HBFUtilsInitializer.cxx:104
+#11 0x000000000042508c in defineDataProcessing (cfg=...) at /home/shahoian/alice/O2Align/src/alignment-workflow.cxx:66
+#12 0x000000000042625d in mainNoCatch (argc=<optimized out>, argv=<optimized out>) at /home/shahoian/alice/sw/ubuntu2404_x86-64/O2/dev-local8/include/Framework/runDataProcessing.h:197
+#13 0x000070e6fc6ca8d2 in callMain (argc=argc@entry=4, argv=argv@entry=0x7fff14cf8758, mainNoCatch=mainNoCatch@entry=0x425f00 <mainNoCatch(int, char**)>) at /home/shahoian/alice/sw/SOURCES/O2/dev/0/Framework/Core/src/runDataProcessing.cxx:215
+#14 0x0000000000423009 in main (argc=4, argv=0x7fff14cf8758) at /home/shahoian/alice/sw/ubuntu2404_x86-64/O2/dev-local8/include/Framework/runDataProcessing.h:218
+[Inferior 1 (process 555565) detached]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x000070e6f2b108d7 in wait4 () from /lib/x86_64-linux-gnu/libc.so.6
+warning: Unsupported auto-load script at offset 0 in section .debug_gdb_scripts
+of file /home/shahoian/alice/O2Align/install/bin/o2-its3-alignment-workflow.
+Use `info auto-load python-scripts [REGEXP]' to list them.
+#0  0x000070e6f2b108d7 in wait4 () from /lib/x86_64-linux-gnu/libc.so.6
+#1  0x000070e6f2a585bb in ?? () from /lib/x86_64-linux-gnu/libc.so.6
+#2  0x000070e6f356567a in TUnixSystem::Exec (this=0x2d6e5210, shellcmd=<optimized out>) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.o3vA2tcf2Y/SOURCES/ROOT/v6-36-10-alice3/v6-36-10-alice3/core/unix/src/TUnixSystem.cxx:2157
+#3  TUnixSystem::StackTrace (this=0x2d6e5210) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.o3vA2tcf2Y/SOURCES/ROOT/v6-36-10-alice3/v6-36-10-alice3/core/unix/src/TUnixSystem.cxx:2448
+#4  0x000070e6f541f18a in FairLogger::LogFatalMessage () at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.o3vA2tcf2Y/SOURCES/FairRoot/v18.4.9-alice3/v18.4.9-alice3/fairtools/FairLogger.cxx:195
+#5  0x000070e6f5c70a88 in std::function<void()>::operator() (this=0x70e6f5c825e0 <fair::Logger::fFatalCallback>) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.HA0tju9xGg/ubuntu2404_x86-64/GCC-Toolchain/v14.2.0-alice2-1/include/c++/14.2.0/bits/std_function.h:587
+#6  fair::Logger::~Logger (this=0x7fff14cf7f70, __in_chrg=<optimized out>) at /local/workspace/DailyBuilds/DailyO2-ubuntu2404/daily-tags.HA0tju9xGg/SOURCES/FairLogger/v2.3.1/v2.3.1/logger/Logger.cxx:279
+#7  0x000070e6fc6c69ac in doUnknownException (s=..., processName=processName@entry=0x7fff14cfb9e8 "./install/bin/o2-its3-alignment-workflow") at /home/shahoian/alice/sw/ubuntu2404_x86-64/GCC-Toolchain/v14.2.0-alice2-1/include/c++/14.2.0/bits/allocator.h:182
+#8  0x000070e6fc3717a7 in callMain (argc=argc@entry=4, argv=argv@entry=0x7fff14cf8758, mainNoCatch=mainNoCatch@entry=0x425f00 <mainNoCatch(int, char**)>) at /home/shahoian/alice/sw/SOURCES/O2/dev/0/Framework/Core/src/runDataProcessing.cxx:226
+#9  0x0000000000423009 in main (argc=4, argv=0x7fff14cf8758) at /home/shahoian/alice/sw/ubuntu2404_x86-64/O2/dev-local8/include/Framework/runDataProcessing.h:218
+[Inferior 1 (process 555565) detached]

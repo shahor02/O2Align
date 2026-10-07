@@ -16,7 +16,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
-//#undef WITH_OPENMP // for testing without OpenMP
+#undef WITH_OPENMP // for testing without OpenMP
 #ifdef WITH_OPENMP
 #include <omp.h>
 #endif
@@ -294,10 +294,10 @@ class AlignmentSpec final : public Task
   // fill the GBL points of the track frames from the ipStart slot outward
   // mvPriorCovScale > 0: impose on the vertex point, besides the refitted vertex, the mean vertex prior
   // with the luminous region covariance scaled by this factor (per-track PV constraint mode)
-  bool fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, std::vector<Volume*>& contributingVolumes, double mvPriorCovScale = 0.);
+  bool fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, std::vector<Volume*>& contributingVolumes, GBLStat& gblStat, double mvPriorCovScale = 0.);
 
   // fit the constructed trajectory and store it to gblTraj if the Mille data is requested
-  bool fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, std::vector<gbl::GblTrajectory>& gblTraj, FitInfo& fitOut);
+  bool fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, std::vector<gbl::GblTrajectory>& gblTraj, FitInfo& fitOut, GBLStat& gblStat);
 
   // build and fit the GBL trajectory of a single track, accounting its frames from the ipStart slot outward
   bool buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl::GblTrajectory>& gblTraj, double mvPriorCovScale = 0.);
@@ -375,7 +375,8 @@ class AlignmentSpec final : public Task
   std::unique_ptr<Volume> mHierarchy; // single tree-hierarchy of all detectors, rooted in a virtual volume
   Volume::SensorMapping mChip2Hiearchy; // global label mapping to leaves in the tree
   ProcessingStats mProcessingStats;
-  GBLStat mGBLStat{};   // GBL construction and fit statistics
+  GBLStat mGBLStatSingle{};   // GBL construction and fit statistics for single tracks
+  GBLStat mGBLStatVertex{};   // GBL construction and fit statistics for the vertex trajectories  
   bool mFieldOFF{false}; // set per TF
   bool mUseMC{false};
   bool mUsePVConstraint{false}; // use PV as additional constraint in a given track refit  //RSTODO: this should be a per-track decision, not global, should not be datamember
@@ -535,7 +536,8 @@ void AlignmentSpec::process() // collisions
     buildVertexTrajectories(resTracks, useVertexConstraint, commonVertexTracks, gblTraj);
   }
   mProcessingStats.Print();
-  mGBLStat.print();
+  mGBLStatSingle.print();
+  mGBLStatVertex.print();
   writeMilleRecords(gblTraj);
 }
 
@@ -1069,14 +1071,14 @@ bool AlignmentSpec::refitPV(const PVertex& vtxOrig, const std::vector<Track>& re
     return false;
   }
   if (!mVertexer.prepareVertexRefit(tracks, vtxOrig)) {
-    LOGP(debug, "Failed to prepare the refit of {} with {} tracks", vtxOrig.asString(), tracks.size());
+    LOGP(warn, "Failed to prepare the refit of {} with {} tracks", vtxOrig.asString(), tracks.size());
     return false;
   }
   // the pool contains only the tracks we want to use, hence the empty useTrack mask;
   // refitVertexFull (rather than refitVertex) is used since the alignment may shift the vertex
   vtxRefit = mVertexer.refitVertexFull({}, vtxOrig);
   if (vtxRefit.getChi2() < 0.f) {
-    LOGP(debug, "Failed to refit {} with {} tracks", vtxOrig.asString(), tracks.size());
+    LOGP(warn, "Failed to refit {} with {} tracks", vtxOrig.asString(), tracks.size());
     return false;
   }
   return true;
@@ -1086,7 +1088,7 @@ bool AlignmentSpec::refitPV(const PVertex& vtxOrig, const std::vector<Track>& re
 // state at the ipStart frame). The measurement residuals are stored in resTrack.points.
 // skipFirstMeas: add no measurement on the 1st accounted point, used for the common vertex point of
 // a composed trajectory, whose position enters via the inner transformation instead.
-bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, std::vector<Volume*>& contributingVolumes, double mvPriorCovScale)
+bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMeas, std::vector<gbl::GblPoint>& points, std::vector<Volume*>& contributingVolumes, GBLStat& gblStat, double mvPriorCovScale)
 {
   auto prop = o2::base::PropagatorD::Instance();
   const int np = (int)resTrack.info.size();
@@ -1117,7 +1119,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       auto stepTo = [&](double xTo, double alphaTo, float& msErrOut) -> bool {
         if (!getTransportJacobian(wTrk, xTo, alphaTo, jacALICE, err) ||
             !prop->propagateToAlphaX(wTrk, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt)) {
-          ++mGBLStat.failedProp;
+          ++gblStat.failedProp;
           return false;
         }
         msErrOut = its::math_utils::MSangle(wTrk.getPID().getMass(), wTrk.getP(), lt.getX2X0());
@@ -1229,16 +1231,16 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
 // Fit the constructed trajectory, account the statistics and store it for the Mille output.
 // kfChi2Ndf (if >0) is the chi2/ndf of the KF refit of the same data, used for diagnostics only.
 // On success the fit result is put to fitOut.
-bool AlignmentSpec::fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, std::vector<gbl::GblTrajectory>& gblTraj, FitInfo& fitOut)
+bool AlignmentSpec::fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, std::vector<gbl::GblTrajectory>& gblTraj, FitInfo& fitOut, GBLStat& gblStat)
 {
   if (!traj.isValid()) {
-    ++mGBLStat.construct;
+    ++gblStat.construct;
     return false;
   }
   double chi2 = NAN, lostWeight = NAN;
   int ndf = 0;
   if (auto ierr = traj.fit(chi2, ndf, lostWeight); ierr) {
-    ++mGBLStat.fitFail;
+    ++gblStat.fitFail;
     return false;
   }
   if (mOutOpt[o2::alignrs::OutputOpt::VerboseGBL]) {
@@ -1246,7 +1248,7 @@ bool AlignmentSpec::fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, 
     traj.printTrajectory(5);
   }
   if (!ndf || chi2 / ndf > mParams->maxChi2Ndf) {
-    if (mGBLStat.chi2Rej++ < 10) {
+    if (gblStat.chi2Rej++ < 10) {
       LOGP(error, "GBL fit exceeded red chi2 {} (ndf {})", ndf ? chi2 / ndf : -1., ndf);
       if (kfChi2Ndf > 0 && std::abs(kfChi2Ndf - 1) < 0.02) {
         LOGP(error, "\tGBL is far away from good KF fit!!!!");
@@ -1254,10 +1256,10 @@ bool AlignmentSpec::fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, 
     }
     return false;
   }
-  ++mGBLStat.fit;
-  mGBLStat.chi2Sum += chi2;
-  mGBLStat.lostWeightSum += lostWeight;
-  mGBLStat.ndfSum += ndf;
+  ++gblStat.fit;
+  gblStat.chi2Sum += chi2;
+  gblStat.lostWeightSum += lostWeight;
+  gblStat.ndfSum += ndf;
   if (mOutOpt[o2::alignrs::OutputOpt::MilleData]) {
     gblTraj.push_back(traj);
   }
@@ -1271,11 +1273,11 @@ bool AlignmentSpec::buildGBLTrack(Track& resTrack, int ipStart, std::vector<gbl:
 {
   std::vector<gbl::GblPoint> points;
   std::vector<Volume*> contributingVolumes;
-  if (!fillGBLPoints(resTrack, ipStart, false, points, contributingVolumes, mvPriorCovScale)) {
+  if (!fillGBLPoints(resTrack, ipStart, false, points, contributingVolumes, mGBLStatSingle, mvPriorCovScale)) {
     return false;
   }
   gbl::GblTrajectory traj(points, !mFieldOFF); // no curvature w/o field
-  if (!fitGBLTrajectory(traj, resTrack.kfFit.chi2Ndf, gblTraj, resTrack.gblFit)) {
+  if (!fitGBLTrajectory(traj, resTrack.kfFit.chi2Ndf, gblTraj, resTrack.gblFit, mGBLStatSingle)) {
     return false;
   }
   for (auto* volume : contributingVolumes) {
@@ -1390,7 +1392,7 @@ size_t AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, st
     std::vector<Volume*> contributingVolumes;
     // the vertex point is the 1st point of every sub-trajectory and carries no measurement of its
     // own: the common vertex position enters via the inner transformation below
-    if (!fillGBLPoints(*trc, 0, true, points, contributingVolumes) || points.size() < 2) {
+    if (!fillGBLPoints(*trc, 0, true, points, contributingVolumes, mGBLStatVertex) || points.size() < 3) {
       continue;
     }
     Eigen::MatrixXd innerTrans = computeVertexTransformation(*trc);
@@ -1411,7 +1413,7 @@ size_t AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, st
   }
   gbl::GblTrajectory traj(pointsAndTrans);
   FitInfo fit{};
-  bool res = fitGBLTrajectory(traj, -1.f, gblTraj, fit);
+  bool res = fitGBLTrajectory(traj, -1.f, gblTraj, fit, mGBLStatVertex);
   if (mParams->verbose > 1) {
     LOGP(info, "GBL vertex fit of {} tracks (out of {}): chi2Ndf={} chi2={} ndf={} -> {}", 
       used.size(), contributors.size(), fit.chi2Ndf, fit.chi2, fit.ndf, res ? "success" : "failure");
