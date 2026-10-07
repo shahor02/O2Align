@@ -227,11 +227,10 @@ class AlignmentSpec final : public Task
     double chi2Sum{0};       // sum of the chi2 of the accepted fits
     double lostWeightSum{0}; // sum of the lost weights of the accepted fits
     int ndfSum{0};           // sum of the ndf of the accepted fits
-    void print() const
+    void print(const std::string& prefix) const
     {
-      LOGP(info, "\tGBL SUMMARY: fitted {}, construction failed {}, fit failed {}, chi2Ndf rejected {}, propagation failed {}",
-           fit, construct, fitFail, chi2Rej, failedProp);
-      LOGP(info, "\t\tGBL Chi2/Ndf = {}, LostWeight = {}", ndfSum ? chi2Sum / ndfSum : -1., lostWeightSum);
+      LOGP(info, "\t{} GBL SUMMARY: fitted {}, constr.failed {}, fit failed {}, chi2Ndf rej {}, prop.failed {} GBL Chi2/Ndf = {}, LostWeight = {}",
+           prefix, fit, construct, fitFail, chi2Rej, failedProp, ndfSum ? chi2Sum / ndfSum : -1., lostWeightSum);
     }
   };
 
@@ -536,8 +535,8 @@ void AlignmentSpec::process() // collisions
     buildVertexTrajectories(resTracks, useVertexConstraint, commonVertexTracks, gblTraj);
   }
   mProcessingStats.Print();
-  mGBLStatSingle.print();
-  mGBLStatVertex.print();
+  mGBLStatSingle.print("Single-track");
+  mGBLStatVertex.print("Multi-track "); 
   writeMilleRecords(gblTraj);
 }
 
