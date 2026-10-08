@@ -1,0 +1,103 @@
+From 53ec1c43976a04143900cc0a34510247c0578abd Mon Sep 17 00:00:00 2001
+From: shahoian <ruben.shahoyan@cern.ch>
+Date: Wed, 7 Oct 2026 18:53:45 +0200
+Subject: [PATCH] Fix inconsistency in outlierdownweighting
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Summary of the problem: from iteration 2 on, the local fit and the global update use
+different weights for the same measurements. Along directions the local parameters can
+fully absorb, pede then sees a gradient with no curvature, so a soft Measurement of
+width sigma is pushed away by about F*sigma^2.
+Normally the local fit makes the gradient vanish along any direction the locals can fully absorb.
+With mismatched weights that cancellation fails.
+
+Mechanism. From iteration 2 on, pede's local fit of each record uses iteratively updated weights,
+Cauchy in the last pass when outlierdownweighting 4 is set (pede.f90 ~4750).
+The global gradient and matrix are then built in a separate loop (pede.f90 ~5113)
+with Huber weights recomputed from the final residuals.
+Those weights differ from the ones the locals were fitted with.
+
+The fix from Claude Opus 5:
+
+New array: localWeights (declared in mpmod.f90, allocated in vmprep next to localCorrections, added to the OpenMP SHARED list in loopbf).
+Local fit: each pass now stores the weight each equation was actually fitted with, Huber or Cauchy.
+Global update ("fourth loop"): it no longer recomputes Huber weights from the final residuals;
+it uses the stored weights of the last local pass. The global vector and both matrix blocks then
+form the exact normal equations of the weighted fit the local parameters were solved for.
+So any change the local parameters can absorb now gets zero gradient, as it should.
+fcn contribution: it is now computed with the same function as the last local pass
+(Cauchy when outlierdownweighting ≥ 4, Huber otherwise), so the reported fcn matches what the local fit minimised.
+The second point changes the reported fcn values whenever outlierdownweighting ≥ 4.
+The authors may prefer to keep the old fcn definition; the weight fix is the essential part.
+---
+ mpmod.f90 |  1 +
+ pede.f90  | 17 +++++++++++++----
+ 2 files changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/mpmod.f90 b/mpmod.f90
+index 7b97ac8..f753f2b 100644
+--- a/mpmod.f90
++++ b/mpmod.f90
+@@ -311,6 +311,7 @@ MODULE mpmod
+     INTEGER(mpi), DIMENSION(:), ALLOCATABLE:: scflag         !< local fit workspace (I)
+     INTEGER(mpi), DIMENSION(:,:), ALLOCATABLE :: localEquations !< indices (ISJAJB) for local equations (measurements)
+     REAL(mpd), DIMENSION(:), ALLOCATABLE :: localCorrections !< local fit corrections (to residuals)
++    REAL(mpd), DIMENSION(:), ALLOCATABLE :: localWeights !< weights (incl. down-weighting) used in last local fit iteration
+     REAL(mpd), DIMENSION(:), ALLOCATABLE :: localGlobalMatrix !< matrix correlating local and global par, content
+     INTEGER(mpi), DIMENSION(:), ALLOCATABLE :: localGlobalMap !< matrix correlating local and global par, map (counts)
+     INTEGER(mpi), DIMENSION(:), ALLOCATABLE :: localGlobalStructure !< matrix correlating local and global par, (sparsity) structure
+diff --git a/pede.f90 b/pede.f90
+index 8eeee5b..cb3f094 100755
+--- a/pede.f90
++++ b/pede.f90
+@@ -4501,7 +4501,7 @@ SUBROUTINE loopbf(nrej,numfil,naccf,chi2f,ndff)
+     !$OMP      writeBufferData,writeBufferIndices,writeBufferUpdates,globalVector,globalCounter, &
+     !$OMP      globalParameter,globalParLabelIndex,globalIndexUsage,backIndexUsage, &
+     !$OMP      measBins,numMeas,measIndex,measRes,measHists,globalAllParToGroup,globalAllIndexGroups, &
+-    !$OMP      localCorrections,localEquations,ifd, &
++    !$OMP      localCorrections,localWeights,localEquations,ifd, &
+     !$OMP      NAGB,NVGB,NAGBN,ICALCM,ICHUNK,NLOOPN,NRECER,NPRDBG,IPRDBG, &
+     !$OMP      NEWITE,CHICUT,LHUBER,CHUBER,ITERAT,NRECPR,MTHRD,NSPC,NAEQN, &
+     !$OMP      DWCUT,CHHUGE,NRECP2,CAUCHY,LFITNP,LFITBB,IMONIT,IMONMD,MONPG1,LUNLOG,MDEBUG,CNDLMX) &
+@@ -4755,6 +4755,7 @@ SUBROUTINE loopbf(nrej,numfil,naccf,chi2f,ndff)
+                         wght=wght/(1.0+(resid/rerr/cauchy)**2)
+                     END IF
+                 END IF
++                localWeights(ioffq+ieq)=wght ! used for the global update after the last iteration
+ 
+                 IF(lprnt.AND.iter /= 1.AND.nter /= 1) THEN
+                     chast='   '
+@@ -5125,10 +5126,17 @@ SUBROUTINE loopbf(nrej,numfil,naccf,chi2f,ndff)
+     
+             IF(nloopn /= 1.AND.lhuber /= 0) THEN       ! check residual
+                 resid=ABS(rmeas)
+-                IF(resid > chuber*rerr) THEN
+-                    wght=wght*chuber*rerr/resid          ! down-weighting
+-                    dchi2=2.0*chuber*(resid/rerr-0.5*chuber) ! modified contribution
++                IF(nter <= 3) THEN
++                    IF(resid > chuber*rerr) THEN
++                        dchi2=2.0*chuber*(resid/rerr-0.5*chuber) ! modified contribution (Huber)
++                    END IF
++                ELSE
++                    dchi2=LOG(1.0_mpd+(resid/rerr/cauchy)**2)*cauchy**2 ! modified contribution (Cauchy)
+                 END IF
++                ! the global equations must use the weights of the (last) local fit: only then the
++                ! local solution is the minimum of the same weighted chi^2 and the global gradient
++                ! vanishes along global parameter changes absorbed by the local parameters
++                wght=localWeights(ioffq+ieq)
+             END IF
+             ! sum up
+             summ=summ+dchi2
+@@ -8788,6 +8796,7 @@ SUBROUTINE vmprep(msize)
+     lenGlobalVec=nagb
+     length=naeqn*mthrd
+     CALL mpalloc(localCorrections,length,'residual vector of one record')
++    CALL mpalloc(localWeights,length,'weight vector of one record')
+     CALL mpalloc(localEquations,three,length,'mesurements indices (ISJAJB) of one record')
+     length=nalcn*nalcn
+     CALL mpalloc(aux,length,' local fit scratch array: aux')
+-- 
+2.34.1
+
