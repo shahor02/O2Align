@@ -346,14 +346,19 @@ void Detector::loadTimeSlots()
   LOGP(info, "{} will be calibrated in {} time slots of {}", getDetName(), mTimeSlots->slots.size(), jsonPath);
 }
 
-bool Detector::setTimeStamp(long tsMS)
+bool Detector::setTimeStamp(long tsMS, bool ignoreMismatch)
 {
   if (!mTimeSlots) { // no slots: everything belongs to the single slot 0
     return false;
   }
   const int slotID = mTimeSlots->getSlotID(tsMS);
   if (slotID < 0) {
-    LOGP(fatal, "Timestamp {} is not covered by any calibration slot of {} from {}", tsMS, getDetName(), getTimeSlotsJson());
+    if (!ignoreMismatch) {
+      LOGP(fatal, "Timestamp {} is not covered by any calibration slot of {} from {}", tsMS, getDetName(), getTimeSlotsJson());
+    } else {
+      LOGP(warn, "Timestamp {} is not covered by any calibration slot of {} from {}, ignoring has requested", tsMS, getDetName(), getTimeSlotsJson());
+      return false;
+    }
   }
   if (slotID == mSlotID) {
     return false;

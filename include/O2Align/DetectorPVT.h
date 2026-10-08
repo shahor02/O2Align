@@ -51,7 +51,7 @@ class DetectorPVT final : public Detector
   const std::string& getTimeSlotsJson() const final;
   /// A CCDB update within an ongoing calibration slot is ignored, the slot being the unit of the
   /// calibration; w/o slots the prior follows the CCDB object. Reports whether the prior changed.
-  bool setTimeStamp(long tsMS) final;
+  bool setTimeStamp(long tsMS, bool ignoreMismath = true) final;
 
   /// hand over a MeanVertexObject delivered by the CCDB. It becomes the prior of the next
   /// calibration slot, or immediately the prior if no slots are defined (see setTimeStamp)

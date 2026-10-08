@@ -84,8 +84,8 @@ class Detector
   int getSlotID() const noexcept { return mSlotID < 0 ? 0 : mSlotID; }
   /// Select the calibration slot covering the timestamp (in ms) and report whether anything changed
   /// for this detector, i.e. whether the caller must refresh what depends on it. Fatal if the slots
-  /// are defined and the timestamp is covered by none of them.
-  virtual bool setTimeStamp(long tsMS);
+  /// are defined and the timestamp is covered by none of them unles ignoreMismatch, e.g. for MilleRes (results extraction) mode
+  virtual bool setTimeStamp(long tsMS, bool ignoreMismatch = false);
   ///@}
 
   /// Convert the rigid-body corrections fitted by Millepede for the branch of this detector into

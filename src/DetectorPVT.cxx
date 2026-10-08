@@ -94,9 +94,9 @@ void DetectorPVT::onSlotChange(int slotID)
   LOGP(info, "Mean vertex prior for time slot {}: {}", slotID, mMeanVtxSlot.asString());
 }
 
-bool DetectorPVT::setTimeStamp(long tsMS)
+bool DetectorPVT::setTimeStamp(long tsMS, bool ignoreMismatch)
 {
-  if (Detector::setTimeStamp(tsMS)) { // onSlotChange has refreshed the prior and the labels
+  if (Detector::setTimeStamp(tsMS, ignoreMismatch)) { // onSlotChange has refreshed the prior and the labels
     return true;
   }
   if (!mMeanVtxCCDBUpdated) {

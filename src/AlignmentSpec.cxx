@@ -484,7 +484,7 @@ void AlignmentSpec::executeConfigMacro()
 
 void AlignmentSpec::run(ProcessingContext& pc)
 {
-  if (mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
+  if (mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {    
     updateTimeDependentParams(pc);
     const auto fitted = Volume::readMillepedeResults(mParams->milleResFile);
     Volume::writeMillepedeResults(mHierarchy.get(), fitted, mParams->milleResOutJson, mParams->misAlgJson);
@@ -731,7 +731,7 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
     updateTPCCalibration(pc); // must precede initOnFirstTF: the drift calibration DOFs need the maps
   }
   for (auto* det : mDetectors) {
-    det->setTimeStamp(mTimeStamp);
+    det->setTimeStamp(mTimeStamp, mOutOpt[o2::alignrs::OutputOpt::MilleRes]);
   }
 }
 
