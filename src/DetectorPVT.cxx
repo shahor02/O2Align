@@ -20,9 +20,8 @@ namespace o2::alignrs
 
  DetectorPVT::DetectorPVT() : Detector(DetPVT) 
  {
-  // attach dummy default vertex prior, to be replaced by the CCDB object at the first timestamp
+  // attach dummy default vertex prior, to be replaced by the CCDB object if real MV priors are requested by passing the time-intervals
   mMeanVtxSlot = o2::dataformats::MeanVertexObject(0.f, 0.f, 0.f, 0.5f, 0.5f, 7.f, 0.f, 0.f);
-
  }
 
 Volume::Ptr DetectorPVT::buildHierarchy(Volume::SensorMapping& sensorMap)
@@ -107,8 +106,8 @@ bool DetectorPVT::setTimeStamp(long tsMS)
     LOGP(info, "Ignoring the new CCDB MeanVertex within the time slot {}, its prior stays {}", getSlotID(), mMeanVtxSlot.asString());
     return false;
   }
-  mMeanVtxSlot = mMeanVtxCCDB; // w/o calibration slots the prior follows the CCDB object
-  LOGP(info, "Mean vertex prior at timestamp {}: {}", tsMS, mMeanVtxSlot.asString());
+  //  mMeanVtxSlot = mMeanVtxCCDB; // w/o calibration slots the prior follows the CCDB object
+  //  LOGP(info, "Mean vertex prior at timestamp {}: {}", tsMS, mMeanVtxSlot.asString());
   return true;
 }
 

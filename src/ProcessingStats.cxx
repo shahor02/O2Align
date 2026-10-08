@@ -31,7 +31,7 @@ Long64_t ProcessingStats::Merge(TCollection* collection)
     }
     nTF += other->nTF;
     nPV += other->nPV;
-    nPVConstrAcc += other->nPVConstrAcc;
+    nPVRefitAcc += other->nPVRefitAcc;
     nPVGBLAcc += other->nPVGBLAcc;
     nTrc += other->nTrc;
     nTrcMultiPVAcc += other->nTrcMultiPVAcc;
@@ -58,8 +58,8 @@ Long64_t ProcessingStats::Merge(TCollection* collection)
 
 std::string ProcessingStats::asString() const
 {
-  return fmt::format("TF={}, PV={} PVConstrAcc={} PVGBLAcc={} trc={} trcMultiPVAcc={} trcSinglePVAcc={} trcNoPVAcc={}",
-                     nTF, nPV, nPVConstrAcc, nPVGBLAcc, nTrc, nTrcMultiPVAcc, nTrcSinglePVAcc, nTrcNoPVAcc);
+  return fmt::format("TF={}, PV={} PVRefitAcc={} PVGBLAcc={} trc={} trcMultiPVAcc={} trcSinglePVAcc={} trcNoPVAcc={}",
+                     nTF, nPV, nPVRefitAcc, nPVGBLAcc, nTrc, nTrcMultiPVAcc, nTrcSinglePVAcc, nTrcNoPVAcc);
 }
 
 TH1F ProcessingStats::createStatHisto(const std::string& pattern) const
@@ -77,8 +77,8 @@ TH1F ProcessingStats::createStatHisto(const std::string& pattern) const
   constexpr int nCounters = nBaseCounters + nDetectorCounters;
   TH1F histogram("Stats", fmt::format("statistics: {}", pattern).c_str(), nCounters + nVolumeCounters, 0., nCounters + nVolumeCounters);
   histogram.SetDirectory(nullptr);
-  const uint32_t counterValues[] = {nTF, nPV, nPVConstrAcc, nPVGBLAcc, nTrc, nTrcMultiPVAcc, nTrcSinglePVAcc, nTrcNoPVAcc};
-  const char* counterNames[] = {"nTF", "nPV", "nPVConstrAcc", "nPVGBLAcc", "nTrc", "nTrcMultiPVAcc", "nTrcSinglePVAcc", "nTrcNoPVAcc"};
+  const uint32_t counterValues[] = {nTF, nPV, nPVRefitAcc, nPVGBLAcc, nTrc, nTrcMultiPVAcc, nTrcSinglePVAcc, nTrcNoPVAcc};
+  const char* counterNames[] = {"nTF", "nPV", "nPVRefitAcc", "nPVGBLAcc", "nTrc", "nTrcMultiPVAcc", "nTrcSinglePVAcc", "nTrcNoPVAcc"};
   int bin{1};
   for (size_t iCounter = 0; iCounter < nBaseCounters; ++iCounter) {
     histogram.SetBinContent(bin, counterValues[iCounter]);

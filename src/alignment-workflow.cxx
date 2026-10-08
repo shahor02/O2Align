@@ -47,6 +47,8 @@ void customize(std::vector<ConfigParamSpec>& workflowOptions)
 
 WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
 {
+  const std::string PVDef = "pvertexer.useMeanVertexConstraint=false;pvertexer.meanVertexExtraErrSelection=0.2;pvertexer.iniScale2=100;pvertexer.acceptableScale2=10.;pvertexer.useTimeInChi2=false;";
+  o2::conf::ConfigurableParam::updateFromString(PVDef); // first set proper defaults of PV refitting, the CL options will override them if provided
   o2::conf::ConfigurableParam::updateFromString(cfg.options().get<std::string>("configKeyValues"));
   const GID::mask_t allowedSourcesTrc = GID::getSourcesMask("ITS,TPC,ITS-TPC,ITS-TPC-TRD,ITS-TPC-TOF,ITS-TPC-TRD-TOF");
   const GID::mask_t allowedSourcesClus = GID::getSourcesMask("ITS,TPC,TRD,TOF");

@@ -344,7 +344,6 @@ class AlignmentSpec final : public Task
   void initOnFirstTF();
   void initVertexer();
   void initMisalignment();
-  void updateCalibrationSlots();
   void updateTPCCalibration(ProcessingContext& pc);
   void loadConfigMacro();
   void executeConfigMacro();
@@ -517,25 +516,28 @@ void AlignmentSpec::process() // collisions
   const auto primVer2TRefs = mRecoData->getPrimaryVertexMatchedTrackRefs();
   std::unordered_map<GTrackID, bool> ambigTable;
   const int nvRefs = primVer2TRefs.size();
+  mProcessingStats.nPV += nvRefs - 1;
   for (int ivref = 0; ivref < nvRefs; ivref++) {
     // the last reference holds the tracks not attached to any vertex
-    const PVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;
-    bool useVertexConstraint = vtx && mParams->usePVConstraintMinTracks > 0 && vtx->getNContributors() >= mParams->usePVConstraintMinTracks;
-    if (vtx) {
-      ++mProcessingStats.nPV;
-    }
+    const PVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;    
     if (mParams->verbose > 1) {
       LOGP(info, "processing vtref {} of {} with {} tracks, {}", ivref, nvRefs, primVer2TRefs[ivref].getEntries(), vtx ? vtx->asString() : std::string{});
+    }
+    bool useVertexConstraint = false;
+    PVertex vtxRefit{};
+    if (vtx && mParams->usePVConstraintMinTracks > 0 && vtx->getNContributors() >= mParams->usePVConstraintMinTracks && refitPV(*vtx, ivref, vtxRefit)) {
+      mProcessingStats.nPVRefitAcc++;
+      useVertexConstraint = true; // the tracks of this vertex are fitted with the vertex point
     }
     collectVertexTracks(primVer2TRefs[ivref], useVertexConstraint, ambigTable, resTracks);
     refitTracks(resTracks, useVertexConstraint);
     std::vector<Track*> commonVertexTracks;
-    if (useVertexConstraint && !constrainWithVertex(*vtx, ivref, resTracks, commonVertexTracks)) {
+    if (useVertexConstraint && !constrainWithVertex(vtxRefit, ivref, resTracks, commonVertexTracks)) {
       useVertexConstraint = false; // the tracks of this vertex are fitted w/o the vertex point
     }
     buildVertexTrajectories(resTracks, useVertexConstraint, commonVertexTracks, gblTraj);
   }
-  mProcessingStats.Print();
+  LOGP(info, "Processing stats: {}", mProcessingStats.asString());
   mGBLStatSingle.print("Single-track");
   mGBLStatVertex.print("Multi-track "); 
   writeMilleRecords(gblTraj);
@@ -609,14 +611,6 @@ void AlignmentSpec::refitTracks(std::vector<Track>& resTracks, bool useVertexCon
 // unscaled vertex covariance for their individual trajectories.
 bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks, std::vector<Track*>& commonVertexTracks)
 {
-  PVertex vtxRefit{};
-  if (!refitPV(vtx, ivref, vtxRefit)) {
-    return false;
-  }
-  ++mProcessingStats.nPVConstrAcc;
-  if (mParams->verbose > 1) {
-    LOGP(info, "refitted vtref {}: {} (original: {})", ivref, vtxRefit.asString(), vtx.asString());
-  }
   commonVertexTracks.clear();
   std::vector<uint8_t> useForCommonVertex(resTracks.size(), 0);
   int nCommonTracks{0};
@@ -642,8 +636,8 @@ bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vect
       continue;
     }
     const double covScale = useTrackForCommonVertex ? mParams->vtxMultiTrackRefCovScale : 1.;
-    if (!track.updateWithVertex(vtxRefit, covScale)) {
-      LOGP(debug, "Failed to update track {} with {}", track.gid.asString(), vtxRefit.asString());
+    if (!track.updateWithVertex(vtx, covScale)) {
+      LOGP(debug, "Failed to update track {} with {}", track.gid.asString(), vtx.asString());
       continue;
     }
   }
@@ -664,7 +658,7 @@ void AlignmentSpec::buildVertexTrajectories(std::vector<Track>& resTracks, bool 
 {
   if (!commonVertexTracks.empty()) {
     if (const auto nAccepted = buildGBLVertex(commonVertexTracks, gblTraj); nAccepted > 0) {
-      ++mProcessingStats.nPVGBLAcc;
+      mProcessingStats.nPVGBLAcc++;
       mProcessingStats.nTrcMultiPVAcc += nAccepted;
     }
   }
@@ -726,7 +720,6 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
     initOnce = true;
     initOnFirstTF();
   }
-  updateCalibrationSlots();
   if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes] && Params::Instance().usePVConstraintMinTracks > 0) {
     pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
   }
@@ -735,6 +728,9 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
   }
   if (mTPC && !mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {;
     updateTPCCalibration(pc); // must precede initOnFirstTF: the drift calibration DOFs need the maps
+  }
+  for (auto* det : mDetectors) {
+    det->setTimeStamp(mTimeStamp);
   }
 }
 
@@ -793,23 +789,6 @@ void AlignmentSpec::initMisalignment()
     return;
   }
   mMisalignment = loadMisalignmentModel(mParams->misAlgJson); // empty model for an empty path
-}
-
-// Assign every detector with a time-sliced calibration to the slot covering this TF. The detectors
-// re-point their own slot-dependent labels and priors; only the mean vertex has an effect outside
-// of its own state, the prior of the PV refit having to be re-imposed on the vertexer.
-void AlignmentSpec::updateCalibrationSlots()
-{
-  for (auto* det : mDetectors) {
-    if (!det->setTimeStamp(mTimeStamp)) { // nothing changed for this detector
-      continue;
-    }
-    if (det == mPVT.get()) {
-      // copies the object and re-inits the XY constraint, no init() needed
-      mVertexer.setMeanVertex(&mPVT->getMeanVertexPrior());
-      mVertexer.initMeanVertexConstraint();
-    }
-  }
 }
 
 // Derivatives of the prediction of one measured point (i.e. minus those of the residual, as Millepede
@@ -1064,11 +1043,10 @@ bool AlignmentSpec::refitPV(const PVertex& vtxOrig, int ivref, PVertex& vtxRefit
   }
   const auto& vtref = mRecoData->getPrimaryVertexMatchedTrackRefs()[ivref];
   const auto trackIndex = mRecoData->getPrimaryVertexMatchedTracks();
-  const int nIni = vtxOrig.getNContributors();
-  std::vector<o2::track::TrackParCov> tracks;
+  std::vector<o2::track::TrackParCov> tracks, tracksPVRefit;
   std::vector<GTrackID> gidsITS;
-  tracks.reserve(nIni);
-  gidsITS.reserve(nIni);
+  tracks.reserve(vtxOrig.getNContributors());
+  gidsITS.reserve(vtxOrig.getNContributors());
   for (int itr = vtref.getFirstEntry(), itLim = itr + vtref.getEntries(); itr < itLim; itr++) {
     const auto tid = trackIndex[itr];
     if (tid.isPVContributor() && mRecoData->isTrackSourceLoaded(tid.getSource())) {
@@ -1076,31 +1054,43 @@ bool AlignmentSpec::refitPV(const PVertex& vtxOrig, int ivref, PVertex& vtxRefit
       gidsITS.push_back(mRecoData->getITSContributorGID(tid));
     }
   }
-  const int ntr = tracks.size();
-  std::vector<bool> useTrack(ntr);
+  int nUsed = 0, ntr = (int)tracks.size();
 #ifdef WITH_OPENMP
-#pragma omp parallel for schedule(dynamic) num_threads(mNThreads)
+#pragma omp parallel for schedule(dynamic) num_threads(mNThreads) reduction(+ : nUsed)
 #endif
   for (int itr = 0; itr < ntr; itr++) {
     const auto& gid = gidsITS[itr];
     bool ok = gid.isIndexSet() && mRecoData->getITSTrack(gid).getNClusters() >= mParams->minITSClsPV &&
               (mFieldOFF || mRecoData->getITSTrack(gid).getPt() >= mParams->minPtPV);
-    ok = ok && mITS->refitITSTrack(mRecoData, gid, tracks[itr]);
-    useTrack[itr] = ok;
-    if (!ok && gid.isIndexSet()) {
-      tracks[itr] = mRecoData->getTrackParam(gid); // not used, but participates in prepareVertexRefit
+    if (!ok || !mITS->refitITSTrack(mRecoData, gid, tracks[itr])) {
+      tracks[itr].invalidate(); // mark as failed
+      continue;
+    }
+    nUsed++;
+  }
+  if (nUsed < mParams->usePVConstraintMinTracks) {
+    LOGP(info, "Abandon the refit of {} #{}: only {} contributors are usable", vtxOrig.asString(), ivref, nUsed);
+    return false;
+  }
+  // copy validated tracks to the vector used for the vertex refit
+  tracksPVRefit.reserve(nUsed);
+  for (const auto& tr : tracks) {
+    if (tr.isValid()) {
+      tracksPVRefit.push_back(tr);
     }
   }
-  const int nUsed = std::count(useTrack.begin(), useTrack.end(), true);
-  if (nUsed < mParams->usePVConstraintMinTracks || !mVertexer.prepareVertexRefit(tracks, vtxOrig)) {
-    LOGP(debug, "Abandon the refit of {}: {} of {} contributors usable", vtxOrig.asString(), nUsed, nIni);
+  if (!mVertexer.prepareVertexRefit(tracksPVRefit, vtxOrig)) {
+    LOGP(warn, "Abandon the refit of {} #{}: only {} contributors are usable", vtxOrig.asString(), ivref, nUsed);
     return false;
   }
   // refitVertexFull (rather than refitVertex) is used since the alignment may shift the vertex
-  vtxRefit = mVertexer.refitVertexFull(useTrack, vtxOrig);
+  vtxRefit = mVertexer.refitVertexFull({}, vtxOrig);
   if (vtxRefit.getChi2() < 0.f) {
-    LOGP(warn, "Failed to refit {} with {} tracks", vtxOrig.asString(), nUsed);
+    LOGP(warn, "Failed to refit {} #{} with {} selectedtracks", vtxOrig.asString(), ivref, nUsed);
     return false;
+  }
+  if (mParams->verbose > 0) {
+    LOGP(info, "refitted vtref {}: {} (original: {})", ivref, vtxRefit.asString(), vtxOrig.asString());
   }
   return true;
 }

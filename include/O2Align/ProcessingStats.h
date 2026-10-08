@@ -16,7 +16,7 @@ namespace o2::alignrs
 struct ProcessingStats : public TObject {
   uint32_t nTF{0};                  // processed TFs
   uint32_t nPV{0};                  // processed PVs, excluding the unassociated-track bucket
-  uint32_t nPVConstrAcc{0};         // PVs accepted by the vertex-constraint refit
+  uint32_t nPVRefitAcc{0};         // PVs accepted by the vertex-constraint refit
   uint32_t nPVGBLAcc{0};            // PVs with a successful composed (multi-track) GBL fit
   uint32_t nTrc{0};                 // selected tracks submitted for refit and GBL processing
   uint32_t nTrcMultiPVAcc{0};       // tracks accepted by a composed multi-track PV GBL fit
