@@ -307,8 +307,9 @@ class AlignmentSpec final : public Task
   static Eigen::MatrixXd computeVertexTransformation(const Track& resTrack);
   static Eigen::MatrixXd makeZeroFieldInnerTransformation(const Eigen::MatrixXd& vtxTrans, int iTrk, int nTrk);
 
-  // the last measurement added to vtxPoint moves with the mean vertex position (if it is aligned)
-  void addMeanVertexDerivatives(gbl::GblPoint& vtxPoint, const Eigen::MatrixXd& trans);
+  // the last measurement added to vtxPoint moves with the mean vertex position and slope (for
+  // whichever of the 5 DOFs are free)
+  void addMeanVertexDerivatives(const Track& resTrack, gbl::GblPoint& vtxPoint, const Eigen::MatrixXd& trans);
   // impose the prior of the mean interaction point on the vertex point of one track of a collision
   void addMeanVertexPrior(const Track& resTrack, const Eigen::MatrixXd& trans, gbl::GblPoint& vtxPoint, double covScale = 1.);
 
@@ -912,9 +913,9 @@ void AlignmentSpec::buildHierarchy()
     }
   }
   if (withPVT) {
-    mPVT->updatePositionLabels();
-    if (mPVT->getPositionLabels().empty()) {
-      LOGP(info, "Mean vertex position is fixed, it is imposed as a prior w/o being aligned");
+    mPVT->updateFreeDOFs();
+    if (mPVT->getFreeDOFLabels().empty()) {
+      LOGP(info, "Mean vertex position and slope are fixed, they are imposed as a prior w/o being aligned");
     }
   }
   if (mOutOpt[o2::alignrs::OutputOpt::MilleSteer] && mLane == 0) {
@@ -1213,7 +1214,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       // geometry. Its globals must be added before the prior: they go to the last measurement.
       const auto trans = computeVertexTransformation(resTrack);
       if (mParams->refitVtxFollowsMV) {
-        addMeanVertexDerivatives(point, trans);
+        addMeanVertexDerivatives(resTrack, point, trans);
       }
       if (mvPriorCovScale > 0.) {
         addMeanVertexPrior(resTrack, trans, point, mvPriorCovScale);
@@ -1359,15 +1360,24 @@ void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::Matri
   o2::math_utils::sincosd(frame.alpha, sa, ca);
   const auto slopes = TrackSlopes::computeTrackSlopes(resTrack.track.getSnp(), resTrack.track.getTgl());
   const auto& mvPrior = mPVT->getMeanVertexPrior(); // frozen for the whole calibration slot
+  // the true z of the collision is not known a priori; the track's own Z estimate at the vertex
+  // point is used as a stand-in to evaluate the beam-line slope at the right place. The slopes are
+  // tiny (mrad scale), so this is a negligible, 2nd-order approximation, the same way GBL always
+  // linearizes around the seed trajectory rather than the (unknown) true state.
+  const double zEst = resTrack.track.getZ();
+  const double mvX = mvPrior.getXAtZ(zEst);
+  const double mvY = mvPrior.getYAtZ(zEst);
   // the mean vertex in the tracking frame of the vertex point, brought to the plane of this point
-  const double muX = mvPrior.getX() * ca + mvPrior.getY() * sa; // along the local X
+  const double muX = mvX * ca + mvY * sa; // along the local X
   const double dX = muX - frame.x;
-  const double muY = -mvPrior.getX() * sa + mvPrior.getY() * ca - slopes.dydx * dX;
+  const double muY = -mvX * sa + mvY * ca - slopes.dydx * dX;
   const double muZ = mvPrior.getZ() - slopes.dzdx * dX;
   Eigen::Vector2d res;
   res << muY - resTrack.track.getY(), muZ - resTrack.track.getZ();
   // covariance of the luminous region rotated to this frame: the transformation of the vertex
-  // position to the local offsets is the same as for the common parameters of the trajectory
+  // position to the local offsets is the same as for the common parameters of the trajectory. The
+  // luminous-region spread is a property of a single collision's position only, not of the beam-line
+  // slope (a property of the whole calibration slot), hence the position-only 3x3 covariance.
   Eigen::Matrix3d covGlo;
   covGlo << mvPrior.getSigmaX2(), mvPrior.getSigmaXY(), mvPrior.getSigmaXZ(),
     mvPrior.getSigmaXY(), mvPrior.getSigmaY2(), mvPrior.getSigmaYZ(),
@@ -1378,20 +1388,35 @@ void AlignmentSpec::addMeanVertexPrior(const Track& resTrack, const Eigen::Matri
     return;
   }
   vtxPoint.addMeasurement(res, Eigen::Matrix2d(cov.inverse()));
-  addMeanVertexDerivatives(vtxPoint, trans);
+  addMeanVertexDerivatives(resTrack, vtxPoint, trans);
 }
 
 // Millepede expects the derivatives of the prediction, i.e. minus those of the residual. For a
 // measurement which moves with the mean vertex position (the prior itself, or the refitted vertex
 // of a single-track record following the correction of the mean vertex) it is the measurement which
 // depends on the parameter: d(res)/d(MV) = +trans. GBL attaches the globals to the last measurement
-// of the point, so this must be called right after the measurement they belong to. No-op if the
-// mean vertex position is fixed.
-void AlignmentSpec::addMeanVertexDerivatives(gbl::GblPoint& vtxPoint, const Eigen::MatrixXd& trans)
+// of the point, so this must be called right after the measurement they belong to. trans is the 2x3
+// d(local offsets)/d(X,Y,Z of the vertex) transformation of the hosting track; the 2 extra columns
+// for the beam-line slope SlopeX/SlopeY are trans's X/Y columns scaled by the z lever arm, since
+// shifting the vertex position by slope*(z-Zref) has the same local effect as shifting X/Y directly
+// by that same amount (see addMeanVertexPrior). Only the free DOFs (any subset of the 5, each
+// independent) get a label and a column; a no-op if none of them is free.
+void AlignmentSpec::addMeanVertexDerivatives(const Track& resTrack, gbl::GblPoint& vtxPoint, const Eigen::MatrixXd& trans)
 {
-  if (!mPVT->getPositionLabels().empty()) {
-    vtxPoint.addGlobals(mPVT->getPositionLabels(), Eigen::MatrixXd(-trans));
+  const auto& freeIdx = mPVT->getFreeDOFIndices();
+  if (freeIdx.empty()) {
+    return;
   }
+  const double dz = resTrack.track.getZ() - mPVT->getMeanVertexPrior().getZ();
+  Eigen::MatrixXd calibTrans(2, MeanVertexDOFSet::NDOF);
+  calibTrans.block(0, MeanVertexDOFSet::X, 2, 3) = trans;
+  calibTrans.col(MeanVertexDOFSet::SlopeX) = dz * trans.col(MeanVertexDOFSet::X);
+  calibTrans.col(MeanVertexDOFSet::SlopeY) = dz * trans.col(MeanVertexDOFSet::Y);
+  Eigen::MatrixXd sub(2, freeIdx.size());
+  for (size_t k = 0; k < freeIdx.size(); ++k) {
+    sub.col(k) = calibTrans.col(freeIdx[k]);
+  }
+  vtxPoint.addGlobals(mPVT->getFreeDOFLabels(), Eigen::MatrixXd(-sub));
 }
 
 // Build and fit a single composed GBL trajectory for all tracks of one collision, with the 3

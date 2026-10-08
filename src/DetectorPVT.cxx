@@ -47,9 +47,10 @@ Volume::Ptr DetectorPVT::buildHierarchy(Volume::SensorMapping& sensorMap)
   return vtx;
 }
 
-void DetectorPVT::updatePositionLabels()
+void DetectorPVT::updateFreeDOFs()
 {
-  mPositionLabels.clear();
+  mFreeDOFLabels.clear();
+  mFreeDOFIndices.clear();
   const auto* dofs = mVertexVolume ? mVertexVolume->getCalib() : nullptr;
   if (!dofs) {
     return;
@@ -57,14 +58,14 @@ void DetectorPVT::updatePositionLabels()
   if (dofs->type() != DOFSet::Type::MeanVertex) {
     LOGP(fatal, "The calibration DOFs of {} must be of the meanvertex type, check the DOF configuration", mVertexVolume->getSymName());
   }
-  // the labels of the calibration slot of the processed TF
+  // the labels of the calibration slot of the processed TF; each of the 5 DOFs is independently
+  // free or fixed, a fixed one imposing its prior value w/o being adjusted by the fit
   const auto& lbl = mVertexVolume->getActiveCalibLabel();
-  for (auto dof : {MeanVertexDOFSet::X, MeanVertexDOFSet::Y, MeanVertexDOFSet::Z}) {
-    if (!dofs->isFree(dof)) { // a fixed position imposes the prior w/o being fitted
-      mPositionLabels.clear();
-      return;
+  for (int dof = 0; dof < MeanVertexDOFSet::NDOF; ++dof) {
+    if (dofs->isFree(dof)) {
+      mFreeDOFLabels.push_back(lbl.rawGBL(dof));
+      mFreeDOFIndices.push_back(dof);
     }
-    mPositionLabels.push_back(lbl.rawGBL(dof));
   }
 }
 
@@ -88,7 +89,7 @@ void DetectorPVT::onSlotChange(int slotID)
   mMeanVtxCCDBUpdated = false;
   if (mVertexVolume) { // the vertex of every slot is aligned via its own global parameters
     mVertexVolume->setActiveCalibSlot(slotID);
-    updatePositionLabels();
+    updateFreeDOFs();
   }
   LOGP(info, "Mean vertex prior for time slot {}: {}", slotID, mMeanVtxSlot.asString());
 }

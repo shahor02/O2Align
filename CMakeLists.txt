@@ -95,8 +95,8 @@ if(TARGET O2::fpu_support)
   target_link_libraries(O2exe-alignment-workflow PUBLIC O2::fpu_support)
 endif()
 
-target_compile_options(O2Align PRIVATE -O0 -g)
-target_compile_options(O2exe-alignment-workflow PRIVATE -O0 -g)
+# target_compile_options(O2Align PRIVATE -O0 -g)
+# target_compile_options(O2exe-alignment-workflow PRIVATE -O0 -g)
 
 install(TARGETS O2Align
         EXPORT AlignTargets

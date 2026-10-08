@@ -71,6 +71,27 @@ class DOFSet
     return n;
   }
 
+  /// external measurement (e.g. survey) of a DOF, in its own units (cm or rad); sigma <= 0: none.
+  /// Set by the "measurement" clause of the DOF configuration (Volume::applyMeasurementConfig),
+  /// written as a Millepede soft constraint for every free DOF having one.
+  struct DOFMeasurement {
+    double value{0.};
+    double sigma{-1.};
+  };
+  const DOFMeasurement& getMeasurement(int idx) const { return mMeasurement[idx]; }
+  void setMeasurement(int idx, double value, double sigma) { mMeasurement[idx] = {value, sigma}; }
+  void clearMeasurements() { std::fill(mMeasurement.begin(), mMeasurement.end(), DOFMeasurement{}); }
+  /// index of a DOF by its name, as given by dofName(); -1 if none of this set's DOFs is named so
+  int dofIndex(const std::string& name) const
+  {
+    for (int i = 0; i < nDOFs(); ++i) {
+      if (dofName(i) == name) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
   void setGlobalsPointers(double* pars, double* errs) {
     gParVals = pars;
     gParErrs = errs;
@@ -85,8 +106,8 @@ class DOFSet
   void setParVal(int par, double v = 0) { getParVals()[par] = v; }
   void setParErr(int par, double e = 0) { getParErrs()[par] = e; }
 
-protected:  
-  DOFSet(int n) : mFree(n, true) {}
+protected:
+  DOFSet(int n) : mFree(n, true), mMeasurement(n) {}
   double* getParVals() { return gParVals + mFirstEntry; }
   double* getParErrs() { return gParErrs + mFirstEntry; }
   double* getParVals() const { return gParVals + mFirstEntry; }
@@ -94,6 +115,7 @@ protected:
   void validateDerivativeOutput(Eigen::Ref<Eigen::MatrixXd> out) const;
 
   std::vector<bool> mFree;         // status of each DOF
+  std::vector<DOFMeasurement> mMeasurement; // external measurement of each DOF, if any
   int mFirstEntry = -1;            // ID of the 1st parameter in the global results array
 
   static double* gParVals; // start of global parameters array
@@ -234,16 +256,18 @@ class TPCVDriftDOFSet final : public DOFSet
   ClassDefOverride(TPCVDriftDOFSet, 1);
 };
 
-/// Position of the mean interaction vertex, owned by the single volume of DetectorPVT and fitted
-/// independently in every time slot of the mean vertex calibration. The DOFs are the corrections
-/// to the X, Y, Z of the MeanVertexObject in the global frame. Being the position of the measurement
-/// (the mean-vertex prior) rather than of a sensor, its derivatives are not produced by the generic
-/// chain but directly by the vertex constraint (AlignmentSpec::addMeanVertexPrior).
+/// Position and beam-line slope of the mean interaction vertex, owned by the single volume of
+/// DetectorPVT and fitted independently in every time slot of the mean vertex calibration. The DOFs
+/// are the corrections to the X, Y, Z position and to the dX/dZ, dY/dZ slopes of the
+/// MeanVertexObject in the global frame (its getXAtZ/getYAtZ dependence). Being the position of the
+/// measurement (the mean-vertex prior) rather than of a sensor, its derivatives are not produced by
+/// the generic chain but directly by the vertex constraint (AlignmentSpec::addMeanVertexPrior). The
+/// 5 DOFs are independent of one another: each may be free or fixed, and measured, on its own.
 class MeanVertexDOFSet final : public DOFSet
 {
  public:
-  enum MeanVertexDOF : uint8_t { X = 0, Y, Z, NDOF };
-  static constexpr const char* MeanVertexDOFNames[MeanVertexDOF::NDOF] = {"X", "Y", "Z"};
+  enum MeanVertexDOF : uint8_t { X = 0, Y, Z, SlopeX, SlopeY, NDOF };
+  static constexpr const char* MeanVertexDOFNames[MeanVertexDOF::NDOF] = {"X", "Y", "Z", "SlopeX", "SlopeY"};
 
   MeanVertexDOFSet() : DOFSet(NDOF) {}
   Type type() const override { return Type::MeanVertex; }

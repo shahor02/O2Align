@@ -2,27 +2,111 @@
 
 `Volume::applyDOFConfig` traverses the hierarchy and applies matching rules to non-pseudo volumes. A `defaults` object, if present, is applied first to every volume; rules then run in order, and a later matching clause replaces the earlier DOF set of the same kind. Patterns are matched against symbolic volume names, with an implicit `*` prepended. Since `*` can match `/`, use exact-depth patterns when targeting a hierarchy level.
 
+## Rigid-Body DOFs
+
+The `rigidBody` clause frees an arbitrary subset of a volume's six DOFs (`TX,TY,TZ,RX,RY,RZ`, in
+the volume's local frame), all the others of that volume staying fixed; a volume not matched by any
+rule keeps none free. Free several at once by listing them together, e.g. the two in-plane shifts
+plus the in-plane rotation of every ITS stave:
+
+```json
+{ "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel?/ITSUStave?", "rigidBody": ["TX", "TZ", "RZ"] }
+```
+
+`"rigidBody": "all"` frees all six, `"rigidBody": "fixed"` (or `false`) fixes all six — the latter
+is only needed to override a `defaults` clause or an earlier rule, since no DOF is free by default.
+As with every other DOF-set clause, a later matching rule replaces the DOF set of an earlier one
+rather than merging with it, so listing a subset is not cumulative across rules.
+
 ## Mean Vertex
 
-The mean vertex volume is `PVT/meanVertex`. Its X, Y, and Z calibration DOFs default to free. Enable all three with:
+The mean vertex volume is `PVT/meanVertex`. Its calibration DOFs are the position `X, Y, Z` and the
+beam-line slopes `SlopeX, SlopeY` (dX/dZ, dY/dZ), all 5 defaulting to free. Each of the 5 is
+independent of the others — any subset may be free while the rest stay fixed, with no all-or-nothing
+grouping. A fixed DOF still enters the fit at its current prior value (from the `MeanVertexObject`
+delivered by the CCDB for the active calibration slot), it is simply not adjusted.
+
+Enable all 5 with:
 
 ```json
 { "match": "PVT/meanVertex", "calib": { "type": "meanvertex" } }
 ```
 
-Fix all three with:
+Fix all 5 with:
 
 ```json
 { "match": "PVT/meanVertex", "calib": { "type": "meanvertex", "fixed": true } }
 ```
 
-Keep X, Y, and Z either all free or all fixed: the vertex fit only uses the position labels when all three are free.
+Fix only the slopes, keeping X, Y, Z free:
+
+```json
+{ "match": "PVT/meanVertex", "calib": { "type": "meanvertex", "fix": ["SlopeX", "SlopeY"] } }
+```
+
+As with any calibration DOF set, an external measurement of an individual DOF (e.g. a value derived
+from a prior calibration) can be added via the `measurement` clause, see
+[Measurements of Rigid-Body and Calibration DOFs](#measurements-of-rigid-body-and-calibration-dofs)
+below; it goes in a separate rule following the one that frees/fixes the DOFs.
+
+## Automatic vs. Optional Constraints at a Parent/Children Boundary
+
+`writeRigidBodyConstraints` decides, for every rigid-body DOF of every volume, whether a constraint
+over its children is needed at all, and whether it is written automatically or only on request. The
+two cases that matter in practice:
+
+1. **Parent DOF free, and some descendant has *any* rigid-body DOF free** — not necessarily the same
+   one (a chain of free levels, with possibly several non-rigid-body/fixed levels looked through in
+   between — see `writeChildrenMeanConstraints`). `addChildrenMeanTerms` builds the parent's DOF `iDOF`
+   constraint from *every* free DOF `jDOF` of each contributing child, weighted by the full jacobian
+   element `j(iDOF, jDOF)`, not only `j(iDOF, iDOF)`: a child's `RX`, say, contributes to the parent's
+   `TY` constraint too, with a coefficient set by the lever arm between them. This is not an
+   approximation — `getJP2L()`/`getJL2P()` is the same fixed 6x6 matrix per child used by
+   `buildPointGlobals` to chain every leaf measurement up through the hierarchy, so a parent's free DOF
+   and a differently-named free DOF of a child really can be exactly indistinguishable once propagated
+   through it: a genuine degeneracy of the fit. The constraint "weighted mean of the children's
+   movement (transported to the parent's frame) vanishes" is written **automatically**, with no DOF
+   config needed beyond freeing both levels:
+   ```json
+   { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel?", "rigidBody": ["TY"] },
+   { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel?/ITSUStave?", "rigidBody": ["TY"] }
+   ```
+   Here the half-barrel's `TY` and the mean `TY` of its staves are tied together automatically; a stave
+   free only in, say, `RZ` instead would still contribute to that same constraint via `j(TY, RZ)`.
+
+2. **Parent DOF fixed, descendants' DOF free.** There is no parameter at the parent level to be
+   degenerate with, so **no constraint is written by default**: the children (and the hierarchy below
+   them) are free to drift together in that DOF, which may be a genuinely unconstrained or only
+   weakly constrained mode of the fit (e.g. nothing anchors the overall `TY` of a detector whose
+   envelope is fixed but whose staves are all free in `TY`). Use `pinChildrenMean` to request the same
+   mean-zero constraint explicitly even though the parent DOF is fixed — this **does not** turn the
+   parent DOF into a fit parameter, it only pins the common mode of what's below it to the parent's
+   (fixed) position:
+   ```json
+   { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel?", "rigidBody": "fixed", "pinChildrenMean": ["TY"] },
+   { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel?/ITSUStave?", "rigidBody": ["TY"] }
+   ```
+   Without the `pinChildrenMean` clause, this configuration leaves the mean `TY` of the staves
+   unconstrained; with it, the mean is pinned to the (fixed) half-barrel position.
+
+A third, unproblematic case is a free parent DOF with **no** free descendant DOF below it at all (see
+[Aligning a Subtree as One Rigid Body](#aligning-a-subtree-as-one-rigid-body)): there is nothing to be
+degenerate with, so no constraint is needed or written, automatically or otherwise, and the parent
+DOF is still fully observable from the leaf measurements.
+
+None of this applies to calibration DOFs (e.g. the mean vertex, TPC drift): they are never organized
+in a parent/children hierarchy of their own, so there is no equivalent automatic constraint — only the
+explicit `measurement` clause (previous section) adds a prior to a calibration DOF.
 
 ## Pinning the Common Mode of Children
 
 `Volume::writeRigidBodyConstraints` forces, for every *free* rigid-body DOF of a parent, the
-weighted mean of its active children's movement in that DOF to vanish. This breaks a real
-degeneracy: moving the parent and moving all its children together in the same direction are
+weighted mean of its active children's movement, transported to the parent's frame and projected
+onto that DOF, to vanish — summed over *every* free DOF of each child (not only the same-named one),
+weighted by the corresponding element of the child-to-parent jacobian; see
+[Automatic vs. Optional Constraints](#automatic-vs-optional-constraints-at-a-parentchildren-boundary)
+for why a child's differently-named free DOF is included on exactly the same footing. This breaks a
+real degeneracy: moving the parent and moving all its children together in the same direction are
 otherwise indistinguishable. A child without any free rigid-body DOF (no `rigidBody` rule, or a
 `fixed` one) is looked through: its own children, with the jacobians chained, take its place, and so
 on down to the nearest level having a free DOF. The walk stops at the first descendant with *any*
@@ -49,27 +133,40 @@ or none of the free DOFs feeds it through the chained jacobians) is skipped with
 or an envelope without its own geometry such as `TRD_envelope`), so the common mode of the
 supermodules of a detector can't be pinned this way.
 
-## Measurements of Rigid-Body DOFs
+## Measurements of Rigid-Body and Calibration DOFs
 
-The `measurement` clause supplies an external measurement (e.g. from a survey) of rigid-body DOFs of
-the matching volumes. It is written to `mp2con.txt` as a Millepede `Measurement` record
-(`Measurement value sigma`, followed by the label of the DOF with coefficient 1), i.e. a soft constraint
-`p = value ± sigma` which, unlike a `Constraint`, does not fix the parameter. It is an object
-`DOF name -> [value, sigma]` (or `{"value": v, "sigma": s}`), in cm for `TX,TY,TZ` and rad for `RX,RY,RZ`,
-relative to the geometry used by the fit:
+The `measurement` clause supplies an external measurement (e.g. from a survey, or a value carried
+over from a prior calibration) of individual DOFs of the matching volumes — rigid-body DOFs,
+calibration DOFs, or both at once (each name is resolved against whichever of the volume's two DOF
+sets has it; the two never share a name, e.g. `TX..RZ` vs. `X,Y,Z,SlopeX,SlopeY` for the mean
+vertex). It is written to `mp2con.txt` as a Millepede `Measurement` record (`Measurement value
+sigma`, followed by the label of the DOF with coefficient 1), i.e. a soft constraint `p = value ±
+sigma` which, unlike a `Constraint`, does not fix the parameter. It is an object `DOF name ->
+[value, sigma]` (or `{"value": v, "sigma": s}`), in the units of the DOF (cm for `TX,TY,TZ` and the
+mean-vertex `X,Y,Z`; rad for `RX,RY,RZ`; dimensionless for `SlopeX,SlopeY`), relative to the geometry
+used by the fit:
 
 ```json
 { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel?", "rigidBody": ["TX", "TY"] },
 { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel?", "measurement": { "TX": [0.01, 0.005], "TY": {"value": -0.02, "sigma": 0.01} } }
 ```
 
-A `rigidBody` clause *defines* the DOF set (listed DOFs free, all the others fixed), while `measurement`
-only adds a prior to DOFs that are already free. A rule containing both is therefore rejected (fatal):
-put the measurement in its own rule, after the one defining the DOFs.
+```json
+{ "match": "PVT/meanVertex", "calib": { "type": "meanvertex" } },
+{ "match": "PVT/meanVertex", "measurement": { "SlopeY": [0.0002, 0.0001] } }
+```
+
+A `rigidBody`/`calib` clause *defines* a DOF set (listed DOFs free, all the others fixed), while
+`measurement` only adds a prior to DOFs that are already free. A rule containing `measurement`
+together with `rigidBody` or `calib` is therefore rejected (fatal): put the measurement in its own
+rule, after the one defining the DOFs.
 
 As for `pinChildrenMean`, no DOF set is created and a later matching rule replaces all the
-measurements of an earlier one. `sigma` must be positive. A measurement of a DOF which is not free at the
-time of writing, as well as the clause on a volume that is not rigid-body alignable, is ignored with a warning.
+measurements of both DOF sets of the volume (even if the new rule only touches one of them).
+`sigma` must be positive. A measurement of a DOF which is not free at the time of writing, as well as
+the clause on a volume having neither a rigid-body nor a calibration DOF set at all, is ignored with
+a warning (under an exact, non-wildcard pattern) or silently skipped (under a wildcard pattern, e.g.
+a `measurement` rule meant for a different kind of volume).
 
 ## Aligning a Subtree as One Rigid Body
 

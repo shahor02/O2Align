@@ -61,11 +61,14 @@ class DetectorPVT final : public Detector
   /// object valid at the start of the slot, frozen for its whole duration
   const o2::dataformats::MeanVertexObject& getMeanVertexPrior() const { return mMeanVtxSlot; }
 
-  /// Millepede labels of the mean vertex position in the current calibration slot, ordered as
-  /// (X, Y, Z) in the global frame. Empty if the position is not a free parameter.
-  const std::vector<int>& getPositionLabels() const { return mPositionLabels; }
-  /// (re)build the labels of the current slot; call once the DOF configuration is applied
-  void updatePositionLabels();
+  /// Millepede labels of the free DOFs (any subset of X, Y, Z, SlopeX, SlopeY) of the mean vertex in
+  /// the current calibration slot, each independently free or fixed. Empty if none is free.
+  const std::vector<int>& getFreeDOFLabels() const { return mFreeDOFLabels; }
+  /// MeanVertexDOFSet::MeanVertexDOF index of every label in getFreeDOFLabels(), same order, used to
+  /// pick the matching columns of the (Y,Z) vs (X,Y,Z,SlopeX,SlopeY) derivative matrix
+  const std::vector<int>& getFreeDOFIndices() const { return mFreeDOFIndices; }
+  /// (re)build the free-DOF labels/indices of the current slot; call once the DOF configuration is applied
+  void updateFreeDOFs();
 
  protected:
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
@@ -76,7 +79,8 @@ class DetectorPVT final : public Detector
   o2::dataformats::MeanVertexObject mMeanVtxCCDB{}; // last mean vertex object received from the CCDB
   o2::dataformats::MeanVertexObject mMeanVtxSlot{}; // prior of the current calibration slot
   bool mMeanVtxCCDBUpdated{false};                  // a CCDB object arrived and was not consumed yet
-  std::vector<int> mPositionLabels;                 // labels of the vertex position in the current slot
+  std::vector<int> mFreeDOFLabels;                  // labels of the free DOFs in the current slot
+  std::vector<int> mFreeDOFIndices;                 // MeanVertexDOF index of each label above, same order
 };
 
 } // namespace o2::alignrs

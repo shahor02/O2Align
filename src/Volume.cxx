@@ -187,6 +187,7 @@ void Volume::writeRigidBodyConstraints(std::ostream& os) const
     writeChildrenMeanConstraints(os);
   }
   writeRigidBodyDOFMeasurements(os); // a sensor may be measured too
+  writeCalibDOFMeasurements(os);     // a calibration DOF (e.g. the mean vertex) may be measured too
   for (const auto& c : mChildren) {
     c->writeRigidBodyConstraints(os);
   }
@@ -227,19 +228,48 @@ void Volume::writeChildrenMeanConstraints(std::ostream& os) const
 
 void Volume::writeRigidBodyDOFMeasurements(std::ostream& os) const
 {
-  for (int iDOF = 0; iDOF < RigidBodyDOFSet::NDOF; ++iDOF) {
-    const auto& m = mDOFMeasurement[iDOF];
+  if (!mRigidBody) {
+    return;
+  }
+  for (int iDOF = 0; iDOF < mRigidBody->nDOFs(); ++iDOF) {
+    const auto& m = mRigidBody->getMeasurement(iDOF);
     if (m.sigma <= 0.) {
       continue;
     }
-    const char* dofName = RigidBodyDOFSet::RigidBodyDOFNames[iDOF];
-    if (!mRigidBody || !mRigidBody->isFree(iDOF)) { // the label is not a parameter of the fit
+    const auto dofName = mRigidBody->dofName(iDOF);
+    if (!mRigidBody->isFree(iDOF)) { // the label is not a parameter of the fit
       LOGP(warn, "Ignoring the measurement of DOF {} for {}: the DOF is not free", dofName, mSymName);
       continue;
     }
     Constraint con(std::format("Measurement of DOF {} for {}", dofName, mSymName), m.value, m.sigma);
     con.add(mLabel.raw(iDOF), 1.);
     con.write(os);
+  }
+}
+
+void Volume::writeCalibDOFMeasurements(std::ostream& os) const
+{
+  if (!mCalib) {
+    return;
+  }
+  for (int iDOF = 0; iDOF < mCalib->nDOFs(); ++iDOF) {
+    const auto& m = mCalib->getMeasurement(iDOF);
+    if (m.sigma <= 0.) {
+      continue;
+    }
+    const auto dofName = mCalib->dofName(iDOF);
+    if (!mCalib->isFree(iDOF)) { // the label is not a parameter of the fit
+      LOGP(warn, "Ignoring the measurement of DOF {} for {}: the DOF is not free", dofName, mSymName);
+      continue;
+    }
+    // the same external measurement applies to every calibration slot of this volume
+    for (const auto& calibLbl : mCalibLabels) {
+      Constraint con(std::format("Measurement of DOF {} for {}{}", dofName, mSymName,
+                                  mCalibLabels.size() > 1 ? std::format(" slot {}", calibLbl.id()) : ""),
+                      m.value, m.sigma);
+      con.add(calibLbl.raw(iDOF), 1.);
+      con.write(os);
+    }
   }
 }
 
@@ -317,7 +347,7 @@ void Volume::writeParameters(std::ostream& os) const
       // one independent set of parameters per calibration time slot
       for (const auto& calibLbl : mCalibLabels) {
         for (int iDOF = 0; iDOF < mCalib->nDOFs(); ++iDOF) {
-          os << std::format("{:<10} {:>+15g} {:>+15g} ! {} {:<5} ",
+          os << std::format("{:<10} {:>+15g} {:>+15g} ! {} {:<6} ",
                             calibLbl.raw(iDOF), 0.0, (mCalib->isFree(iDOF) ? 0.0 : -1.0),
                             (mCalib->isFree(iDOF) ? 'V' : 'F'), mCalib->dofName(iDOF))
              << mSymName;
@@ -506,37 +536,52 @@ void Volume::applyPinChildrenMeanConfig(const nlohmann::json& pin, const std::st
 }
 
 // Apply the "measurement" clause of a rule: an object DOF name -> [value, sigma] or {"value", "sigma"}.
-// Like pinChildrenMean it creates no DOF set: the measurement is written only if the DOF is free at
-// the time of writing. A later matching rule replaces all the measurements of an earlier one.
+// Each name is resolved against whichever of this volume's rigid-body or calibration DOF set has a
+// matching dofName() (the two never share a name, e.g. TX..RZ vs X,Y,Z,SlopeX,SlopeY for the mean
+// vertex). Like pinChildrenMean it creates no DOF set: the measurement is written only if the DOF is
+// free at the time of writing. A later matching rule replaces all the measurements of both DOF sets.
 void Volume::applyMeasurementConfig(const nlohmann::json& meas, const std::string& pattern)
 {
-  if (!isRigidBodyAllowed()) {
+  if (!mRigidBody && !mCalib) { // nothing to measure on this volume, e.g. under a broadly matching pattern
     if (pattern.find('*') == std::string::npos) {
-      LOGP(warn, "Ignoring the measurement rule '{}': {} is not rigid-body alignable", pattern, mSymName);
+      LOGP(warn, "Ignoring the measurement rule '{}': {} has neither a rigid-body nor a calibration DOF set", pattern, mSymName);
     }
     return;
   }
   if (!meas.is_object()) {
     LOGP(fatal, "Invalid measurement clause in the rule '{}', an object DOF name -> [value, sigma] is expected", pattern);
   }
-  mDOFMeasurement.fill({});
+  if (mRigidBody) {
+    mRigidBody->clearMeasurements();
+  }
+  if (mCalib) {
+    mCalib->clearMeasurements();
+  }
   for (const auto& [name, item] : meas.items()) {
-    const auto idx = RigidBodyDOFSet::dofIndex(name);
-    if (idx < 0) {
-      LOGP(fatal, "Unknown rigid-body DOF '{}' in the measurement rule '{}', allowed are TX,TY,TZ,RX,RY,RZ", name, pattern);
+    DOFSet* target = nullptr;
+    int idx = -1;
+    if (mRigidBody && (idx = mRigidBody->dofIndex(name)) >= 0) {
+      target = mRigidBody.get();
+    } else if (mCalib && (idx = mCalib->dofIndex(name)) >= 0) {
+      target = mCalib.get();
     }
-    DOFMeasurement m;
+    if (!target) {
+      LOGP(fatal, "Unknown DOF '{}' in the measurement rule '{}' for {}: no such DOF in its rigid-body or calibration set", name, pattern, mSymName);
+    }
+    double value{}, sigma{};
     if (item.is_array() && item.size() == 2) {
-      m = {item[0].get<double>(), item[1].get<double>()};
+      value = item[0].get<double>();
+      sigma = item[1].get<double>();
     } else if (item.is_object() && item.contains("value") && item.contains("sigma")) {
-      m = {item["value"].get<double>(), item["sigma"].get<double>()};
+      value = item["value"].get<double>();
+      sigma = item["sigma"].get<double>();
     } else {
       LOGP(fatal, "Invalid measurement of {} in the rule '{}', allowed are [value, sigma] or {{\"value\": v, \"sigma\": s}}", name, pattern);
     }
-    if (!(m.sigma > 0.)) {
-      LOGP(fatal, "Measurement of {} in the rule '{}' needs sigma > 0, got {}", name, pattern, m.sigma);
+    if (!(sigma > 0.)) {
+      LOGP(fatal, "Measurement of {} in the rule '{}' needs sigma > 0, got {}", name, pattern, sigma);
     }
-    mDOFMeasurement[idx] = m;
+    target->setMeasurement(idx, value, sigma);
   }
 }
 
@@ -576,12 +621,13 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
     rules.insert(rules.begin(), defRule);
   }
 
-  // a rigidBody clause defines the DOF set (and replaces an earlier one), a measurement only adds a prior
-  // to DOFs which are already free: in one rule the DOF list would be read as the definition and silently
-  // fix all the unlisted DOFs, hence the measurement must come in a rule of its own, after the definition
+  // a rigidBody/calib clause defines a DOF set (and replaces an earlier one), a measurement only adds
+  // a prior to DOFs which are already free: in one rule the DOF list would be read as the definition
+  // and silently fix all the unlisted DOFs, hence the measurement must come in a rule of its own,
+  // after the one defining the DOFs
   for (const auto& rule : rules) {
-    if (rule.contains("measurement") && rule.contains("rigidBody")) {
-      LOGP(fatal, "The rule '{}' has both rigidBody and measurement clauses: put the measurement in a separate rule following the DOF definition",
+    if (rule.contains("measurement") && (rule.contains("rigidBody") || rule.contains("calib"))) {
+      LOGP(fatal, "The rule '{}' has both a measurement clause and a rigidBody or calib clause: put the measurement in a separate rule following the DOF definition",
            rule.value("match", std::string("?")));
     }
   }

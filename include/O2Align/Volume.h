@@ -244,12 +244,17 @@ class Volume
   /// writeRigidBodyConstraints must still force the weighted mean of the active children's movement
   /// to vanish, mirroring the "replace, don't merge" semantics of the rigidBody/calib clauses
   void applyPinChildrenMeanConfig(const nlohmann::json& pin, const std::string& pattern);
-  /// apply the "measurement" clause of a rule: {"TX": [value, sigma], "RZ": {"value": v, "sigma": s}, ...}
-  /// external measurements of rigid-body DOFs, written as Millepede "Measurement" records; a later
-  /// matching rule replaces all the measurements of an earlier one, like the other clauses
+  /// apply the "measurement" clause of a rule: {"TX": [value, sigma], "SlopeX": {"value": v, "sigma": s}, ...}
+  /// external measurements of rigid-body AND/OR calibration DOFs of this volume, resolved by name
+  /// against whichever of mRigidBody/mCalib has a matching dofName() (the two never share a name),
+  /// written as Millepede "Measurement" records; a later matching rule replaces all the measurements
+  /// of an earlier one (of either DOF set), like the other clauses
   void applyMeasurementConfig(const nlohmann::json& meas, const std::string& pattern);
   /// one Millepede "Measurement" per free rigid-body DOF of this volume having one configured
   void writeRigidBodyDOFMeasurements(std::ostream& os) const;
+  /// one Millepede "Measurement" per free calibration DOF having one configured, for every declared
+  /// calibration slot (the same value/sigma applies to every slot)
+  void writeCalibDOFMeasurements(std::ostream& os) const;
   /// constraints of this volume over its children: the vanishing mean movement of the children in
   /// every free or pinned rigid-body DOF of this volume, see writeRigidBodyConstraints
   void writeChildrenMeanConstraints(std::ostream& os) const;
@@ -280,14 +285,6 @@ class Volume
   /// rigid-body DOF set at all. Set by the
   /// "pinChildrenMean" clause of the DOF config; see writeRigidBodyConstraints.
   std::array<bool, RigidBodyDOFSet::NDOF> mPinChildrenMean{};
-  /// external measurement (value, sigma) of a rigid-body DOF, in the units of the DOF (cm, rad) and
-  /// relative to the geometry used by the fit; sigma <= 0: no measurement. Set by the "measurement"
-  /// clause of the DOF config.
-  struct DOFMeasurement {
-    double value{0.};
-    double sigma{-1.};
-  };
-  std::array<DOFMeasurement, RigidBodyDOFSet::NDOF> mDOFMeasurement{};
   std::vector<Label> mCalibLabels{};            // calibration label per time slot, filled with the slot 0 in the ctor
   size_t mActiveCalibSlot{0};                   // index in mCalibLabels of the slot being processed
   const TimeSlotsSet* mCalibSlots{nullptr};     //! calibration slots, if declared; not owned
