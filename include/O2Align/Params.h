@@ -20,10 +20,28 @@ namespace o2::alignrs
 {
 
 struct Params : public o2::conf::ConfigurableParamHelper<Params> {
-  // Track selection
-  float minPt = 0.5f;        // minimum pt required  
-  int minITSCls = 7;         // minimum number of ITS clusters
-  float maxITSChi2Ndf = 1.2; // maximum ITS track chi2 // RSTODO not used, remove?
+  // Track selection for alignment
+  float minPt = 0.4f;        // minimum pt required  
+  int minITSClsTrack = 7;    // minimum number of ITS clusters in the full track
+  int minITSClsAB = 4;       // minimum number of ITS clusters in the AB track
+
+  // Track selection for PV refitting
+  float minPtPV = 0.3f;      // minimum pt required for tracks used in PV refitting
+  int minITSClsPV = 4;       // minimum number of ITS clusters in the track used for PV refitting
+  // PV constraint
+  int usePVConstraintMinTracks = 5; // minimum number of tracks to use PV constraint
+  // steering of multi-track PV constraint:
+  // 0: no multi-track PV constraint, 
+  // 1: use multi-track PV constraint (at most 1st maxTracksPerMultiTrackPV) and allow single tracks with eventual PV constraint for the rest
+  // 2: use multi-track PV constraint (at most 1st maxTracksPerMultiTrackPV) and use the rest w/o PV constraint at all
+  // 3: multi-track PV constraint only (at most 1st maxTracksPerMultiTrackPV), no single-track at all
+  int useMultiTrackPVConstraint = 1; 
+  int maxTracksPerMultiTrackPV = 15;       // maximum number of tracks to use for multi-track PV constraint, 
+  bool refitVtxFollowsMV = true;           // per-track PV constraint: the refitted vertex moves with the correction of the mean vertex position (same global derivatives as the prior), otherwise it anchors the frame of the starting geometry
+  bool scaleMVPriorWithNTracks = true;     // per-track PV constraint: scale the luminous region covariance of the mean vertex prior by the number of tracks of the vertex, for the prior to count once per collision
+  float vtxMultiTrackRefCovScale = 1e-2f;  // multi-track PV constraint: scale of the vertex covariance in the KF update defining the reference state at the vertex point, for the references of all tracks to pass (almost) through the common vertex. The stored vertex point keeps the true covariance
+  std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
+
 
   int minGBLPoints = 4;      // minimum number of GBL points per track
   
@@ -58,19 +76,6 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // o2::base::PropagatorD::MatCorrType matCorrType = o2::base::PropagatorD::MatCorrType::USEMatCorrTGeo;
   o2::base::PropagatorD::MatCorrType corrType = o2::base::PropagatorD::MatCorrType::USEMatCorrLUT;
 
-  // PV constraint
-  int usePVConstraintMinTracks = 5; // minimum number of tracks to use PV constraint
-  // steering of multi-track PV constraint:
-  // 0: no multi-track PV constraint, 
-  // 1: use multi-track PV constraint (at most 1st maxTracksPerMultiTrackPV) and allow single tracks with eventual PV constraint for the rest
-  // 2: use multi-track PV constraint (at most 1st maxTracksPerMultiTrackPV) and use the rest w/o PV constraint at all
-  // 3: multi-track PV constraint only (at most 1st maxTracksPerMultiTrackPV), no single-track at all
-  int useMultiTrackPVConstraint = 1; 
-  int maxTracksPerMultiTrackPV = 15;       // maximum number of tracks to use for multi-track PV constraint, 
-  bool refitVtxFollowsMV = true;           // per-track PV constraint: the refitted vertex moves with the correction of the mean vertex position (same global derivatives as the prior), otherwise it anchors the frame of the starting geometry
-  bool scaleMVPriorWithNTracks = true;     // per-track PV constraint: scale the luminous region covariance of the mean vertex prior by the number of tracks of the vertex, for the prior to count once per collision
-  float vtxMultiTrackRefCovScale = 1e-2f;  // multi-track PV constraint: scale of the vertex covariance in the KF update defining the reference state at the vertex point, for the references of all tracks to pass (almost) through the common vertex. The stored vertex point keeps the true covariance
-  std::string MVTimeSlotsJson = ""; // json file with mean vertex calibration intervals in ms
 
   // TPC drift calibration
   std::string VDTimeSlotsJson = ""; // json file with TPC drift calibration intervals in ms

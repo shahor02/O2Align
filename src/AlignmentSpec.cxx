@@ -285,10 +285,11 @@ class AlignmentSpec final : public Task
   // point in the track's current (pre-step) tracking frame, radius being frame-independent.
   bool needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid) const;
 
-  // refit the primary vertex vtxOrig with those tracks of resTracks which are its contributors and
-  // were successfully refitted in the current alignment, the result is put to vtxRefit.
-  // Returns false if the vertex has too few refitted contributors or the refit failed.
-  bool refitPV(const PVertex& vtxOrig, const std::vector<Track>& resTracks, PVertex& vtxRefit);
+  // refit the primary vertex vtxOrig (reference ivref) with its contributors, each refitted with its
+  // own ITS clusters independently of the tracks prepared for the alignment, the result is put to
+  // vtxRefit. Only the tracks passing Params::minPtPV and Params::minITSClsPV are used.
+  // Returns false if the vertex has too few usable contributors or the refit failed.
+  bool refitPV(const PVertex& vtxOrig, int ivref, PVertex& vtxRefit);
 
   // fill the GBL points of the track frames from the ipStart slot outward
   // mvPriorCovScale > 0: impose on the vertex point, besides the refitted vertex, the mean vertex prior
@@ -609,7 +610,7 @@ void AlignmentSpec::refitTracks(std::vector<Track>& resTracks, bool useVertexCon
 bool AlignmentSpec::constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks, std::vector<Track*>& commonVertexTracks)
 {
   PVertex vtxRefit{};
-  if (!refitPV(vtx, resTracks, vtxRefit)) {
+  if (!refitPV(vtx, ivref, vtxRefit)) {
     return false;
   }
   ++mProcessingStats.nPVConstrAcc;
@@ -1052,32 +1053,53 @@ bool AlignmentSpec::needsSplitScatterer(const TrackD& track, const FrameInfoExt&
   return track.getXatLabR(0.5 * (rPrev + rNext), xMid, prop->getNominalBz());
 }
 
-bool AlignmentSpec::refitPV(const PVertex& vtxOrig, const std::vector<Track>& resTracks, PVertex& vtxRefit)
+bool AlignmentSpec::refitPV(const PVertex& vtxOrig, int ivref, PVertex& vtxRefit)
 {
-  // Refit the vertex with the tracks refitted in the current alignment. Only the successfully refitted
-  // contributors of this vertex participate: a track whose refit failed has its gid cleared, which also
-  // resets the PVContributor flag. Hence the refitted vertex may differ from the original one not only
-  // because of the alignment but also because of the reduced number of contributors.
+  // Refit the vertex independently of the tracks prepared for the alignment: every PV contributor is
+  // refitted with its own ITS clusters only (DetectorITS::refitITSTrack). The contributors failing the
+  // refit or the Params::minPtPV / Params::minITSClsPV cuts stay in the pool of prepareVertexRefit
+  // (with their original parameters) but are masked out of the vertex fit.
+  if (!mITS) {
+    return false;
+  }
+  const auto& vtref = mRecoData->getPrimaryVertexMatchedTrackRefs()[ivref];
+  const auto trackIndex = mRecoData->getPrimaryVertexMatchedTracks();
+  const int nIni = vtxOrig.getNContributors();
   std::vector<o2::track::TrackParCov> tracks;
-  tracks.reserve(resTracks.size());
-  for (const auto& resTrack : resTracks) {
-    if (resTrack.gid.isIndexSet() && resTrack.gid.isPVContributor()) {
-      tracks.push_back(convertTrack<float>(resTrack.track)); // the track is at its innermost update point
+  std::vector<GTrackID> gidsITS;
+  tracks.reserve(nIni);
+  gidsITS.reserve(nIni);
+  for (int itr = vtref.getFirstEntry(), itLim = itr + vtref.getEntries(); itr < itLim; itr++) {
+    const auto tid = trackIndex[itr];
+    if (tid.isPVContributor() && mRecoData->isTrackSourceLoaded(tid.getSource())) {
+      tracks.emplace_back().setPID(mRecoData->getTrackParam(tid).getPID());
+      gidsITS.push_back(mRecoData->getITSContributorGID(tid));
     }
   }
-  if (static_cast<int>(tracks.size()) < mParams->usePVConstraintMinTracks) {
-    LOGP(debug, "Abandon the refit of {}: only {} of {} contributors were refitted", vtxOrig.asString(), tracks.size(), vtxOrig.getNContributors());
+  const int ntr = tracks.size();
+  std::vector<bool> useTrack(ntr);
+#ifdef WITH_OPENMP
+#pragma omp parallel for schedule(dynamic) num_threads(mNThreads)
+#endif
+  for (int itr = 0; itr < ntr; itr++) {
+    const auto& gid = gidsITS[itr];
+    bool ok = gid.isIndexSet() && mRecoData->getITSTrack(gid).getNClusters() >= mParams->minITSClsPV &&
+              (mFieldOFF || mRecoData->getITSTrack(gid).getPt() >= mParams->minPtPV);
+    ok = ok && mITS->refitITSTrack(mRecoData, gid, tracks[itr]);
+    useTrack[itr] = ok;
+    if (!ok && gid.isIndexSet()) {
+      tracks[itr] = mRecoData->getTrackParam(gid); // not used, but participates in prepareVertexRefit
+    }
+  }
+  const int nUsed = std::count(useTrack.begin(), useTrack.end(), true);
+  if (nUsed < mParams->usePVConstraintMinTracks || !mVertexer.prepareVertexRefit(tracks, vtxOrig)) {
+    LOGP(debug, "Abandon the refit of {}: {} of {} contributors usable", vtxOrig.asString(), nUsed, nIni);
     return false;
   }
-  if (!mVertexer.prepareVertexRefit(tracks, vtxOrig)) {
-    LOGP(warn, "Failed to prepare the refit of {} with {} tracks", vtxOrig.asString(), tracks.size());
-    return false;
-  }
-  // the pool contains only the tracks we want to use, hence the empty useTrack mask;
   // refitVertexFull (rather than refitVertex) is used since the alignment may shift the vertex
-  vtxRefit = mVertexer.refitVertexFull({}, vtxOrig);
+  vtxRefit = mVertexer.refitVertexFull(useTrack, vtxOrig);
   if (vtxRefit.getChi2() < 0.f) {
-    LOGP(warn, "Failed to refit {} with {} tracks", vtxOrig.asString(), tracks.size());
+    LOGP(warn, "Failed to refit {} with {} tracks", vtxOrig.asString(), nUsed);
     return false;
   }
   return true;

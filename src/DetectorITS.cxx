@@ -31,6 +31,7 @@
 #include "O2Align/SensorITS.h"
 #include "O2Align/TrackFit.h"
 #include "ITSBase/GeometryTGeo.h"
+#include "DetectorsBase/Propagator.h"
 
 namespace o2::alignrs
 {
@@ -185,6 +186,38 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
   }
 }
 
+bool DetectorITS::refitITSTrack(o2::globaltracking::RecoContainer* recoData, GTrackID gidITS, o2::track::TrackParCov& track) const
+{
+  const auto& trkITS = recoData->getITSTrack(gidITS);
+  const auto itsClRefs = recoData->getITSTracksClusterRefs();
+  const auto& params = Params::Instance();
+  const auto pid = track.getPID();
+  track = trkITS.getParamOut();
+  track.resetCovariance();
+  track.setCov(track.getQ2Pt() * track.getQ2Pt() * track.getCov()[14], 14);
+  track.setPID(pid);
+  auto prop = o2::base::Propagator::Instance();
+  const float bz = prop->getNominalBz();
+  o2::track::TrackPar refLin{track};
+  const int nCl = trkITS.getNClusters();
+  for (int iCl = 0; iCl < nCl; iCl++) { // clusters are stored from outer to inner layers
+    const auto& frame = mITSPointsInfo[itsClRefs[trkITS.getClusterEntry(iCl)]];
+    const auto& cls = frame.cluster;
+    if (!(params.useStableRef ? track.rotate(frame.alpha, refLin, bz) : track.rotate(frame.alpha)) ||
+        !prop->propagateTo(track, params.useStableRef ? &refLin : nullptr, cls.getX(), true)) {
+      LOGP(debug, "ITS track refit failed on propagation to cl#{}, alpha={}, x={} | {}", iCl, frame.alpha, cls.getX(), track.asString());
+      return false;
+    }
+    const std::array<float, 2> p{cls.getY(), cls.getZ()};
+    const std::array<float, 3> cov{cls.getSigmaY2(), cls.getSigmaYZ(), cls.getSigmaZ2()};
+    if (!track.update(p, cov)) {
+      LOGP(debug, "ITS track refit failed on update with cl#{} | {}", iCl, track.asString());
+      return false;
+    }
+  }
+  return true;
+}
+
 bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack)
 {
   const auto& params = Params::Instance();
@@ -259,7 +292,7 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       registerCluster(abTrackClusIdx[clEntry + icl]);
     }
   }
-  if (nPoints < (useITS ? params.minITSCls : 2)) {
+  if (nPoints < (useITS ? params.minITSClsTrack : params.minITSClsAB)) {
     return false;
   }
 

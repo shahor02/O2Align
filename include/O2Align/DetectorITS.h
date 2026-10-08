@@ -58,6 +58,10 @@ class DetectorITS : public Detector
     }
   }
 
+  /// Independent KF refit of the ITS track gidITS with its clusters prepared by prepareData, starting
+  /// from the outer parameters with the covariance reset. `track` keeps its PID. Used for the PV refit.
+  bool refitITSTrack(o2::globaltracking::RecoContainer* recoData, GTrackID gidITS, o2::track::TrackParCov& track) const;
+
   const std::vector<FrameInfoExt>& getPointsInfo() const { return mITSPointsInfo; }
 
   std::string reportDOFSummary() const final;
