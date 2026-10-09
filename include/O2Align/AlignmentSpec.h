@@ -21,9 +21,10 @@ namespace o2::alignrs
 
 enum class OutputOpt : uint8_t {
   VerboseGBL = 0,
-  MilleData,
-  MilleSteer,
-  MilleRes,
+  ProcessData, // expect data input for processing
+  MilleData,   // produce mille data (imposes ProcessData)
+  MilleSteer,  // extract mille steering files (standalone or in the beginning of ProcessData)
+  MilleRes,    // convert pede results to CCDB objects
   MisRes,
   Debug,
 };

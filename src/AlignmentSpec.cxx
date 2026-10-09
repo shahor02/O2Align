@@ -316,7 +316,7 @@ class AlignmentSpec final : public Task
   // build and fit a single composed GBL trajectory for the selected tracks of one collision,
   // with their common vertex position as parameters shared by all of them
   size_t buildGBLVertex(const std::vector<Track*>& contributors, std::vector<gbl::GblTrajectory>& gblTraj);
-  // steps of process(), see there
+
   void collectVertexTracks(const V2TRef& trackRef, bool useVertexConstraint, std::unordered_map<GTrackID, bool>& ambigTable, std::vector<Track>& resTracks);
   void refitTracks(std::vector<Track>& resTracks, bool useVertexConstraint);
   bool constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks, std::vector<Track*>& commonVertexTracks);
@@ -484,19 +484,23 @@ void AlignmentSpec::executeConfigMacro()
 
 void AlignmentSpec::run(ProcessingContext& pc)
 {
-  if (mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {    
+  if (mOutOpt[o2::alignrs::OutputOpt::MilleRes]) { // conversion of pede results to alignment and calibration objects
     updateTimeDependentParams(pc);
     const auto fitted = Volume::readMillepedeResults(mParams->milleResFile);
     Volume::writeMillepedeResults(mHierarchy.get(), fitted, mParams->milleResOutJson, mParams->misAlgJson);
     if (!mParams->algParamsOutFile.empty()) {
       writeAlignParams(fitted);
     }
-  } else {
+  } else if (mOutOpt[o2::alignrs::OutputOpt::MilleSteer] && !mOutOpt[o2::alignrs::OutputOpt::ProcessData]) { // just mille parameters/constraints extraction
+    updateTimeDependentParams(pc);
+  } else if (mOutOpt[o2::alignrs::OutputOpt::ProcessData]) { // produce mille data for pede input
     o2::globaltracking::RecoContainer recoData;
     mRecoData = &recoData;
-    mRecoData->collectData(pc, *mDataRequest);
+    mRecoData->collectData(pc, *mDataRequest); // call this before updateTimeDependentParams() as some calib CCDB objects are fetched there
     updateTimeDependentParams(pc);
     process();
+  } else {
+    LOGP(fatal, "Failed to interpret requested output options");
   }
   mRecoData = nullptr;
 }
@@ -721,17 +725,19 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
     initOnce = true;
     initOnFirstTF();
   }
-  if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes] && Params::Instance().usePVConstraintMinTracks > 0) {
-    pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
-  }
-  if (mTRD && !mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
-    pc.inputs().get<o2::trd::CalVdriftExB*>("calvdexb"); // triggers finaliseCCDB
-  }
-  if (mTPC && !mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {;
-    updateTPCCalibration(pc); // must precede initOnFirstTF: the drift calibration DOFs need the maps
+  if (mOutOpt[o2::alignrs::OutputOpt::ProcessData]) {
+    if ( Params::Instance().usePVConstraintMinTracks > 0) {
+      pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
+    }
+    if (mTRD) {
+      pc.inputs().get<o2::trd::CalVdriftExB*>("calvdexb"); // triggers finaliseCCDB
+    }
+    if (mTPC) {;
+      updateTPCCalibration(pc); // must precede initOnFirstTF: the drift calibration DOFs need the maps
+    }
   }
   for (auto* det : mDetectors) {
-    det->setTimeStamp(mTimeStamp, mOutOpt[o2::alignrs::OutputOpt::MilleRes]);
+    det->setTimeStamp(mTimeStamp, !mOutOpt[o2::alignrs::OutputOpt::MilleData]);
   }
 }
 
@@ -778,10 +784,7 @@ void AlignmentSpec::initVertexer()
   if (mParams->usePVConstraintMinTracks <= 0) {
     return;
   }
-  o2::conf::ConfigurableParam::updateFromString("pvertexer.useTimeInChi2=false;"); // the PV refit does not use the track time
   mVertexer.init();
-  mVertexer.setMeanVertex(&mPVT->getMeanVertexPrior());
-  mVertexer.initMeanVertexConstraint();
 }
 
 void AlignmentSpec::initMisalignment()
@@ -1697,7 +1700,7 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
   std::shared_ptr<o2::base::GRPGeomRequest> ggRequest{nullptr};
   auto detMask = GTrackID::getSourcesDetectorsMask(detectors);
 
-  if (!out[o2::alignrs::OutputOpt::MilleRes]) {
+  if (out[o2::alignrs::OutputOpt::ProcessData]) {
     dataRequest->requestTracks(srcTracks, useMC);
     if (withITS3) {
       dataRequest->requestIT3Clusters(useMC);

@@ -56,13 +56,20 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
   GID::mask_t dets = allowedSourcesClus & GID::getSourcesMask(cfg.options().get<std::string>("detectors"));
   const auto useMC = !cfg.options().get<bool>("disable-mc");
   const auto withITS3 = cfg.options().get<bool>("with-its3");
-  const o2::alignrs::OutputEnum output(cfg.options().get<std::string>("output"));
+  o2::alignrs::OutputEnum output(cfg.options().get<std::string>("output"));
+  // rectify options
+  if (output[o2::alignrs::OutputOpt::MilleRes]) {
+    output.reset(o2::alignrs::OutputOpt::ProcessData);
+  }
+  if (output[o2::alignrs::OutputOpt::MilleData] || output[o2::alignrs::OutputOpt::VerboseGBL]) {
+    output.set(o2::alignrs::OutputOpt::ProcessData);
+  }
 
   WorkflowSpec specs;
 
   bool requestCTPLumi = false;
   
-  if (!output[o2::alignrs::OutputOpt::MilleRes]) {
+  if (output[o2::alignrs::OutputOpt::ProcessData]) {
     if (dets[GID::TPC]) { // the TPC cluster transformation needs the scalers
       auto sclOpt = o2::tpc::CorrectionMapsOptions::parseGlobalOptions(cfg.options());
       requestCTPLumi = sclOpt.requestCTPLumi;
