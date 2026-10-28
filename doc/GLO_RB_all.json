@@ -1,0 +1,22 @@
+{
+  "#comment1": "this is an example of config. releasing all DOFs, not to be used for alignment w/o constraints",
+  "rules": [
+    { "match": "ITS", "rigidBody": "all" },
+    { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]", "rigidBody": "all" },
+    { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "rigidBody": "all" },
+    { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-1]", "rigidBody": "all" },
+    { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-1]/ITSUModule[0-6]", "rigidBody": "all" },
+    { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-1]/ITSUModule[0-6]/ITSUChip[0-9]+", "rigidBody": "all" },
+    { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]/ITSUChip[0-9]", "rigidBody": "all" },
+
+    { "match": "TRD/sm[0-9]+", "rigidBody": "all" },
+    { "match": "TRD/sm[0-9]+/st[0-9]/pl[0-9]", "rigidBody": "all" },
+
+    { "match": "TOF/sm[0-9]+", "rigidBody": "all" },
+    { "match": "TOF/sm[0-9]+/strip[0-9]+", "rigidBody": "all" },
+
+    { "match": "TPC_envelope", "calib": { "type": "tpcvdrift" } },
+
+    { "match": "PVT/meanVertex", "calib": { "type": "meanvertex" } }
+  ]
+}

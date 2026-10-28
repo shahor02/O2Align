@@ -20,6 +20,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <istream>
+#include <nlohmann/json.hpp>
 
 #include <TGeoMatrix.h>
 
@@ -27,6 +29,22 @@
 
 namespace o2::alignrs::geomutils
 {
+
+/// Is this JSON object key a comment: "#<anything>" or "_comment<anything>"
+inline bool isJsonCommentKey(const std::string& key)
+{
+  return key.starts_with('#') || key.starts_with("_comment");
+}
+
+/// Parse a JSON config file, dropping every object member whose key is a comment (see isJsonCommentKey)
+/// at any depth. An object left empty by that (e.g. an array element with a comment only) stays in
+/// its array as {}, which the consumers skip.
+inline nlohmann::json parseJsonWithComments(std::istream& in)
+{
+  return nlohmann::json::parse(in, [](int, nlohmann::json::parse_event_t event, nlohmann::json& parsed) {
+    return !(event == nlohmann::json::parse_event_t::key && isJsonCommentKey(parsed.get<std::string>()));
+  });
+}
 
 /// A DOF-config-style symbolic-volume pattern: std::regex_match against either the full name or
 /// the name with an implicit arbitrary prefix (so a suffix pattern can match at any hierarchy depth).

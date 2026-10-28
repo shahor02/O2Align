@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include <nlohmann/json.hpp>
+#include "O2Align/AlignGeomUtils.h"
 
 #include "Framework/Logger.h"
 #include "O2Align/Label.h"
@@ -65,12 +66,15 @@ int TimeSlotsSet::readSlotsFromFile(const std::string& fileName)
   if (!inpf.good()) {
     LOGP(fatal, "Cannot open time slots file {} (resolved to {})", fileName, path.native());
   }
-  auto data = json::parse(inpf);
+  auto data = geomutils::parseJsonWithComments(inpf);
   if (!data.is_array()) {
     LOGP(fatal, "Time slots file {} must contain an array of slots", path.native());
   }
   slots.reserve(data.size());
   for (const auto& entry : data) {
+    if (entry.empty()) {
+      continue;
+    }
     auto& slot = slots.emplace_back();
     slot.runNumber = entry.value("run", -1);
     slot.intervalID = entry.value("ID", -1);

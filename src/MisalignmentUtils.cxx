@@ -19,6 +19,7 @@
 
 #include <TMatrixD.h>
 #include <nlohmann/json.hpp>
+#include "O2Align/AlignGeomUtils.h"
 
 #include "Framework/Logger.h"
 #include "CommonConstants/MathConstants.h"
@@ -46,8 +47,11 @@ MisalignmentModel loadMisalignmentModel(const std::string& jsonPath)
   }
 
   using json = nlohmann::json;
-  const auto data = json::parse(f);
+  const auto data = geomutils::parseJsonWithComments(f);
   for (const auto& item : data) {
+    if (item.empty()) {
+      continue;
+    }
     const int id = item["id"].get<int>();
     if (id < 0 || id >= static_cast<int>(MisalignmentModel::NSensors)) {
       LOGP(fatal, "Misalignment sensor id {} out of range [0, {}) in {}", id, MisalignmentModel::NSensors, jsonPath);

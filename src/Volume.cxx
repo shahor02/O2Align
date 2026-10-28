@@ -1729,13 +1729,15 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
   if (!f.is_open()) {
     LOGP(fatal, "Cannot open DOF config file: {}", jsonPath);
   }
-  auto data = json::parse(f);
+  auto data = geomutils::parseJsonWithComments(f);
   json rules = data.is_array() ? data : data.value("rules", json::array());
   if (data.is_object() && data.contains("defaults")) {
     json defRule = data["defaults"];
     defRule["match"] = ".*";
     rules.insert(rules.begin(), defRule);
   }
+  // elements which had nothing but comments
+  rules.erase(std::remove_if(rules.begin(), rules.end(), [](const json& r) { return r.is_object() && r.empty(); }), rules.end());
 
   // a rigidBody/calib clause defines a DOF set (and replaces an earlier one), a measurement only adds
   // a prior to DOFs which are already free: in one rule the DOF list would be read as the definition
@@ -1828,8 +1830,11 @@ Volume::InjectedMisalignment Volume::loadInjectedMisalignment(const std::string&
     LOGP(warn, "Cannot open injected misalignment file: {}, writing absolute values", injectedJsonPath);
     return inj;
   }
-  json injData = json::parse(injFile);
+  json injData = geomutils::parseJsonWithComments(injFile);
   for (const auto& item : injData) {
+    if (item.empty()) {
+      continue;
+    }
     int id = item["id"].get<int>();
     if (item.contains("rigidBody")) {
       inj.rigidBody[id] = item["rigidBody"].get<std::vector<double>>();
