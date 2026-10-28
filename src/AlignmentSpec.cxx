@@ -17,7 +17,7 @@
 #include <optional>
 #include <functional>
 #include <memory>
-//#undef WITH_OPENMP // for testing without OpenMP
+#undef WITH_OPENMP // for testing without OpenMP
 #ifdef WITH_OPENMP
 #include <omp.h>
 #endif

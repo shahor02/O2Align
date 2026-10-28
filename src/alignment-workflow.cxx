@@ -79,13 +79,15 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
   
   if (output[o2::alignrs::OutputOpt::ProcessData]) {
     if (!isCosmicExt) {
-      if (dets[GID::TPC]) { // the TPC cluster transformation needs the scalers
+      if (dets[GID::TPC]) { // the TPC cluster transformation needs the scalers        
         auto sclOpt = o2::tpc::CorrectionMapsOptions::parseGlobalOptions(cfg.options());
-        requestCTPLumi = sclOpt.requestCTPLumi;
-        srcTrc = srcTrc | GID::getSourcesMask("CTP");
+        requestCTPLumi = sclOpt.requestCTPLumi;        
+        srcTrc = srcTrc | (GID::getSourcesMask("CTP") | GID::getSourcesMask("TPC"));
         specs.emplace_back(o2::tpc::getTPCScalerSpec(sclOpt));
       }    
-      o2::globaltracking::InputHelper::addInputSpecs(cfg, specs, dets, srcTrc, srcTrc, useMC);
+      // the TPC refit needs the TPC tracks referred by the matches, even if standalone TPC is not processed
+      const GID::mask_t srcTrcLoad = (dets[GID::TPC] && (srcTrc & GID::getSourcesMask("ITS-TPC,ITS-TPC-TRD,ITS-TPC-TOF,ITS-TPC-TRD-TOF")).any()) ? (srcTrc | GID::getSourcesMask("TPC")) : srcTrc;
+      o2::globaltracking::InputHelper::addInputSpecs(cfg, specs, dets, srcTrc, srcTrcLoad, useMC);
       o2::globaltracking::InputHelper::addInputSpecsPVertex(cfg, specs, useMC);
     } else {
       o2::globaltracking::InputHelper::addInputSpecsCosmicsExtended(cfg, specs);

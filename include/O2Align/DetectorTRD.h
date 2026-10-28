@@ -32,7 +32,13 @@ class DetectorTRD final : public Detector
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
   void initCalib();
-  void setCalVdriftExB(const o2::trd::CalVdriftExB* cal) { mTransformer->setCalVdriftExB(cal); }
+  void setCalVdriftExB(const o2::trd::CalVdriftExB* cal)
+  {
+    mCalVdriftExB = cal; // may arrive before or after initCalib()
+    if (mTransformer) {
+      mTransformer->setCalVdriftExB(cal);
+    }
+  }
 
  protected:
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
