@@ -244,9 +244,12 @@ class AlignmentSpec final : public Task
   AlignmentSpec(AlignmentSpec&&) = delete;
   AlignmentSpec& operator=(const AlignmentSpec&) = delete;
   AlignmentSpec& operator=(AlignmentSpec&&) = delete;
-  AlignmentSpec(std::shared_ptr<DataRequest> dr, std::shared_ptr<o2::base::GRPGeomRequest> gr, GTrackID::mask_t src, DetID::mask_t dmask, bool cosmicsExt, bool useMC, bool withITS3, o2::alignrs::OutputEnum out)
-    : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrcMask(src), mCosmicsExt(cosmicsExt), mUseMC(useMC), mIsITS3(withITS3), mOutOpt(out)
+  AlignmentSpec(std::shared_ptr<DataRequest> dr, std::shared_ptr<o2::base::GRPGeomRequest> gr, GTrackID::mask_t src, DetID::mask_t dmask, std::vector<DetID::mask_t> detCombinations, bool cosmicsExt, bool useMC, bool withITS3, o2::alignrs::OutputEnum out)
+    : mDataRequest(dr), mGGCCDBRequest(gr), mTracksSrcMask(src), mDetCombinations(std::move(detCombinations)), mObligatoryDets(dmask), mCosmicsExt(cosmicsExt), mUseMC(useMC), mIsITS3(withITS3), mOutOpt(out)
   {
+    for (const auto& combination : mDetCombinations) { // the detectors present in every accepted combination
+      mObligatoryDets &= combination;
+    }
     if (dmask[DetID::ITS]) {
       mITS = std::make_unique<DetectorITS>(withITS3);
       mDetectors.push_back(mITS.get());
@@ -336,6 +339,7 @@ class AlignmentSpec final : public Task
 
   void collectVertexTracks(const V2TRef& trackRef, bool useVertexConstraint, std::unordered_map<GTrackID, bool>& ambigTable, std::vector<Track>& resTracks);
   void refitTracks(std::vector<Track>& resTracks, bool useVertexConstraint);
+  bool isAcceptedDetCombination(DetID::mask_t contributing) const;
   bool constrainWithVertex(const PVertex& vtx, int ivref, std::vector<Track>& resTracks, std::vector<std::vector<Track*>>& commonVertexGroups);
   void splitCommonVertexTracks(const std::vector<Track*>& tracks, std::vector<std::vector<Track*>>& commonVertexGroups) const;
   void buildVertexTrajectories(std::vector<Track>& resTracks, bool hasPVConstraint, const std::vector<std::vector<Track*>>& commonVertexGroups, std::vector<gbl::GblTrajectory>& gblTraj);
@@ -400,6 +404,8 @@ class AlignmentSpec final : public Task
   bool mUseMC{false};
   bool mUsePVConstraint{false}; // use PV as additional constraint in a given track refit  //RSTODO: this should be a per-track decision, not global, should not be datamember
   GTrackID::mask_t mTracksSrcMask;
+  std::vector<DetID::mask_t> mDetCombinations; // accepted sets of the detectors contributing to a track (empty: any)
+  DetID::mask_t mObligatoryDets;               // detectors entering all mDetCombinations: a track is lost if any of them fails (all detectors if no combinations)
   bool mCosmicsExt{false}; // read TrackCosmicsExtended instead of the collision data
   std::vector<int> mTrackSources;
   int mNThreads{1};
@@ -546,7 +552,7 @@ void AlignmentSpec::process() // collisions
   for (int ivref = 0; ivref < nvRefs; ivref++) {
     // the last reference holds the tracks not attached to any vertex
     const PVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;    
-    if (mParams->verbose > 1) {
+    if (mParams->verbose > 0) {
       LOGP(info, "processing vtref {} of {} with {} tracks, {}", ivref, nvRefs, primVer2TRefs[ivref].getEntries(), vtx ? vtx->asString() : std::string{});
     }
     bool useVertexConstraint = false;
@@ -606,6 +612,13 @@ void AlignmentSpec::collectVertexTracks(const V2TRef& trackRef, bool useVertexCo
   }
 }
 
+// The tracks are accepted if the set of detectors which provided their points coincides with one of
+// the requested combinations (any set if none was requested)
+bool AlignmentSpec::isAcceptedDetCombination(DetID::mask_t contributing) const
+{
+  return mDetCombinations.empty() || std::find(mDetCombinations.begin(), mDetCombinations.end(), contributing) != mDetCombinations.end();
+}
+
 // Let every contributing detector add its points to the tracks and refit them inward, to the
 // innermost point (or the slot of the vertex point). A failed track has its gid cleared.
 void AlignmentSpec::refitTracks(std::vector<Track>& resTracks, bool useVertexConstraint)
@@ -616,15 +629,21 @@ void AlignmentSpec::refitTracks(std::vector<Track>& resTracks, bool useVertexCon
   for (int itr = 0; itr < (int)resTracks.size(); itr++) {
     auto& track = resTracks[itr];
     const auto contributorsGID = mRecoData->getSingleDetectorRefs(track.gid);
-    bool ok = true;
+    int nOK = 0;
+    DetID::mask_t contributed;
     for (auto* det : mDetectors) { // in the order of the radial position
       const int detID = det->getO2DetID();
-      if (detID >= 0 && track.gid.includesDet(detID) && !det->prepareTrack(mRecoData, contributorsGID, track)) {
-        ok = false; // the whole track is abandoned if any of its detectors fails
-        break;
+      if (detID >= 0 && track.gid.includesDet(detID)) {
+        if (det->prepareTrack(mRecoData, contributorsGID, track)) {
+          contributed.set(detID);
+          nOK++;
+        } else if (mObligatoryDets[detID]) {
+          nOK = 0; // the track is lost if an obligatory detector fails
+          break;
+        }
       }
     }
-    if (!ok || !track.fitTrack((int)track.info.size() - 1, useVertexConstraint ? 1 : 0, false, true)) {
+    if (!nOK || !isAcceptedDetCombination(contributed) || !track.fitTrack((int)track.info.size() - 1, useVertexConstraint ? 1 : 0, false, true)) {
       track.gid.clear(); // mark as failed
     }
   }
@@ -1560,7 +1579,7 @@ size_t AlignmentSpec::buildGBLVertex(const std::vector<Track*>& contributors, st
   gbl::GblTrajectory traj(pointsAndTrans);
   FitInfo fit{};
   bool res = fitGBLTrajectory(traj, -1.f, gblTraj, fit, mGBLStatVertex);
-  if (mParams->verbose > 1) {
+  if (mParams->verbose > 0) {
     LOGP(info, "GBL vertex fit of {} tracks (out of {}): chi2Ndf={} chi2={} ndf={} -> {}", 
       used.size(), contributors.size(), fit.chi2Ndf, fit.chi2, fit.ndf, res ? "success" : "failure");
   }
@@ -1853,7 +1872,7 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
   }
 }
 
-DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t detectors, bool cosmicsExt, bool useMC, bool withITS3, bool requestCTPLumi, o2::alignrs::OutputEnum out)
+DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t detectors, const std::vector<DetID::mask_t>& detCombinations, bool cosmicsExt, bool useMC, bool withITS3, bool requestCTPLumi, o2::alignrs::OutputEnum out)
 {
   auto dataRequest = std::make_shared<DataRequest>();
   std::shared_ptr<o2::base::GRPGeomRequest> ggRequest{nullptr};
@@ -1919,7 +1938,7 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
     .name = "barrel-alignment",
     .inputs = dataRequest->inputs,
     .outputs = {},
-    .algorithm = AlgorithmSpec{adaptFromTask<AlignmentSpec>(dataRequest, ggRequest, srcTracks, detMask, cosmicsExt, useMC, withITS3, out)},
+    .algorithm = AlgorithmSpec{adaptFromTask<AlignmentSpec>(dataRequest, ggRequest, srcTracks, detMask, detCombinations, cosmicsExt, useMC, withITS3, out)},
     .options = opts};
 }
 } // namespace o2::alignrs

@@ -193,8 +193,11 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       refLin->setZ(pnt.cluster.getZ());
     }
   }
-
-  if (static_cast<int>(resTrack.info.size() - nPointsIni) < params.minTRDTracklets) {
+  int nAdded = static_cast<int>(resTrack.info.size() - nPointsIni);
+  if (params.verbose > 0) {
+    LOGP(info, "Prepare {}: NTrackletsIni={} -> Npoints={}, chi2 = {}", gid.asString(), trk.getNtracklets(), nAdded, chi2);
+  }
+  if (nAdded < params.minTRDTracklets) {
     resTrack.info.resize(nPointsIni);
     return false;
   }

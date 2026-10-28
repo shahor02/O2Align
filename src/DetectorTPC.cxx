@@ -245,7 +245,9 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     pnt.cluster = o2::BaseCluster<float>(static_cast<int16_t>(sc.sector), pnt3D[0], pnt3D[1], pnt3D[2], cov[0], cov[2], cov[1]);
     ++npoints;
   }
-
+  if (params.verbose > 0) {
+    LOGP(info, "Prepare {}: Nclus={} -> Npoints={}, chi2 = {}", gid.asString(), nClus, npoints, chi2);
+  }
   if (npoints < npntCut) {
     resTrack.info.resize(nPointsIni);
     return false;

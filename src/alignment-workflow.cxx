@@ -9,7 +9,9 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
+#include <algorithm>
 #include "CommonUtils/ConfigurableParam.h"
+#include "CommonUtils/StringUtils.h"
 #include "Framework/ConfigParamSpec.h"
 #include "Framework/Logger.h"
 #include "Framework/CallbacksPolicy.h"
@@ -34,7 +36,7 @@ void customize(std::vector<ConfigParamSpec>& workflowOptions)
   std::vector<o2::framework::ConfigParamSpec> options{
     {"disable-mc", o2::framework::VariantType::Bool, false, {"enable MC propagation"}},
     {"track-sources", VariantType::String, std::string{GID::ALL}, {"comma-separated list of track sources to use, cosmic-ext for TrackCosmicExtended"}},
-    {"detectors", VariantType::String, "ITS", {"comma-separated list of detectors in the alignment (clusters to load)"}},
+    {"detectors", VariantType::String, "ITS", {"comma-separated list of detectors or their hyphen-separated combinations, e.g. ITS,ITS-TRD,TOF-ITS: the union defines the detectors in the alignment (clusters to load), the tracks must be built by exactly the detectors of one of the listed combinations"}},
     {"with-its3", VariantType::Bool, false, {"ITS3 alignment mode"}},
     {"output", VariantType::String, "", {"output steering"}},
     {"disable-root-input", VariantType::Bool, false, {"disable root-files input reader"}},
@@ -55,7 +57,18 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
   const GID::mask_t allowedSourcesClus = GID::getSourcesMask("ITS,TPC,TRD,TOF");
   const auto srcTracks = cfg.options().get<std::string>("track-sources");
   bool isCosmicExt = srcTracks == "cosmic-ext";
-  GID::mask_t dets = allowedSourcesClus & GID::getSourcesMask(cfg.options().get<std::string>("detectors"));
+  GID::mask_t dets;
+  std::vector<DetID::mask_t> detCombinations;
+  for (const auto& combo : o2::utils::Str::tokenize(cfg.options().get<std::string>("detectors"), ',')) {
+    std::string comboList = combo;
+    std::replace(comboList.begin(), comboList.end(), '-', ',');
+    const GID::mask_t comboMask = allowedSourcesClus & GID::getSourcesMask(comboList);
+    if (comboMask.none()) {
+      continue;
+    }
+    dets |= comboMask;
+    detCombinations.push_back(GID::getSourcesDetectorsMask(comboMask));
+  }
   const auto useMC = !cfg.options().get<bool>("disable-mc");
   const auto withITS3 = cfg.options().get<bool>("with-its3");
   o2::alignrs::OutputEnum output(cfg.options().get<std::string>("output"));
@@ -96,7 +109,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
     specs.emplace_back(o2::globaltracking::getNoInpDummyOutSpec(0));
   }
   
-  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, dets, isCosmicExt, useMC, withITS3, requestCTPLumi, output));
+  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, dets, detCombinations, isCosmicExt, useMC, withITS3, requestCTPLumi, output));
 
   o2::raw::HBFUtilsInitializer hbfIni(cfg, specs);
   return std::move(specs);

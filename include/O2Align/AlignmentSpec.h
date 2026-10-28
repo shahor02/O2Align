@@ -15,6 +15,8 @@
 #include "ReconstructionDataFormats/GlobalTrackID.h"
 #include "Framework/DataProcessorSpec.h"
 #include "CommonUtils/EnumFlags.h"
+#include "DetectorsCommonDataFormats/DetID.h"
+#include <vector>
 
 namespace o2::alignrs
 {
@@ -33,7 +35,7 @@ enum class OutputOpt : uint16_t {
 };
 using OutputEnum = utils::EnumFlags<OutputOpt>;
 
-o2::framework::DataProcessorSpec getAlignmentSpec(o2::dataformats::GlobalTrackID::mask_t srcTracks, o2::dataformats::GlobalTrackID::mask_t detectors, bool cosmicsExt, bool useMC, bool withITS3, bool requestCTPLumi, o2::alignrs::OutputEnum out);
+o2::framework::DataProcessorSpec getAlignmentSpec(o2::dataformats::GlobalTrackID::mask_t srcTracks, o2::dataformats::GlobalTrackID::mask_t detectors, const std::vector<o2::detectors::DetID::mask_t>& detCombinations, bool cosmicsExt, bool useMC, bool withITS3, bool requestCTPLumi, o2::alignrs::OutputEnum out);
 } // namespace o2::alignrs
 
 #endif

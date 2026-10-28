@@ -31,6 +31,54 @@ dofSet.json:
 ```
 
 
+## Running workflow
+
+`o2-dev-alignment-workflow` is a DPL workflow; the same executable is used at all three stages
+(Millepede data/steering, `pede`, results). If its output is piped to other shell commands, add
+`--run` before the first non-workflow element: `o2-dev-alignment-workflow ... --run | tee my.log`.
+Parameters of the alignment itself are set via `--configKeyValues "AlignParams.<name>=<value>;..."`.
+
+### Options defined by the workflow
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--disable-mc` | off | MC labels are read and propagated unless this is given |
+| `--track-sources` | all | comma-separated list of track sources, e.g. `ITS,ITS-TPC,ITS-TPC-TRD`; `cosmic-ext` switches to the `TrackCosmicsExtended` input. Only `ITS, TPC, ITS-TPC, ITS-TPC-TRD, ITS-TPC-TOF, ITS-TPC-TRD-TOF` are accepted |
+| `--detectors` | `ITS` | detectors participating in the alignment and the accepted combinations of them, see below |
+| `--with-its3` | off | ITS3 alignment mode |
+| `--output` | empty | comma-separated list of `VerboseGBL, MilleData, MilleSteer, MilleRes, MisRes, WeakModesDiag, WeakModesDiagIni, Regularize, Debug`. `MilleData` and `VerboseGBL` imply reading the data; `MilleRes`, `WeakModesDiag`, `WeakModesDiagIni` and `Regularize` read no data (a dummy source is inserted). `Regularize` cannot be combined with `VerboseGBL`/`MilleData` |
+| `--disable-root-input` | off | do not add the root-files input reader |
+| `--configKeyValues` | empty | semicolon-separated `key=value` list of `ConfigurableParam` settings (`AlignParams.*`, `pvertexer.*`, ...); applied after the built-in primary-vertex defaults, so it overrides them |
+
+The alignment device itself adds `--nthreads` (number of OpenMP threads of the track refit, default 1)
+and `--config-macro` (see [User configuration macro](#user-configuration-macro)).
+
+Options added by shared O2 helpers, not described here (use `--help full`): the HBF utils options
+(`--hbfutils-config`, ...), the TPC correction-map options (needed when `TPC` is among the
+detectors) and the ITS configuration option.
+
+### Selecting detectors and their combinations
+
+`--detectors` takes a comma-separated list whose items are either a single detector or several
+detectors joined by hyphens. Allowed detectors are `ITS`, `TPC`, `TRD`, `TOF`. The list is
+interpreted in two ways:
+
+1. **Participating detectors**: the union of all items. Only these have their clusters/tracklets
+   loaded, their volumes in the hierarchy and their measurements added to the tracks.
+2. **Accepted combinations**: every item gives one combination. After the refit, a track is kept
+   only if the set of detectors that actually provided its points is *exactly* one of the listed
+   combinations; other tracks are discarded (the track as a whole, not just the detector's data).
+   This makes it possible to reject a track on the basis of one detector while still keeping
+   tracks built with the others.
+
+Example: `--detectors ITS,ITS-TRD,TOF-ITS` uses ITS, TRD and TOF (like `ITS,TRD,TOF` did before), and
+accepts tracks seen by ITS alone, by ITS+TRD, or by ITS+TOF. An ITS-TPC-TRD-TOF track is rejected,
+since ITS+TRD+TOF is not in the list, while an ITS-TPC-TRD track passes: TPC is not participating,
+so it counts as ITS+TRD. The track source must of course be among `--track-sources`.
+
+Plain lists (`--detectors ITS,TPC`) thus accept only tracks having exactly the ITS, or exactly the
+TPC, points; to also accept the tracks with both, add `ITS-TPC`.
+
 ## In-existensional modes
 ```json
 {
