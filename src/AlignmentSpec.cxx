@@ -28,7 +28,7 @@
 #include <GblData.h>
 #include <GblPoint.h>
 #include <GblMeasurement.h>
-#include <MilleBinary.h>
+#include <Mille/MilleFactory.h>
 #include <nlohmann/json.hpp>
 #include <boost/interprocess/sync/named_semaphore.hpp>
 #include <TFile.h>
@@ -402,7 +402,7 @@ class AlignmentSpec final : public Task
   o2::alignrs::OutputEnum mOutOpt;
   std::unique_ptr<o2::utils::TreeStreamRedirector> mDBGOut;
   std::mt19937 mDbgRng; // selection of the tracks for the debug output
-  std::unique_ptr<gbl::MilleBinary> mMille; // Millepede binary, open for the whole run
+  std::unique_ptr<Mille::MilleRecord> mMille; // Millepede binary, open for the whole run
   std::vector<dataformats::VertexBase> mPVMC;
   std::vector<int> mT2PVMC;
   bool mIsITS3{true};
@@ -964,10 +964,10 @@ void AlignmentSpec::writeMilleRecords(std::vector<gbl::GblTrajectory>& gblTraj)
   }
   if (!mMille) {
     mMilleOutName = mNLanes > 1 ? fmt::format("{}_{}.bin", mParams->milleBinFile, mLane) : fmt::format("{}.bin", mParams->milleBinFile);
-    mMille = std::make_unique<gbl::MilleBinary>(mMilleOutName, true);
+    mMille = Mille::spawnMilleRecord(mMilleOutName, true);
   }
   for (auto& traj : gblTraj) {
-    traj.milleOut(*mMille);
+    traj.milleOut(mMille);
   }
   LOGP(info, "Wrote {} trajectories to {}", gblTraj.size(), mMilleOutName);
 }

@@ -30,7 +30,8 @@ set(O2_ALIGN_PUBLIC_LIBRARIES
     O2::DataFormatsGlobalTracking
     O2::DetectorsVertexing
     nlohmann_json::nlohmann_json
-    GBL::GBL)
+    GBL::GBL
+    Mille::Mille2)
 
 add_library(O2Align SHARED
             src/DOFSet.cxx
