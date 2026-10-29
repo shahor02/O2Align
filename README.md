@@ -22,7 +22,7 @@ Parameters of the alignment itself are set via `--configKeyValues "AlignParams.<
 | Option | Default | Meaning |
 |---|---|---|
 | `--disable-mc` | off | MC labels are read and propagated unless this is given |
-| `--track-sources` | all | comma-separated list of track sources, e.g. `ITS,ITS-TPC,ITS-TPC-TRD`; `cosmic-ext` switches to the `TrackCosmicsExtended` input. Only `ITS, TPC, ITS-TPC, ITS-TPC-TRD, ITS-TPC-TOF, ITS-TPC-TRD-TOF` are accepted |
+| `--track-sources` | all | comma-separated list of track sources, e.g. `ITS,ITS-TPC,ITS-TPC-TRD`; `cosmic-ext` switches to the `TrackCosmicsExtended` input (see [doc/Cosmics.md](doc/Cosmics.md)). Only `ITS, TPC, ITS-TPC, ITS-TPC-TRD, ITS-TPC-TOF, ITS-TPC-TRD-TOF` are accepted |
 | `--detectors` | `ITS` | detectors participating in the alignment and the accepted combinations of them, see below |
 | `--with-its3` | off | ITS3 alignment mode |
 | `--output` | empty | comma-separated list of `VerboseGBL, MilleData, MilleSteer, MilleRes, MisRes, WeakModesDiag, WeakModesDiagIni, Regularize`. `MilleData` and `VerboseGBL` imply reading the data; `MilleRes`, `WeakModesDiag`, `WeakModesDiagIni` and `Regularize` read no data (a dummy source is inserted). `Regularize` cannot be combined with `VerboseGBL`/`MilleData` |

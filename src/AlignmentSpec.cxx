@@ -68,6 +68,7 @@
 #include "ITSMFTReconstruction/ChipMappingITS.h"
 #include "TPCCalibration/VDriftHelper.h"
 #include "TPCFastTransformPOD.h"
+#include "TPCReconstruction/TPCFastTransformHelperO2.h"
 #include "GPUO2ExternalUser.h"
 #include "GPUParam.h"
 #include "O2Align/TrackFit.h"
@@ -283,6 +284,10 @@ class AlignmentSpec final : public Task
   void updateTimeDependentParams(ProcessingContext& pc);
   void buildHierarchy();
 
+  // fill resTrack with the points of the cosmic and the KF fit of them, the reference state is at the highest point
+  bool prepareCosmicTrack(const o2::dataformats::TrackCosmicsExtended& cosm, Track& resTrack);
+  void setCosmicTPCTransformation(const o2::dataformats::CosmicsTFInfo& tfInfo);
+
   // write mp2tree.txt/mp2con.txt/mp2param.txt. statWeighted is forwarded to
   // Volume::writeRigidBodyConstraints: false for the immediate, data-independent write done from
   // init() when stat-weighting was not requested (or could not be, for lack of usable statistics);
@@ -298,7 +303,9 @@ class AlignmentSpec final : public Task
   // calculate the transport jacobian for points FROM and TO numerically via ridder's method
   // this assumes the track is already at point FROM and will be extrapolated to TO's x (xTo)
   // method does not modify the original track
-  bool getTransportJacobian(const TrackD& track, double xTo, double alphaTo, gbl::Matrix5d& jac, gbl::Matrix5d& err);
+  // invertFirst: the track is inverted (TrackParCov::invert, the direction of the motion is reversed) before the propagation,
+  // the jacobian then links the parameters in the original and in the inverted parametrisation
+  bool getTransportJacobian(const TrackD& track, double xTo, double alphaTo, gbl::Matrix5d& jac, gbl::Matrix5d& err, bool invertFirst = false);
 
   // decide whether the step from the current state of `track` to `frame` should get an extra,
   // scatterer-only point inserted at its radius midpoint instead of lumping all crossed material
@@ -408,6 +415,7 @@ class AlignmentSpec final : public Task
   std::unique_ptr<DetectorTOF> mTOF;
   std::vector<Detector*> mDetectors; // all created detectors, in the order of the detector index
 
+  o2::gpu::aligned_unique_buffer_ptr<o2::gpu::TPCFastTransformPOD> mCosmicTPCMap; // ideal TPC transformation for cosmics
   std::unique_ptr<o2::gpu::GPUParam> mTPCParam; // TPC cluster error parametrization, field-dependent
   o2::tpc::VDriftHelper mTPCVDriftHelper{};     // drift calibration accounted by the correction maps
   std::shared_ptr<DataRequest> mDataRequest;
@@ -553,7 +561,134 @@ void AlignmentSpec::run(ProcessingContext& pc)
 void AlignmentSpec::processCosmicExt()
 {
   ++mProcessingStats.nTF;
-  LOGP(info, "Received {} cosmic tracks", mRecoData->getCosmicExtTracks().size());
+  const auto cosmTracks = mRecoData->getCosmicExtTracks();
+  LOGP(info, "Received {} cosmic tracks", cosmTracks.size());
+  if (mTPC) {
+    setCosmicTPCTransformation(mRecoData->getCosmicExtTFInfo());
+  }
+  std::vector<gbl::GblTrajectory> gblTraj;
+  Track resTrack;
+  for (const auto& cosm : cosmTracks) {
+    ++mProcessingStats.nTrc;
+    if (!prepareCosmicTrack(cosm, resTrack)) {
+      continue;
+    }
+    if (buildGBLTrack(resTrack, 0, gblTraj)) { // no vertex: the reference is the highest point of the track
+      ++mProcessingStats.nTrcNoPVAcc;
+    }
+  }
+  LOGP(info, "Processing stats: {}", mProcessingStats.asString());
+  mGBLStatSingle.print("Single-track");
+  writeMilleRecords(gblTraj);
+}
+
+// Y of the point in the lab frame
+static float yLab(const FrameInfoExt& frame)
+{
+  return frame.x * std::sin(frame.alpha) + frame.cluster.getY() * std::cos(frame.alpha);
+}
+
+// Let the detectors provide the points of the 2 legs of the cosmic and fit them with KF, as MatchCosmics::refitWinners does: a track
+// parametrisation cannot describe the motion in the direction opposite to that of the X axis of the tracking frame, which is the case
+// for the points of the top leg if the muon moves downward and vice versa. The reference track (upward, close to the beam line) is
+// fitted through the bottom leg inverted (downward, outward through its points and back inward), then it is inverted again and the fit
+// is continued upward through the points of the top leg. The result is the state at the highest point of the top leg (info[0]) of
+// the upward parametrisation; the points are ordered in Y of the lab frame, top leg first, Track::invertAt is the 1st point of the
+// bottom leg. A detector contributes if it gets enough measurements from both legs together; if it is obligatory and has fewer,
+// the cosmic is lost, otherwise the detector is dropped. Single-leg cosmics are lost.
+bool AlignmentSpec::prepareCosmicTrack(const o2::dataformats::TrackCosmicsExtended& cosm, Track& resTrack)
+{
+  resTrack = Track{};
+  auto reject = [this](const char* why) {
+    if (mParams->verbose > 0) {
+      LOGP(info, "Cosmic rejected: {}", why);
+    }
+    return false;
+  };
+  if (cosm.duplicateOf >= 0) {
+    return reject("duplicate");
+  }
+  // the refit at the TOF time, if any, otherwise the matcher's track, both are upward
+  const auto& srcTrack = cosm.chi2MatchPolished >= 0.f ? cosm.polished : static_cast<const o2::track::TrackParCov&>(cosm.cosmic);
+  TrackD refUp = convertTrack<double>(srcTrack);
+  refUp.setPID(o2::track::PID::Muon, true);
+  if (mFieldOFF && mParams->meanPtB0 > 0.) {
+    refUp.setQ2Pt(1. / mParams->meanPtB0);
+  }
+  TrackD refDown = refUp;
+  refDown.invert();
+  const std::array<const TrackD*, 2> refLeg{&refDown, &refUp}; // bottom, top leg: the references in the direction of the legs' points
+
+  std::vector<bool> disabled(mDetectors.size(), false);
+  std::array<std::vector<FrameInfoExt>, 2> frames;
+  DetID::mask_t contributed;
+  for (bool repeat = true; repeat;) {
+    repeat = false;
+    frames[0].clear();
+    frames[1].clear();
+    contributed.reset();
+    for (size_t idet = 0; idet < mDetectors.size() && !repeat; ++idet) {
+      auto* det = mDetectors[idet];
+      const int detID = det->getO2DetID();
+      if (detID < 0 || disabled[idet]) {
+        continue;
+      }
+      std::array<size_t, 2> nFramesIni{frames[0].size(), frames[1].size()};
+      int nMeas = 0;
+      for (int leg = 0; leg < 2; ++leg) {
+        nMeas += det->prepareCosmicLeg(cosm, leg, *refLeg[leg], frames[leg]);
+      }
+      if (nMeas == 0) { // nothing from this detector
+        continue;
+      }
+      if (nMeas < det->getMinCosmicMeasurements()) {
+        if (mObligatoryDets[detID]) {
+          return reject(fmt::format("obligatory {} has {} < {} measurements", det->getDetName(), nMeas, det->getMinCosmicMeasurements()).c_str());
+        }
+        disabled[idet] = true;
+        repeat = true; // start over w/o this detector
+        continue;
+      }
+      contributed.set(detID);
+    }
+  }
+  if (frames[0].empty() || frames[1].empty()) {
+    return reject(fmt::format("single leg: {} bottom, {} top points", frames[0].size(), frames[1].size()).c_str());
+  }
+  if (!isAcceptedDetCombination(contributed)) {
+    return reject(fmt::format("detector combination {} ({} combinations)", contributed.to_string(), mDetCombinations.size()).c_str());
+  }
+  for (auto& legFrames : frames) { // along the Y of the lab frame, downward
+    std::stable_sort(legFrames.begin(), legFrames.end(), [](const auto& a, const auto& b) { return yLab(a) > yLab(b); });
+  }
+  const int nTop = static_cast<int>(frames[1].size()), nTot = nTop + static_cast<int>(frames[0].size());
+  resTrack.info = std::move(frames[1]);
+  resTrack.info.insert(resTrack.info.end(), frames[0].begin(), frames[0].end());
+  resTrack.invertAt = nTop;
+  resTrack.kfFit.chi2 = 0.f;
+  // the bottom leg: outward in the downward parametrisation, then back inward, to its innermost point
+  resTrack.track = refDown;
+  if (!resTrack.fitTrack(nTop, nTot - 1, false, true) || !resTrack.fitTrack(nTot - 1, nTop, false, true)) {
+    return reject("KF fit of the bottom leg failed");
+  }
+  // the top leg: upward, i.e. outward, to the highest point
+  resTrack.track.invert();
+  if (!resTrack.fitTrack(nTop - 1, 0, false, false)) {
+    return reject("KF fit of the top leg failed");
+  }
+  return true;
+}
+
+// The TPC clusters of cosmics are transformed with the ideal map and the drift parameters of the TPC transformation used in the reconstruction
+void AlignmentSpec::setCosmicTPCTransformation(const o2::dataformats::CosmicsTFInfo& tfInfo)
+{
+  if (!mCosmicTPCMap) {
+    std::unique_ptr<o2::gpu::TPCFastTransform> ideal(o2::tpc::TPCFastTransformHelperO2::instance()->create(0));
+    o2::gpu::TPCFastTransformPOD::create(mCosmicTPCMap, *ideal);
+    mTPC->setCorrMaps(mCosmicTPCMap.get());
+  }
+  mCosmicTPCMap->setVDrift(tfInfo.vDrift);
+  mCosmicTPCMap->setT0(tfInfo.t0);
 }
 
 void AlignmentSpec::process() // collisions
@@ -823,14 +958,17 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
     initOnFirstTF();
   }
   if (mOutOpt[o2::alignrs::OutputOpt::ProcessData]) {
-    if ( Params::Instance().usePVConstraintMinTracks > 0) {
+    if (Params::Instance().usePVConstraintMinTracks > 0 && !mCosmicsExt) { // cosmics do not come from the vertex
       pc.inputs().get<o2::dataformats::MeanVertexObject*>("meanvtx"); // triggers finaliseCCDB
     }
     if (mTRD) {
       pc.inputs().get<o2::trd::CalVdriftExB*>("calvdexb"); // triggers finaliseCCDB
     }
-    if (mTPC) {;
+    if (mTPC && !mCosmicsExt) { // cosmics: the ideal map, set per TF
       updateTPCCalibration(pc); // must precede initOnFirstTF: the drift calibration DOFs need the maps
+    }
+    if (mITS && mCosmicsExt) {
+      pc.inputs().get<o2::itsmft::TopologyDictionary*>("cldictITS"); // triggers finaliseCCDB (ITS3 is not supported for cosmics)
     }
   }
   for (auto* det : mDetectors) {
@@ -870,7 +1008,7 @@ void AlignmentSpec::initOnFirstTF()
   if (mTRD) {
     mTRD->initCalib();
   }
-  if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
+  if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes] && !mCosmicsExt) { // the vertexer is not used for cosmics
     initVertexer();
   }
 }
@@ -977,8 +1115,8 @@ void AlignmentSpec::buildHierarchy()
   // detectors as unrelated as the mean vertex and the TPC, are not mutually constrained.
   mHierarchy = Volume::makeRoot();
   for (auto* det : mDetectors) {
-    if (det->getDetIdx() == Detector::DetPVT && mParams->usePVConstraintMinTracks <= 0) {
-      continue; // w/o the PV constraint the mean vertex is neither used nor aligned
+    if (det->getDetIdx() == Detector::DetPVT && (mParams->usePVConstraintMinTracks <= 0 || mCosmicsExt)) {
+      continue; // w/o the PV constraint (and for cosmics) the mean vertex is neither used nor aligned
     }
     // the calibration slots must be known before the hierarchy is built: a detector calibrated per
     // time slot prepares the labels of all its slots on the volume owning the DOFs
@@ -1064,7 +1202,7 @@ bool AlignmentSpec::loadVolumeStatistics(const std::string& fname)
   return true;
 }
 
-bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double alphaTo, gbl::Matrix5d& jac, gbl::Matrix5d& err)
+bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double alphaTo, gbl::Matrix5d& jac, gbl::Matrix5d& err, bool invertFirst)
 {
   auto prop = o2::base::PropagatorD::Instance();
   const auto minStep = std::sqrt(std::numeric_limits<double>::epsilon());
@@ -1078,6 +1216,10 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
     // the reference is propagated together with the track, hence it must restart from the
     // unperturbed state at every call
     o2::track::TrackParD ref(track), *refLin = mParams->useStableRef ? &ref : nullptr;
+    if (invertFirst) {
+      tmp.invert();
+      ref.invert();
+    }
     if (!prop->propagateToAlphaX(tmp, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType)) {
       return false;
     }
@@ -1249,7 +1391,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
     refLin = &(trkRef = wTrk);
   }
   // the MC index of the ITS part, needed only by the MC-based exact ITS3 misalignment simulation
-  const auto itsGID = mRecoData->getITSContributorGID(resTrack.gid);
+  const auto itsGID = resTrack.gid.isIndexSet() ? mRecoData->getITSContributorGID(resTrack.gid) : GTrackID{};
   const size_t iTrk = itsGID.isIndexSet() ? itsGID.getIndex() : 0;
   points.clear();
   points.reserve(np - ipStart);
@@ -1261,6 +1403,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
   }
   track::TrackLTIntegral lt;
   lt.setTimeNotNeeded();
+  bool inverted = false; // cosmics: the parametrisation was inverted at resTrack.invertAt
   for (int ip = ipStart; ip < np; ++ip) {
     const auto& frame = resTrack.info[ip];
     if (!frame.isValid()) {
@@ -1269,11 +1412,22 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
     gbl::Matrix5d err = gbl::Matrix5d::Identity(), jacALICE = gbl::Matrix5d::Identity(), jacGBL = gbl::Matrix5d::Identity();
     float msErr = 0.f;
     if (!points.empty()) { // not the 1st accounted point: step to it
+      // a cosmic changes the direction of the parametrisation at the step from its top to its bottom leg
+      const bool invertHere = resTrack.invertAt >= 0 && !inverted && ip >= resTrack.invertAt;
       // numerically calculates the transport jacobian from prev. point to this point
       // then we actually do the step to the point and accumulate the material
-      auto stepTo = [&](double xTo, double alphaTo, float& msErrOut) -> bool {
-        if (!getTransportJacobian(wTrk, xTo, alphaTo, jacALICE, err) ||
-            !prop->propagateToAlphaX(wTrk, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt)) {
+      auto stepTo = [&](double xTo, double alphaTo, float& msErrOut, bool invertFirst) -> bool {
+        if (!getTransportJacobian(wTrk, xTo, alphaTo, jacALICE, err, invertFirst)) {
+          ++gblStat.failedProp;
+          return false;
+        }
+        if (invertFirst) {
+          wTrk.invert();
+          if (refLin) {
+            refLin->invert();
+          }
+        }
+        if (!prop->propagateToAlphaX(wTrk, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt)) {
           ++gblStat.failedProp;
           return false;
         }
@@ -1286,9 +1440,9 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       // scatterer there would have zero lever arm to `frame` but the full gap as lever arm to the
       // previous point, biasing the correlation GBL builds between the kink and the two offsets.
       double xMid = 0., alphaMid = 0.;
-      if (needsSplitScatterer(wTrk, frame, xMid, alphaMid)) {
+      if (!invertHere && needsSplitScatterer(wTrk, frame, xMid, alphaMid)) { // not at the inversion: the gap there is the whole interior of the detector
         float msErr1 = 0.f;
-        if (!stepTo(xMid, alphaMid, msErr1)) {
+        if (!stepTo(xMid, alphaMid, msErr1, false)) {
           return false;
         }
         // the mid point is pushed unconditionally so that the frame's point below always gets its
@@ -1308,9 +1462,10 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
         }
         points.push_back(midPoint);
       }
-      if (!stepTo(frame.x, frame.alpha, msErr)) {
+      if (!stepTo(frame.x, frame.alpha, msErr, invertHere)) {
         return false;
       }
+      inverted |= invertHere;
     }
 
     // wTrk is now in the measurment frame
@@ -2142,7 +2297,10 @@ DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t 
     if (detMask[DetID::TRD]) { // the tracklet transformation needs the drift velocity and ExB
       dataRequest->inputs.emplace_back("calvdexb", "TRD", "CALVDRIFTEXB", 0, Lifetime::Condition, ccdbParamSpec("TRD/Calib/CalVdriftExB"));
     }
-    if (detMask[DetID::TPC]) {
+    if (cosmicsExt && detMask[DetID::ITS]) {
+      dataRequest->inputs.emplace_back("cldictITS", "ITS", "CLUSDICT", 0, Lifetime::Condition, ccdbParamSpec("ITS/Calib/ClusterDictionary"));
+    }
+    if (detMask[DetID::TPC] && !cosmicsExt) {
       // the cluster transformation: the maps are delivered per TF, the drift calibration they
       // account for is read from the CCDB just to be able to interpret the fitted drift correction
       o2::tpc::VDriftHelper::requestCCDBInputs(dataRequest->inputs);

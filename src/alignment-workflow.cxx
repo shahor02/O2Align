@@ -84,7 +84,9 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
     output.set(o2::alignrs::OutputOpt::ProcessData);
   }
   GID::mask_t srcTrc;
-  srcTrc = allowedSourcesTrc & GID::getSourcesMask(srcTracks);
+  if (!isCosmicExt) { // the cosmic tracks are read as a whole
+    srcTrc = allowedSourcesTrc & GID::getSourcesMask(srcTracks);
+  }
 
   WorkflowSpec specs;
 

@@ -14,6 +14,7 @@
 
 #include <vector>
 
+#include "DataFormatsITSMFT/CompCluster.h"
 #include "ITSMFTReconstruction/ChipMappingITS.h"
 #include "O2Align/AlignmentTypes.h"
 #include "O2Align/Detector.h"
@@ -47,6 +48,8 @@ class DetectorITS : public Detector
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
+  int prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames) final;
+  int getMinCosmicMeasurements() const final;
 
   void setTopologyDictionaries(const o2::itsmft::TopologyDictionary* itsDict, const o2::its3::TopologyDictionary* its3Dict)
   {
@@ -70,6 +73,11 @@ class DetectorITS : public Detector
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
  private:
+  template <typename PattIt>
+  FrameInfoExt makeClusterPoint(const o2::itsmft::CompClusterExt& cls, PattIt& pattIt, bool findOverlaps) const;
+  bool isOverlapCandidate(const o2::BaseCluster<float>& cl, const o2::BaseCluster<float>& oClus, int side) const;
+  bool isOverlapPair(const FrameInfoExt& a, const FrameInfoExt& b) const;
+
   bool mIsITS3{false};
   const o2::itsmft::TopologyDictionary* mITSDict{nullptr};
   const o2::its3::TopologyDictionary* mIT3Dict{nullptr};

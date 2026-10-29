@@ -31,6 +31,8 @@ class DetectorTRD final : public Detector
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
+  int prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames) final;
+  int getMinCosmicMeasurements() const final;
   void initCalib();
   void setCalVdriftExB(const o2::trd::CalVdriftExB* cal)
   {
@@ -44,6 +46,9 @@ class DetectorTRD final : public Detector
   Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
 
  private:
+  bool trackletToTrackingFrame(const o2::trd::Tracklet64& trackletRaw, const o2::trd::CalibratedTracklet& trkltLoc, std::array<double, 3>& traXYZ, double& alpha) const;
+  FrameInfoExt makeTrackletPoint(const o2::trd::Tracklet64& trackletRaw, const std::array<double, 3>& traXYZ, double alpSens, const o2::track::TrackParD& trkParam) const;
+
   std::unique_ptr<o2::trd::TrackletTransformer> mTransformer; // created at the 1st prepareData, once the geometry is loaded
   const o2::trd::CalVdriftExB* mCalVdriftExB{nullptr};
   o2::gpu::GPUTRDRecoParam mRecoParam; // parameters required for the tracklet covariance, set in prepareData

@@ -26,10 +26,17 @@
 #include "O2Align/Volume.h"
 #include "DataFormatsGlobalTracking/RecoContainer.h"
 #include "ReconstructionDataFormats/GlobalTrackID.h"
+#include "ReconstructionDataFormats/Track.h"
+
+namespace o2::dataformats
+{
+struct TrackCosmicsExtended;
+}
 
 namespace o2::alignrs
 {
 struct Track;
+struct FrameInfoExt;
 
 using GTrackID = o2::dataformats::GlobalTrackID;
 using GlobalIDSet = std::array<GTrackID, GTrackID::NSources>;
@@ -54,6 +61,15 @@ class Detector
   virtual ~Detector() = default;
   virtual void prepareData(o2::globaltracking::RecoContainer* recoData) = 0;
   virtual bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) = 0;
+
+  /// Cosmic counterpart of prepareTrack: append to `frames` the points of the leg (0: bottom, 1: top) of the cosmic
+  /// provided by this detector, in the tracking frames of the (possibly pre-aligned) volumes. The points need not be ordered
+  /// and no fit is done: the track dependent quantities (cluster errors, ambiguity resolution) are evaluated with `ref`, the
+  /// reference track of the cosmic, which is not to be modified. Returns the number of the measurements to be compared
+  /// with getMinCosmicMeasurements() once both legs are processed (the detector contributes nothing if it is below it).
+  virtual int prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& /*cosm*/, int /*leg*/, const o2::track::TrackParCovD& /*ref*/, std::vector<FrameInfoExt>& /*frames*/) { return 0; }
+  /// minimum number of the measurements of both legs of a cosmic for this detector to contribute
+  virtual int getMinCosmicMeasurements() const { return 1; }
 
   /// build the hierarchy of this detector and graft it under the common root of all detectors.
   /// Returns the top volume of the detector, nullptr if the detector has no volumes at all.

@@ -28,6 +28,7 @@
 #include "MathUtils/Utils.h"
 #include "O2Align/DetectorITS.h"
 #include "O2Align/Params.h"
+#include "DataFormatsGlobalTracking/TrackCosmicsExtended.h"
 #include "O2Align/SensorITS.h"
 #include "O2Align/TrackFit.h"
 #include "ITSBase/GeometryTGeo.h"
@@ -35,6 +36,105 @@
 
 namespace o2::alignrs
 {
+
+// Convert a compact cluster to the point in the tracking frame of its sensor, with the extra errors and,
+// if requested, the flags of the proximity to the chip edge. pattIt must be at the pattern of this cluster in
+// the pattern stream (if the cluster has one there) and is advanced past it.
+template <typename PattIt>
+FrameInfoExt DetectorITS::makeClusterPoint(const o2::itsmft::CompClusterExt& cls, PattIt& pattIt, bool findOverlaps) const
+{
+  const auto& params = Params::Instance();
+  auto geom = o2::its::GeometryTGeo::Instance();
+  const auto sensID = cls.getSensorID();
+  const auto lay = geom->getLayer(sensID);
+  float sigmaY2{0.f}, sigmaZ2{0.f};
+  math_utils::Point3D<float> locXYZ;
+  auto pattItCopy = pattIt;
+  if (mIsITS3) {
+    locXYZ = o2::its3::ioutils::extractClusterData(cls, pattIt, mIT3Dict, sigmaY2, sigmaZ2);
+  } else {
+    locXYZ = o2::its::ioutils::extractClusterData(cls, pattIt, mITSDict, sigmaY2, sigmaZ2);
+  }
+  sigmaY2 += params.extraClsErrYITS[lay] * params.extraClsErrYITS[lay];
+  sigmaZ2 += params.extraClsErrZITS[lay] * params.extraClsErrZITS[lay];
+  const auto gloXYZ = geom->getMatrixL2G(sensID) * locXYZ;
+  auto trkXYZ = geom->getMatrixT2L(sensID) ^ locXYZ;
+  double alpha = geom->getSensorRefAlpha(sensID);
+  double x = trkXYZ.X();
+  if (mIsITS3 && o2::its3::constants::detID::isDetITS3(sensID)) {
+    trkXYZ.SetY(0.f);
+    x = std::hypot(gloXYZ.x(), gloXYZ.y());
+    trkXYZ.SetX(x);
+    alpha = std::atan2(gloXYZ.y(), gloXYZ.x());
+  }
+  math_utils::bringToPMPid(alpha);
+  FrameInfoExt pointInfo;
+  pointInfo.detIdx = mDetIdx;
+  pointInfo.lr = lay;
+  pointInfo.label = Label(mDetIdx, sensID, true);
+  pointInfo.x = x;
+  pointInfo.alpha = alpha;
+  pointInfo.cluster = o2::BaseCluster<float>(sensID, trkXYZ, sigmaY2, sigmaZ2, 0.f);
+  if (findOverlaps) {
+    int row = 0, col = 0;
+    o2::itsmft::SegmentationAlpide::localToDetectorUnchecked(locXYZ.X(), locXYZ.Z(), row, col);
+    int drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? row : o2::itsmft::SegmentationAlpide::NRows - row - 1;
+    if (drow * o2::itsmft::SegmentationAlpide::PitchRow < params.ITSOverlapMargin) {
+      pointInfo.cluster.setBit(row < o2::itsmft::SegmentationAlpide::NRows / 2 ? DetectorITS::EdgeFlags::LowRow : DetectorITS::EdgeFlags::HighRow);
+      if (params.ITSOverlapEdgeRows > 0) {
+        auto pattID = cls.getPatternID();
+        drow = cls.getRow();
+        if (pattID != itsmft::CompCluster::InvalidPatternID) {
+          if (!mITSDict->isGroup(pattID)) {
+            const auto& patt = mITSDict->getPattern(pattID);
+            if (row > o2::itsmft::SegmentationAlpide::NRows / 2) {
+              drow = o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() - 1);
+            }
+          } else {
+            o2::itsmft::ClusterPattern patt(pattItCopy);
+            drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? drow - patt.getRowSpan() / 2 : o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() / 2 - 1);
+          }
+        } else {
+          o2::itsmft::ClusterPattern patt(pattItCopy);
+          if (row > o2::itsmft::SegmentationAlpide::NRows / 2) {
+            drow = o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() - 1);
+          }
+        }
+        if (drow < params.ITSOverlapEdgeRows) {
+          pointInfo.cluster.setBit(DetectorITS::EdgeFlags::Biased);
+        }
+      }
+    }
+  }
+  return pointInfo;
+}
+
+// oClus, an edge cluster of the chip on the given side of the chip of cl, may be a double hit with cl
+bool DetectorITS::isOverlapCandidate(const o2::BaseCluster<float>& cl, const o2::BaseCluster<float>& oClus, int side) const
+{
+  const auto& ovl = mOverlaps[cl.getSensorID()];
+  return oClus.isBitSet(ovl.rowSideOverlap[side]) && !oClus.isBitSet(DetectorITS::EdgeFlags::Biased) && std::abs(oClus.getZ() - cl.getZ()) < Params::Instance().ITSOverlapMaxDZ;
+}
+
+// the clusters a and b, both unbiased edge clusters, look like the two hits of the same particle in the overlap of neighbouring chips
+bool DetectorITS::isOverlapPair(const FrameInfoExt& a, const FrameInfoExt& b) const
+{
+  const auto& ca = a.cluster;
+  const auto& cb = b.cluster;
+  if (mOverlaps.empty() || !ca.getBits() || !cb.getBits() || ca.isBitSet(DetectorITS::EdgeFlags::Biased) || cb.isBitSet(DetectorITS::EdgeFlags::Biased)) {
+    return false;
+  }
+  const auto& ovl = mOverlaps[ca.getSensorID()];
+  for (int ir = 0; ir < DetectorITS::OVL::NSides; ++ir) {
+    if (ovl.rowSide[ir] == DetectorITS::OVL::NONE || ovl.rowSide[ir] != cb.getSensorID()) {
+      continue;
+    }
+    if (isOverlapCandidate(ca, cb, ir)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
 {
@@ -68,7 +168,6 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
     mITSOvlCandidateID.clear();
   }
 
-  auto geom = o2::its::GeometryTGeo::Instance();
   std::vector<int> edgeClusters;
   int rofCount = 0;
   struct ROFChipEntry {
@@ -82,74 +181,14 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
     edgeClusters.clear();
     for (int ic = rof.getFirstEntry(); ic < maxic; ++ic) {
       const auto& cls = clusITS[ic];
-      const auto sensID = cls.getSensorID();
-      const auto lay = geom->getLayer(sensID);
-      float sigmaY2{0.f}, sigmaZ2{0.f};
-      math_utils::Point3D<float> locXYZ;
-      auto pattItCopy = pattIt;
-      if (mIsITS3) {
-        locXYZ = o2::its3::ioutils::extractClusterData(cls, pattIt, mIT3Dict, sigmaY2, sigmaZ2);
-      } else {
-        locXYZ = o2::its::ioutils::extractClusterData(cls, pattIt, mITSDict, sigmaY2, sigmaZ2);
-      }
-      sigmaY2 += params.extraClsErrYITS[lay] * params.extraClsErrYITS[lay];
-      sigmaZ2 += params.extraClsErrZITS[lay] * params.extraClsErrZITS[lay];
-      const auto gloXYZ = geom->getMatrixL2G(sensID) * locXYZ;
-      auto trkXYZ = geom->getMatrixT2L(sensID) ^ locXYZ;
-      double alpha = geom->getSensorRefAlpha(sensID);
-      double x = trkXYZ.X();
-      if (mIsITS3 && o2::its3::constants::detID::isDetITS3(sensID)) {
-        trkXYZ.SetY(0.f);
-        x = std::hypot(gloXYZ.x(), gloXYZ.y());
-        trkXYZ.SetX(x);
-        alpha = std::atan2(gloXYZ.y(), gloXYZ.x());
-      }
-      math_utils::bringToPMPid(alpha);
-      o2::BaseCluster<float> clus(sensID, trkXYZ, sigmaY2, sigmaZ2, 0.f);
-      auto& pointInfo = mITSPointsInfo.emplace_back();
-      pointInfo.detIdx = mDetIdx;
-      pointInfo.lr = lay;
-      pointInfo.label = Label(mDetIdx, sensID, true);
-      pointInfo.x = x;
-      pointInfo.alpha = alpha;
-      pointInfo.cluster = clus;
-      if (findOverlaps) {
-        int row = 0, col = 0;
-        o2::itsmft::SegmentationAlpide::localToDetectorUnchecked(locXYZ.X(), locXYZ.Z(), row, col);
-        int drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? row : o2::itsmft::SegmentationAlpide::NRows - row - 1;
-        if (drow * o2::itsmft::SegmentationAlpide::PitchRow < params.ITSOverlapMargin) {
-          pointInfo.cluster.setBit(row < o2::itsmft::SegmentationAlpide::NRows / 2 ? DetectorITS::EdgeFlags::LowRow : DetectorITS::EdgeFlags::HighRow);
-          if (params.ITSOverlapEdgeRows > 0) {
-            auto pattID = cls.getPatternID();
-            drow = cls.getRow();
-            if (pattID != itsmft::CompCluster::InvalidPatternID) {
-              if (!mITSDict->isGroup(pattID)) {
-                const auto& patt = mITSDict->getPattern(pattID);
-                if (row > o2::itsmft::SegmentationAlpide::NRows / 2) {
-                  drow = o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() - 1);
-                }
-              } else {
-                o2::itsmft::ClusterPattern patt(pattItCopy);
-                drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? drow - patt.getRowSpan() / 2 : o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() / 2 - 1);
-              }
-            } else {
-              o2::itsmft::ClusterPattern patt(pattItCopy);
-              if (row > o2::itsmft::SegmentationAlpide::NRows / 2) {
-                drow = o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() - 1);
-              }
-            }
-            if (drow < params.ITSOverlapEdgeRows) {
-              pointInfo.cluster.setBit(DetectorITS::EdgeFlags::Biased);
-            }
-          }
-          if (!pointInfo.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
-            if (chipROFStart[sensID].rofCount != rofCount) {
-              chipROFStart[sensID].rofCount = rofCount;
-              chipROFStart[sensID].chipFirstEntry = edgeClusters.size();
-            }
-            edgeClusters.push_back(ic);
-          }
+      auto& pointInfo = mITSPointsInfo.emplace_back(makeClusterPoint(cls, pattIt, findOverlaps));
+      const auto sensID = pointInfo.cluster.getSensorID();
+      if (findOverlaps && pointInfo.cluster.getBits() && !pointInfo.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
+        if (chipROFStart[sensID].rofCount != rofCount) {
+          chipROFStart[sensID].rofCount = rofCount;
+          chipROFStart[sensID].chipFirstEntry = edgeClusters.size();
         }
+        edgeClusters.push_back(ic);
       }
     }
     for (auto ic : edgeClusters) {
@@ -169,7 +208,7 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
             if (oClus.getSensorID() != chipOvl) {
               break;
             }
-            if (oClus.isBitSet(ovl.rowSideOverlap[ir]) && !oClus.isBitSet(DetectorITS::EdgeFlags::Biased) && std::abs(oClus.getZ() - cl.getZ()) < params.ITSOverlapMaxDZ) {
+            if (isOverlapCandidate(cl, oClus, ir)) {
               if (!ovlCount) {
                 mITSOvlClusRef[ic] = mITSOvlCandidateID.size();
               }
@@ -529,6 +568,82 @@ std::string DetectorITS::reportDOFSummary() const
     oss << ", sensors: " << sensors << '\n';
   }
   return oss.str();
+}
+
+// ITS clusters of the leg (the ones of the matched ITS track and those found on the road, with pattern bytes stored in the cosmic)
+// are grouped by layer. In every layer the cluster closest to the reference track is taken, if its chi2 is acceptable, and the best
+// one among the other candidates which look like the second hit of the overlap with it is added, as for the collision tracks.
+// The clusters biased by the vicinity of the chip edge are discarded, as for the collision tracks.
+int DetectorITS::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames)
+{
+  const auto& params = Params::Instance();
+  if (mIsITS3) {
+    LOGP(fatal, "ITS3 is not supported for cosmics");
+  }
+  if (!mITSDict) {
+    LOGP(fatal, "ITS topology dictionary is not set");
+  }
+  const bool findOverlaps = params.ITSOverlapMargin > 0;
+  if (findOverlaps && mOverlaps.empty()) {
+    mOverlaps = o2::itsmft::ChipMappingITS{}.getOverlapsInfo();
+  }
+  auto prop = o2::base::PropagatorD::Instance();
+  struct Candidate {
+    FrameInfoExt frame;
+    double chi2{0.};
+  };
+  std::array<std::vector<Candidate>, 7> perLayer;
+  for (const auto& cl : cosm.clITS) {
+    if (cl.leg != leg) {
+      continue;
+    }
+    const o2::itsmft::CompClusterExt comp(cl.row, cl.col, cl.pattID, cl.chipID);
+    const bool needsPattern = cl.pattID == o2::itsmft::CompCluster::InvalidPatternID || mITSDict->isGroup(cl.pattID);
+    if (needsPattern && cl.pattEntry < 0) { // the pattern was not stored (no dictionary at the collection)
+      continue;
+    }
+    auto pattIt = cosm.itsPatterns.begin() + (needsPattern ? cl.pattEntry : 0);
+    auto frame = makeClusterPoint(comp, pattIt, findOverlaps);
+    if (frame.cluster.getBits() && frame.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
+      continue;
+    }
+    auto trk = ref;
+    if (!prop->propagateToAlphaX(trk, nullptr, frame.alpha, frame.x, false, params.maxSnp, params.maxStep, 1, o2::base::PropagatorD::MatCorrType::USEMatCorrNONE)) {
+      continue;
+    }
+    const double chi2 = trk.getPredictedChi2Quiet(frame.cluster);
+    if (chi2 < params.cosmMaxChi2Cl) {
+      perLayer[frame.lr].push_back({frame, chi2});
+    }
+  }
+  int nLayers = 0;
+  for (auto& cands : perLayer) {
+    if (cands.empty()) {
+      continue;
+    }
+    const auto best = std::min_element(cands.begin(), cands.end(), [](const auto& a, const auto& b) { return a.chi2 < b.chi2; });
+    frames.push_back(best->frame);
+    ++nLayers;
+    if (params.ITSOverlapMaxChi2 <= 0.f) {
+      continue;
+    }
+    const Candidate* bestOvl = nullptr;
+    for (const auto& cand : cands) {
+      if (&cand != &*best && cand.chi2 < params.ITSOverlapMaxChi2 && isOverlapPair(best->frame, cand.frame) && (!bestOvl || cand.chi2 < bestOvl->chi2)) {
+        bestOvl = &cand;
+      }
+    }
+    if (bestOvl) {
+      frames.push_back(bestOvl->frame);
+      frames.back().setITSOverlap();
+    }
+  }
+  return nLayers;
+}
+
+int DetectorITS::getMinCosmicMeasurements() const
+{
+  return Params::Instance().minITSClsTrack;
 }
 
 } // namespace o2::alignrs

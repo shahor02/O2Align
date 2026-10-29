@@ -21,6 +21,11 @@
 #include "O2Align/Detector.h"
 #include "O2Align/Volume.h"
 
+namespace o2::tpc
+{
+struct ClusterNative;
+}
+
 namespace o2::gpu
 {
 class GPUParam;
@@ -39,6 +44,8 @@ class DetectorTPC final : public Detector
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
+  int prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames) final;
+  int getMinCosmicMeasurements() const final;
 
   /// both must be provided by the caller before the 1st prepareTrack call
   void setCorrMaps(const o2::gpu::TPCFastTransformPOD* maps) { mCorrMaps = maps; }
@@ -87,6 +94,8 @@ class DetectorTPC final : public Detector
   void onSlotChange(int slotID) final;
 
  private:
+  bool isClusterAccepted(const o2::tpc::ClusterNative& cl, int row) const;
+
   static constexpr std::array<std::pair<int, int>, NStacks> sStackMinMaxRow = {
     std::pair<int, int>{0, 62}, std::pair<int, int>{63, 96}, std::pair<int, int>{97, 126}, std::pair<int, int>{127, 151}};
 

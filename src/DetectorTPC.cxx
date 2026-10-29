@@ -17,6 +17,9 @@
 #include <optional>
 #include "CommonConstants/LHCConstants.h"
 #include "DataFormatsGlobalTracking/RecoContainer.h"
+#include <algorithm>
+#include <optional>
+#include "DataFormatsGlobalTracking/TrackCosmicsExtended.h"
 #include "DataFormatsTPC/ClusterNative.h"
 #include "DataFormatsTPC/Constants.h"
 #include "DataFormatsTPC/TrackTPC.h"
@@ -101,6 +104,13 @@ struct SelectedCluster {
   float qTot{0.f};
   int16_t state{0};
   float x{0.f}, y{0.f}, z{0.f};
+  /// Y of the cluster in the lab frame, used to order the clusters of a cosmic along its flight
+  float yLab() const
+  {
+    constexpr int NSectorsPerSide = o2::tpc::constants::MAXSECTOR / 2;
+    const double alpha = o2::math_utils::detail::sector2Angle<double>(sector % NSectorsPerSide);
+    return static_cast<float>(x * std::sin(alpha) + y * std::cos(alpha));
+  }
 };
 
 /// charge-weighted merge of the clusters of a track on neighbouring pad-rows of the same sector
@@ -118,13 +128,84 @@ struct SuperCluster {
   }
   std::array<float, 3> position() const { return {static_cast<float>(sumX / charge), static_cast<float>(sumY / charge), static_cast<float>(sumZ / charge)}; }
   uint8_t meanRow() const { return static_cast<uint8_t>(std::lround(sumRow / charge)); }
+  double alpha() const { return o2::math_utils::detail::sector2Angle<double>(sector % (o2::tpc::constants::MAXSECTOR / 2)); }
 
   uint8_t sector{0}, firstRow{0};
   int16_t state{0};
   int nClusters{0};
   double sumX{0.}, sumY{0.}, sumZ{0.}, sumRow{0.}, charge{0.};
 };
+
+/// Merge the clusters provided by next() (std::optional<SelectedCluster>, ordered along the track) into the superclusters
+/// of at most maxRowsCombined rows and hand them over to visit(const SuperCluster&), which returns false to stop.
+/// npntCut, the number of points required, is relaxed by each merging. Returns the number of the accepted superclusters.
+template <typename Next, typename Visit>
+int forEachSuperCluster(Next&& next, int maxRowsCombined, int& npntCut, Visit&& visit)
+{
+  int npoints = 0;
+  auto pending = next();
+  while (pending) {
+    SuperCluster sc(*pending);
+    while ((pending = next()) && pending->sector == sc.sector && std::abs(pending->row - sc.firstRow) < maxRowsCombined) {
+      sc.add(*pending);
+    }
+    npntCut -= sc.nClusters - 1;
+    if (!visit(sc)) {
+      break;
+    }
+    ++npoints;
+  }
+  return npoints;
+}
+
+/// errors (yy, yz, zz) of the supercluster for the track of the given angles
+std::array<float, 3> superClusterCov(const o2::gpu::GPUParam& tpcParam, const SuperCluster& sc, float z, double snp, double tgl)
+{
+  const auto& params = Params::Instance();
+  std::array<float, 3> cov{0.f, 0.f, 0.f};
+  // TODO: this disables the occupancy / charge components of the error estimation
+  tpcParam.GetClusterErrors2(sc.sector, sc.meanRow(), z, snp, tgl, -1.f, 0.f, 0.f, cov[0], cov[2]);
+  tpcParam.UpdateClusterError2ByState(sc.state, cov[0], cov[2]);
+  if (sc.nClusters > 1) { // conservative: the merged clusters are not independent measurements
+    const float fact = 1.f / std::sqrt(static_cast<float>(sc.nClusters));
+    cov[0] *= fact;
+    cov[2] *= fact;
+  }
+  cov[0] += params.extraClsErrYTPC * params.extraClsErrYTPC;
+  cov[2] += params.extraClsErrZTPC * params.extraClsErrZTPC;
+  return cov;
+}
+
+FrameInfoExt superClusterFrame(int detIdx, const SuperCluster& sc, const std::array<float, 3>& pnt3D, const std::array<float, 3>& cov)
+{
+  FrameInfoExt pnt;
+  pnt.detIdx = detIdx;
+  pnt.lr = static_cast<int8_t>(DetectorTPC::getStack(sc.meanRow()));
+  pnt.label = Label(detIdx, sc.sector, true);
+  pnt.x = pnt3D[0];
+  pnt.alpha = static_cast<float>(sc.alpha());
+  pnt.cluster = o2::BaseCluster<float>(static_cast<int16_t>(sc.sector), pnt3D[0], pnt3D[1], pnt3D[2], cov[0], cov[2], cov[1]);
+  return pnt;
+}
 } // namespace
+
+/// cuts on the position of a cluster, besides the maximum pad-row which stops the outward refit
+bool DetectorTPC::isClusterAccepted(const o2::tpc::ClusterNative& cl, int row) const
+{
+  const auto& params = Params::Instance();
+  if (row < params.minTPCPadRow) {
+    return false;
+  }
+  if (params.discardEdgePadrows > 0 && getDistanceToStackEdge(row) < params.discardEdgePadrows) {
+    return false;
+  }
+  auto padFromEdge = cl.getPad();
+  int npads = o2::gpu::GPUTPCGeometry::NPads(row);
+  if (padFromEdge > npads / 2) {
+    padFromEdge = npads - 1 - padFromEdge;
+  }
+  return padFromEdge >= params.discardEdgePadDepth;
+}
 
 bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack)
 {
@@ -158,9 +239,6 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     refLin = &(trkRef = trkParam);
   }
   float chi2 = 0.f;
-
-  constexpr float TAN10 = 0.17632698f; // tan of the half sector opening angle
-  constexpr int NSectorsPerSide = o2::tpc::constants::MAXSECTOR / 2;
   const size_t nPointsIni = resTrack.info.size();
 
   // Accepted clusters in the outward direction: the clusters of the track are ordered from the
@@ -174,18 +252,7 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
         iNext = -1;
         break;
       }
-      if (row < params.minTPCPadRow) { // the following clusters still have a chance to be accepted
-        continue;
-      }
-      if (params.discardEdgePadrows > 0 && getDistanceToStackEdge(row) < params.discardEdgePadrows) {
-        continue;
-      }
-      auto padFromEdge = cl.getPad();
-      int npads = o2::gpu::GPUTPCGeometry::NPads(row);
-      if (padFromEdge > npads / 2) {
-        padFromEdge = npads - 1 - padFromEdge;
-      }
-      if (padFromEdge < params.discardEdgePadDepth) {
+      if (!isClusterAccepted(cl, row)) { // the following clusters still have a chance to be accepted
         continue;
       }
       SelectedCluster sel{.sector = sector, .row = row, .qTot = static_cast<float>(cl.getQtot()), .state = shMap[&cl - clusterNativeAccess.clustersLinear]};
@@ -197,54 +264,25 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
 
   // the min number of points is relaxed by each merging of clusters into a supercluster
   int npntCut = params.minTPCClusters;
-  int npoints = 0;
-  auto pending = nextCluster();
-  while (pending) {
-    // merge the following clusters of the same sector within maxTPCRowsCombined rows from the 1st one
-    SuperCluster sc(*pending);
-    while ((pending = nextCluster()) && pending->sector == sc.sector && std::abs(pending->row - sc.firstRow) < params.maxTPCRowsCombined) {
-      sc.add(*pending);
-    }
-    npntCut -= sc.nClusters - 1;
+  const int npoints = forEachSuperCluster(nextCluster, params.maxTPCRowsCombined, npntCut, [&](const SuperCluster& sc) {
     const auto pnt3D = sc.position();
-    const uint8_t meanRow = sc.meanRow();
-
-    const double alpha = o2::math_utils::detail::sector2Angle<double>(sc.sector % NSectorsPerSide);
-    if (!prop->propagateToAlphaX(trkParam, refLin, alpha, pnt3D[0], false, params.maxSnp, params.maxStep, 1, params.corrType)) {
-      break;
+    if (!prop->propagateToAlphaX(trkParam, refLin, sc.alpha(), pnt3D[0], false, params.maxSnp, params.maxStep, 1, params.corrType)) {
+      return false;
     }
-    std::array<float, 3> cov{0.f, 0.f, 0.f};
-    // TODO: this disables the occupancy / charge components of the error estimation
-    mTPCParam->GetClusterErrors2(sc.sector, meanRow, pnt3D[2], trkParam.getSnp(), trkParam.getTgl(), -1.f, 0.f, 0.f, cov[0], cov[2]);
-    mTPCParam->UpdateClusterError2ByState(sc.state, cov[0], cov[2]);
-    if (sc.nClusters > 1) { // conservative: the merged clusters are not independent measurements
-      const float fact = 1.f / std::sqrt(static_cast<float>(sc.nClusters));
-      cov[0] *= fact;
-      cov[2] *= fact;
-    }
-    cov[0] += params.extraClsErrYTPC * params.extraClsErrYTPC;
-    cov[2] += params.extraClsErrZTPC * params.extraClsErrZTPC;
-
+    const auto cov = superClusterCov(*mTPCParam, sc, pnt3D[2], trkParam.getSnp(), trkParam.getTgl());
     const std::array<double, 2> pos{pnt3D[1], pnt3D[2]};
     const std::array<double, 3> covD{cov[0], cov[1], cov[2]};
     chi2 += static_cast<float>(trkParam.getPredictedChi2Quiet(pos, covD));
     if (!trkParam.update(pos, covD)) {
-      break;
+      return false;
     }
     if (refLin) { // displace the reference to the last updated cluster
       refLin->setY(pos[0]);
       refLin->setZ(pos[1]);
     }
-
-    auto& pnt = resTrack.info.emplace_back();
-    pnt.detIdx = mDetIdx;
-    pnt.lr = static_cast<int8_t>(getStack(meanRow));
-    pnt.label = Label(mDetIdx, sc.sector, true);
-    pnt.x = pnt3D[0];
-    pnt.alpha = static_cast<float>(alpha);
-    pnt.cluster = o2::BaseCluster<float>(static_cast<int16_t>(sc.sector), pnt3D[0], pnt3D[1], pnt3D[2], cov[0], cov[2], cov[1]);
-    ++npoints;
-  }
+    resTrack.info.push_back(superClusterFrame(mDetIdx, sc, pnt3D, cov));
+    return true;
+  });
   if (params.verbose > 0) {
     LOGP(info, "Prepare {}: Nclus={} -> Npoints={}, chi2 = {}", gid.asString(), nClus, npoints, chi2);
   }
@@ -255,6 +293,51 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   resTrack.track = trkParam; // the seed is replaced only by a successful fit
   resTrack.kfFit.chi2 += chi2;
   return true;
+}
+
+// The attached clusters of the leg, transformed with the time of the cosmic (the TOF one if there is any) common for the 2 legs,
+// are ordered along the Y of the lab frame and merged to the superclusters. Their errors are evaluated for the angles of the reference track.
+// The state of the shared clusters (not stored) is not accounted. Returns the number of the clusters used.
+int DetectorTPC::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames)
+{
+  const auto& params = Params::Instance();
+  if (!mCorrMaps || !mTPCParam) {
+    LOGP(fatal, "TPC correction maps ({}) and GPUParam ({}) must be set before processing TPC tracks", (void*)mCorrMaps, (void*)mTPCParam);
+  }
+  const float timeMUS = cosm.hasTOFTime() ? cosm.timeTOFMUS : cosm.cosmic.getTimeMUS().getTimeStamp();
+  const float tOffset = timeMUS / (o2::constants::lhc::LHCBunchSpacingMUS * 8);
+  std::vector<SelectedCluster> selected;
+  for (const auto& cc : leg == 0 ? cosm.clTPCBottom : cosm.clTPCTop) {
+    if (!cc.isAttached() || cc.row > params.maxTPCPadRow || !isClusterAccepted(cc.cl, cc.row)) {
+      continue;
+    }
+    auto& sel = selected.emplace_back(SelectedCluster{.sector = cc.sector, .row = cc.row, .qTot = static_cast<float>(cc.cl.getQtot())});
+    mCorrMaps->Transform(cc.sector, cc.row, cc.cl.getPad(), cc.cl.getTime(), sel.x, sel.y, sel.z, tOffset);
+  }
+  std::sort(selected.begin(), selected.end(), [](const auto& a, const auto& b) { return a.yLab() < b.yLab(); });
+
+  auto prop = o2::base::PropagatorD::Instance();
+  size_t iNext = 0;
+  auto nextCluster = [&]() -> std::optional<SelectedCluster> {
+    return iNext < selected.size() ? std::optional<SelectedCluster>(selected[iNext++]) : std::nullopt;
+  };
+  int npntCut = 0, nClUsed = 0;
+  forEachSuperCluster(nextCluster, params.maxTPCRowsCombined, npntCut, [&](const SuperCluster& sc) {
+    const auto pnt3D = sc.position();
+    auto trkParam = ref;
+    if (!prop->propagateToAlphaX(trkParam, nullptr, sc.alpha(), pnt3D[0], false, params.maxSnp, params.maxStep, 1, o2::base::PropagatorD::MatCorrType::USEMatCorrNONE)) {
+      return true; // the supercluster is just not used
+    }
+    frames.push_back(superClusterFrame(mDetIdx, sc, pnt3D, superClusterCov(*mTPCParam, sc, pnt3D[2], trkParam.getSnp(), trkParam.getTgl())));
+    nClUsed += sc.nClusters;
+    return true;
+  });
+  return nClUsed;
+}
+
+int DetectorTPC::getMinCosmicMeasurements() const
+{
+  return Params::Instance().minTPCClusters;
 }
 
 } // namespace o2::alignrs

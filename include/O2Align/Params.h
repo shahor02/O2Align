@@ -46,6 +46,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
 
 
   int minGBLPoints = 4;      // minimum number of GBL points per track
+  float cosmMaxChi2Cl = 30.f;      // cosmics: max chi2 wrt the reference track of an ITS cluster, TRD tracklet or TOF cluster to be accepted (ambiguity resolution)
   
   bool writeLocalAlignParams = true; // create output AlignParams in local convention.
 

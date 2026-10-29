@@ -27,6 +27,7 @@
 #include "O2Align/AlignmentTypes.h"
 #include "O2Align/DetectorTRD.h"
 #include "O2Align/Params.h"
+#include "DataFormatsGlobalTracking/TrackCosmicsExtended.h"
 #include <cstring>
 #include "O2Align/SensorTRD.h"
 #include "O2Align/TrackFit.h"
@@ -104,6 +105,58 @@ void DetectorTRD::prepareData(o2::globaltracking::RecoContainer* recoData)
   }
 }
 
+// The calibrated tracklet is in the LOCAL frame of its chamber, T2L of the (possibly pre-aligned) volume brings it to TRK.
+// False if the chamber has no volume in the hierarchy.
+bool DetectorTRD::trackletToTrackingFrame(const o2::trd::Tracklet64& trackletRaw, const o2::trd::CalibratedTracklet& trkltLoc, std::array<double, 3>& traXYZ, double& alpha) const
+{
+  const int trkltDet = trackletRaw.getDetector();
+  auto* sensor = mSensors[trkltDet];
+  if (!sensor) {
+    return false;
+  }
+  const double locXYZ[3] = {trkltLoc.getX(), trkltLoc.getY(), trkltLoc.getZ()};
+  sensor->getT2L().MasterToLocal(locXYZ, traXYZ.data());
+  alpha = o2::math_utils::detail::sector2Angle<double>(o2::trd::Geometry::getSector(trkltDet));
+  return true;
+}
+
+// Point of a tracklet given the track state at its X: the track provides the Z and the angles needed for the
+// tilt correction and the covariance
+FrameInfoExt DetectorTRD::makeTrackletPoint(const o2::trd::Tracklet64& trackletRaw, const std::array<double, 3>& traXYZ, double alpSens, const o2::track::TrackParD& trkParam) const
+{
+  const auto& params = Params::Instance();
+  const auto* geo = o2::trd::Geometry::instance();
+  const int trkltDet = trackletRaw.getDetector();
+  const o2::trd::PadPlane* pad = geo->getPadPlane(trkltDet);
+  const double tilt = std::tan(TMath::DegToRad() * pad->getTiltingAngle()); // tilt is signed and returned in degrees
+  const double padLength = pad->getRowSize(trackletRaw.getPadRow());
+  double tiltCorr = tilt * (traXYZ[2] - trkParam.getZ());
+  if (std::abs(traXYZ[2] - trkParam.getZ()) < padLength) { // RS do we need this?
+    tiltCorr = 0.;
+  }
+  double posY = traXYZ[1] - tiltCorr;
+  const double posZ = trkParam.getZ() + params.TRDNonRCCorrDzDtgl * trkParam.getTgl();
+  // correction for DVT, equivalent to a shift in X at which Y is evaluated: dY = tg_phi * dvt
+  if (std::abs(params.TRDCorrDVT) > 1e-9f) {
+    const double snp = trkParam.getSnp();
+    posY += snp / std::sqrt((1. - snp) * (1. + snp)) * params.TRDCorrDVT;
+  }
+  std::array<float, 3> cov{};
+  mRecoParam.recalcTrkltCov(static_cast<float>(tilt), static_cast<float>(trkParam.getSnp()), static_cast<float>(padLength), cov);
+
+  FrameInfoExt pnt;
+  pnt.detIdx = mDetIdx;
+  pnt.lr = static_cast<int8_t>(o2::trd::Geometry::getLayer(trkltDet));
+  pnt.label = Label(mDetIdx, trkltDet, true);
+  pnt.x = static_cast<float>(traXYZ[0]);
+  pnt.alpha = static_cast<float>(alpSens);
+  pnt.zFromTrack = true; // posZ is the track Z at the tracklet: it does not depend on the chamber position
+  pnt.cluster = o2::BaseCluster<float>(static_cast<int16_t>(trkltDet), static_cast<float>(traXYZ[0]), static_cast<float>(posY), static_cast<float>(posZ),
+                                       cov[0] + params.extraClsErrYTRD * params.extraClsErrYTRD,
+                                       cov[2] + params.extraClsErrZTRD * params.extraClsErrZTRD, cov[1]);
+  return pnt;
+}
+
 bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack)
 {
   const auto& params = Params::Instance();
@@ -117,7 +170,6 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   }
   auto prop = o2::base::PropagatorD::Instance();
   const auto trackletsRaw = recoData->getTRDTracklets();
-  const auto* geo = o2::trd::Geometry::instance();
   const size_t nPointsIni = resTrack.info.size();
 
   // we continue the fit of the seed prepared by the inner detectors outward, w/o resetting its cov.matrix;
@@ -135,54 +187,18 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       continue;
     }
     const auto& trackletRaw = trackletsRaw[trkltId];
-    const int trkltDet = trackletRaw.getDetector();
-    auto* sensor = mSensors[trkltDet];
-    if (!sensor) {
-      LOGP(error, "TRD chamber {} referred by a track has no alignable volume", trkltDet);
+    std::array<double, 3> traXYZ{};
+    double alpSens = 0.;
+    if (!trackletToTrackingFrame(trackletRaw, mTrackletsLoc[trkltId], traXYZ, alpSens)) {
+      LOGP(error, "TRD chamber {} referred by a track has no alignable volume", trackletRaw.getDetector());
       resTrack.info.resize(nPointsIni);
       return false;
     }
-    // the calibrated tracklet is in the LOCAL frame, T2L of the (possibly pre-aligned) volume brings it to TRK
-    const auto& trkltLoc = mTrackletsLoc[trkltId];
-    const double locXYZ[3] = {trkltLoc.getX(), trkltLoc.getY(), trkltLoc.getZ()};
-    double traXYZ[3]{};
-    sensor->getT2L().MasterToLocal(locXYZ, traXYZ);
-
-    const int trkltSec = o2::trd::Geometry::getSector(trkltDet);
-    const double alpSens = o2::math_utils::detail::sector2Angle<double>(trkltSec);
     if (!prop->propagateToAlphaX(trkParam, refLin, alpSens, traXYZ[0], false, params.maxSnp, params.maxStep, 1, params.corrType)) {
       resTrack.info.resize(nPointsIni);
       return false;
     }
-
-    const o2::trd::PadPlane* pad = geo->getPadPlane(trkltDet);
-    const double tilt = std::tan(TMath::DegToRad() * pad->getTiltingAngle()); // tilt is signed and returned in degrees
-    const double padLength = pad->getRowSize(trackletRaw.getPadRow());
-    double tiltCorr = tilt * (traXYZ[2] - trkParam.getZ());
-    if (std::abs(traXYZ[2] - trkParam.getZ()) < padLength) { // RS do we need this?
-      tiltCorr = 0.;
-    }
-    double posY = traXYZ[1] - tiltCorr;
-    const double posZ = trkParam.getZ() + params.TRDNonRCCorrDzDtgl * trkParam.getTgl();
-    // correction for DVT, equivalent to a shift in X at which Y is evaluated: dY = tg_phi * dvt
-    if (std::abs(params.TRDCorrDVT) > 1e-9f) {
-      const double snp = trkParam.getSnp();
-      posY += snp / std::sqrt((1. - snp) * (1. + snp)) * params.TRDCorrDVT;
-    }
-    std::array<float, 3> cov{};
-    mRecoParam.recalcTrkltCov(static_cast<float>(tilt), static_cast<float>(trkParam.getSnp()), static_cast<float>(padLength), cov);
-
-    auto& pnt = resTrack.info.emplace_back();
-    pnt.detIdx = mDetIdx;
-    pnt.lr = static_cast<int8_t>(o2::trd::Geometry::getLayer(trkltDet));
-    pnt.label = Label(mDetIdx, trkltDet, true);
-    pnt.x = static_cast<float>(traXYZ[0]);
-    pnt.alpha = static_cast<float>(alpSens);
-    pnt.zFromTrack = true; // posZ is the track Z at the tracklet: it does not depend on the chamber position
-    pnt.cluster = o2::BaseCluster<float>(static_cast<int16_t>(trkltDet), static_cast<float>(traXYZ[0]),
-                                         static_cast<float>(posY), static_cast<float>(posZ),
-                                         cov[0] + params.extraClsErrYTRD * params.extraClsErrYTRD,
-                                         cov[2] + params.extraClsErrZTRD * params.extraClsErrZTRD, cov[1]);
+    auto& pnt = resTrack.info.emplace_back(makeTrackletPoint(trackletRaw, traXYZ, alpSens, trkParam));
     chi2 += static_cast<float>(trkParam.getPredictedChi2Quiet(pnt.cluster));
     if (!trkParam.update(pnt.cluster)) {
       resTrack.info.resize(nPointsIni);
@@ -204,6 +220,51 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   resTrack.track = trkParam; // the seed is replaced only by a successful fit
   resTrack.kfFit.chi2 += chi2;
   return true;
+}
+
+// Per layer the tracklet of the leg (the one matched to its track and those found on the road) closest to the reference track is taken
+int DetectorTRD::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames)
+{
+  const auto& params = Params::Instance();
+  auto prop = o2::base::PropagatorD::Instance();
+  std::array<FrameInfoExt, o2::trd::constants::NLAYER> best{};
+  std::array<double, o2::trd::constants::NLAYER> bestChi2{};
+  bestChi2.fill(params.cosmMaxChi2Cl);
+  for (const auto& trkl : cosm.trdTracklets) {
+    if (trkl.leg != leg) {
+      continue;
+    }
+    const o2::trd::Tracklet64 trackletRaw(trkl.word);
+    const auto trkltLoc = mTransformer->transformTracklet(trackletRaw, false);
+    std::array<double, 3> traXYZ{};
+    double alpSens = 0.;
+    if (!trackletToTrackingFrame(trackletRaw, trkltLoc, traXYZ, alpSens)) {
+      continue;
+    }
+    auto trk = ref;
+    if (!prop->propagateToAlphaX(trk, nullptr, alpSens, traXYZ[0], false, params.maxSnp, params.maxStep, 1, o2::base::PropagatorD::MatCorrType::USEMatCorrNONE)) {
+      continue;
+    }
+    const auto pnt = makeTrackletPoint(trackletRaw, traXYZ, alpSens, trk);
+    const double chi2 = trk.getPredictedChi2Quiet(pnt.cluster);
+    if (chi2 < bestChi2[pnt.lr]) {
+      bestChi2[pnt.lr] = chi2;
+      best[pnt.lr] = pnt;
+    }
+  }
+  int nAdded = 0;
+  for (const auto& pnt : best) {
+    if (pnt.isValid()) {
+      frames.push_back(pnt);
+      ++nAdded;
+    }
+  }
+  return nAdded;
+}
+
+int DetectorTRD::getMinCosmicMeasurements() const
+{
+  return Params::Instance().minTRDTracklets;
 }
 
 } // namespace o2::alignrs
