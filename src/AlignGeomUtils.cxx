@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <fstream>
 
 #include <Eigen/Dense>
 #include <TGeoBBox.h>
@@ -24,6 +25,28 @@
 
 namespace o2::alignrs::geomutils
 {
+
+nlohmann::json readJsonRules(const std::string& path, const char* what, bool allowDefaults)
+{
+  using json = nlohmann::json;
+  std::ifstream f(path);
+  if (!f.is_open()) {
+    LOGP(fatal, "Cannot open {} file: {}", what, path);
+  }
+  const auto data = parseJsonWithComments(f);
+  json rules = data.is_array() ? data : data.value("rules", json::array());
+  if (data.is_object() && data.contains("defaults")) {
+    if (!allowDefaults) {
+      LOGP(fatal, "{} file {}: the 'defaults' member is not supported, give the rules explicitly", what, path);
+    }
+    json defRule = data["defaults"];
+    defRule["match"] = ".*";
+    rules.insert(rules.begin(), defRule);
+  }
+  // elements which had nothing but comments
+  rules.erase(std::remove_if(rules.begin(), rules.end(), [](const json& r) { return r.is_object() && r.empty(); }), rules.end());
+  return rules;
+}
 
 VolumePattern::VolumePattern(const std::string& pattern)
   : mDirect(pattern), mAnyPrefix(".*(?:" + pattern + ")")

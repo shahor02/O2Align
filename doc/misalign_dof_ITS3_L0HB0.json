@@ -1,0 +1,9 @@
+{
+  "#": "DOFs of the closure test of doc/MisalignmentTest.md, example (a): the rigid body TX,TY,RY and the Legendre order 1 mode L(1,0) of the ITS3 layer 0 half barrel 0, everything else fixed. For the injection of misalign_ITS3_L0HB0.json",
+  "defaults": { "rigidBody": "fixed" },
+  "rules": [
+    { "match": "ITS3Layer0/ITS3CarbonForm0",
+      "rigidBody": ["TX", "TY", "RY"],
+      "calib": { "type": "legendre", "order": 1, "fix": [0, 2] } }
+  ]
+}

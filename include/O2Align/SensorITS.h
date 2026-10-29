@@ -30,7 +30,7 @@ class SensorITS final : public Volume
   void defineMatrixT2L() final;
   /// writes the Legendre or Inextensional calibration block, moved here from
   /// Volume::writeMillepedeResults since the calibration DOFSet layout is detector-specific
-  bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const final;
+  bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const final;
 };
 
 /// ITS3 tile: a segment of a cylinder whose local origin is the centre of the circle. The tracking

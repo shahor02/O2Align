@@ -1725,19 +1725,7 @@ std::unique_ptr<DOFSet> Volume::makeCalibDOFSet(const nlohmann::json& cal, const
 void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
 {
   using json = nlohmann::json;
-  std::ifstream f(jsonPath);
-  if (!f.is_open()) {
-    LOGP(fatal, "Cannot open DOF config file: {}", jsonPath);
-  }
-  auto data = geomutils::parseJsonWithComments(f);
-  json rules = data.is_array() ? data : data.value("rules", json::array());
-  if (data.is_object() && data.contains("defaults")) {
-    json defRule = data["defaults"];
-    defRule["match"] = ".*";
-    rules.insert(rules.begin(), defRule);
-  }
-  // elements which had nothing but comments
-  rules.erase(std::remove_if(rules.begin(), rules.end(), [](const json& r) { return r.is_object() && r.empty(); }), rules.end());
+  const json rules = geomutils::readJsonRules(jsonPath, "DOF config", true);
 
   // a rigidBody/calib clause defines a DOF set (and replaces an earlier one), a measurement only adds
   // a prior to DOFs which are already free: in one rule the DOF list would be read as the definition
@@ -1818,70 +1806,20 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
   });
 }
 
-Volume::InjectedMisalignment Volume::loadInjectedMisalignment(const std::string& injectedJsonPath)
-{
-  using json = nlohmann::json;
-  InjectedMisalignment inj;
-  if (injectedJsonPath.empty()) {
-    return inj;
-  }
-  std::ifstream injFile(injectedJsonPath);
-  if (!injFile.is_open()) {
-    LOGP(warn, "Cannot open injected misalignment file: {}, writing absolute values", injectedJsonPath);
-    return inj;
-  }
-  json injData = geomutils::parseJsonWithComments(injFile);
-  for (const auto& item : injData) {
-    if (item.empty()) {
-      continue;
-    }
-    int id = item["id"].get<int>();
-    if (item.contains("rigidBody")) {
-      inj.rigidBody[id] = item["rigidBody"].get<std::vector<double>>();
-    }
-    if (item.contains("matrix")) {
-      inj.matrix[id] = item["matrix"].get<std::vector<std::vector<double>>>();
-    }
-    if (item.contains("inextensional")) {
-      InjectedMisalignment::Inextensional ii;
-      const auto& inex = item["inextensional"];
-      if (inex.contains("modes")) {
-        for (auto& [key, val] : inex["modes"].items()) {
-          ii.modes[std::stoi(key)] = val.get<std::array<double, 4>>();
-        }
-      }
-      if (inex.contains("alpha")) {
-        ii.alpha = inex["alpha"].get<double>();
-      }
-      if (inex.contains("beta")) {
-        ii.beta = inex["beta"].get<double>();
-      }
-      inj.inextensional[id] = ii;
-    }
-  }
-  LOGP(info, "Loaded injected misalignment for {} sensors", injData.size());
-  return inj;
-}
-
 // The caller (writeMillepedeResults) only invokes this when getRigidBody() has free DOFs.
-bool Volume::MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, const std::vector<double>* inj, nlohmann::json& entry) const
+bool Volume::MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const
 {
   auto rbArr = nlohmann::json::array();
   for (int i = 0; i < getRigidBody()->nDOFs(); ++i) {
-    const double fitted = getFittedValue(labelToValue, mLabel.raw(i));
-    const double ref = (inj && i < static_cast<int>(inj->size())) ? (*inj)[i] : 0.0;
-    rbArr.push_back(fitted - ref);
+    rbArr.push_back(getFittedValue(labelToValue, mLabel.raw(i)));
   }
   entry["rigidBody"] = rbArr;
   return true;
 }
 
 // The caller (writeMillepedeResults) only invokes this when getCalib() has free DOFs.
-bool Volume::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const
+bool Volume::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const
 {
-  if (inj) {
-    LOGP(warn, "The injected calibration of {} (calib type {}) is not subtracted, its fitted values are absolute", getSymName(), static_cast<int>(getCalib()->type()));
-  }
   auto slots = calibSlotsToJSON(labelToValue);
   if (slots.empty()) {
     return false;
@@ -1919,13 +1857,13 @@ nlohmann::json Volume::calibSlotsToJSON(const std::map<uint32_t, double>& labelT
   return slotArr;
 }
 
-bool Volume::MP2ROOT_RB(const std::map<uint32_t, double>&, const std::vector<double>*, nlohmann::json&) const
+bool Volume::MP2ROOT_RB(const std::map<uint32_t, double>&, nlohmann::json&) const
 {
   LOGP(warn, "MP2ROOT_RB is not implemented for volume {}", getSymName());
   return false;
 }
 
-bool Volume::MP2ROOT_Calib(const std::map<uint32_t, double>&, const InjectedMisalignment*, nlohmann::json&) const
+bool Volume::MP2ROOT_Calib(const std::map<uint32_t, double>&, nlohmann::json&) const
 {
   LOGP(warn, "MP2ROOT_Calib is not implemented for volume {} (calib type {})", getSymName(), static_cast<int>(getCalib()->type()));
   return false;
@@ -1965,15 +1903,9 @@ std::map<uint32_t, double> Volume::readMillepedeResults(const std::string& mille
   return labelToValue;
 }
 
-void Volume::writeMillepedeResults(Volume* root, const std::map<uint32_t, double>& labelToValue, const std::string& outJsonPath, const std::string& injectedJsonPath)
+void Volume::writeMillepedeResults(Volume* root, const std::map<uint32_t, double>& labelToValue, const std::string& outJsonPath)
 {
   using json = nlohmann::json;
-
-  // load injected misalignment if provided (same format as closure test input), indexed by sensorID.
-  // Its use is optional: an empty injectedJsonPath yields an empty struct, and MP2JSON_RB/Calib then
-  // write the absolute fitted values (nullptr inj pointers below).
-  const InjectedMisalignment injMisal = loadInjectedMisalignment(injectedJsonPath);
-  const bool haveInj = !injectedJsonPath.empty();
 
   // collect results per volume that has RB or calib DOFs
   json output = json::array();
@@ -1985,13 +1917,10 @@ void Volume::writeMillepedeResults(Volume* root, const std::map<uint32_t, double
 
     bool write = false;
     if (vol->getRigidBody() && vol->getRigidBody()->nFreeDOFs()) {
-      const auto itRB = injMisal.rigidBody.find(id);
-      const std::vector<double>* injRBPtr = (haveInj && itRB != injMisal.rigidBody.end()) ? &itRB->second : nullptr;
-      write |= vol->MP2JSON_RB(labelToValue, injRBPtr, entry);
+      write |= vol->MP2JSON_RB(labelToValue, entry);
     }
     if (vol->getCalib() && vol->getCalib()->nFreeDOFs()) {
-      const InjectedMisalignment* injPtr = haveInj ? &injMisal : nullptr;
-      write |= vol->MP2JSON_Calib(labelToValue, injPtr, entry);
+      write |= vol->MP2JSON_Calib(labelToValue, entry);
     }
 
     if (write) {

@@ -50,32 +50,22 @@ void SensorITS::defineMatrixT2L()
 }
 
 // The caller (Volume::writeMillepedeResults) only invokes this when getCalib() has free DOFs.
-bool SensorITS::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const
+// The values are those of labelToValue (any reference is subtracted from it by the caller).
+bool SensorITS::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const
 {
   using json = nlohmann::json;
   const auto* cal = getCalib();
-  const int id = getSensorId();
   const auto calibLbl = getCalibLabels().front(); // the ITS3 deformations are not time-sliced
 
   if (cal->type() == DOFSet::Type::Legendre) {
     const auto* leg = dynamic_cast<const LegendreDOFSet*>(cal);
     const int order = leg->order();
-    static const std::vector<std::vector<double>> emptyM;
-    const auto* injMPtr = &emptyM;
-    if (inj) {
-      if (auto injIt = inj->matrix.find(id); injIt != inj->matrix.end()) {
-        injMPtr = &injIt->second;
-      }
-    }
-    const auto& injM = *injMPtr;
     json matrix = json::array();
     int idx = 0;
     for (int i = 0; i <= order; ++i) {
       json row = json::array();
       for (int j = 0; j <= i; ++j) {
-        const double fitted = getFittedValue(labelToValue, calibLbl.raw(idx));
-        double ref = (i < static_cast<int>(injM.size()) && j < static_cast<int>(injM[i].size())) ? injM[i][j] : 0.0;
-        row.push_back(fitted - ref);
+        row.push_back(getFittedValue(labelToValue, calibLbl.raw(idx)));
         ++idx;
       }
       matrix.push_back(row);
@@ -87,34 +77,19 @@ bool SensorITS::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, co
   if (cal->type() == DOFSet::Type::Inextensional) {
     const auto* inexSet = static_cast<const InextensionalDOFSet*>(cal);
     const int maxN = inexSet->maxOrder();
-    static const InjectedMisalignment::Inextensional emptyI;
-    const auto* injIPtr = &emptyI;
-    if (inj) {
-      if (auto injIt = inj->inextensional.find(id); injIt != inj->inextensional.end()) {
-        injIPtr = &injIt->second;
-      }
-    }
-    const auto& injI = *injIPtr;
-
     json inexEntry;
     json modesObj = json::object();
     for (int n = 2; n <= maxN; ++n) {
-      int off = InextensionalDOFSet::modeOffset(n);
-      std::array<double, 4> injCoeffs = {0., 0., 0., 0.};
-      if (injI.modes.contains(n)) {
-        injCoeffs = injI.modes.at(n);
-      }
+      const int off = InextensionalDOFSet::modeOffset(n);
       json modeArr = json::array();
       for (int k = 0; k < 4; ++k) {
-        modeArr.push_back(getFittedValue(labelToValue, calibLbl.raw(off + k)) - injCoeffs[k]);
+        modeArr.push_back(getFittedValue(labelToValue, calibLbl.raw(off + k)));
       }
       modesObj[std::to_string(n)] = modeArr;
     }
     inexEntry["modes"] = modesObj;
-
-    inexEntry["alpha"] = getFittedValue(labelToValue, calibLbl.raw(inexSet->alphaIdx())) - injI.alpha;
-    inexEntry["beta"] = getFittedValue(labelToValue, calibLbl.raw(inexSet->betaIdx())) - injI.beta;
-
+    inexEntry["alpha"] = getFittedValue(labelToValue, calibLbl.raw(inexSet->alphaIdx()));
+    inexEntry["beta"] = getFittedValue(labelToValue, calibLbl.raw(inexSet->betaIdx()));
     entry["inextensional"] = inexEntry;
     return true;
   }

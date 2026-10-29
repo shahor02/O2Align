@@ -1,0 +1,13 @@
+{
+  "#1": "Rigid-body misalignment of the ITS layer 3 half barrel 0 and of 2 of its 12 staves, the closure test of doc/MisalignmentTest.md, example (b). To be used with misalign_dof_ITS_L3HB0.json. Local frame of each volume, cm and rad.",
+  "rules": [
+    { "match": "ITS/ITSULayer3/ITSUHalfBarrel0",
+      "rigidBody": { "TX": 30e-4, "TY": -20e-4, "TZ": 50e-4, "RZ": 5e-5 } },
+
+    { "#": "the patterns end at the stave: '.*' would also match the stave 2x and the descendants",
+      "match": "ITS/ITSULayer3/ITSUHalfBarrel0/ITSUStave2",
+      "rigidBody": { "TX": 40e-4, "RZ": 1e-4 } },
+    { "match": "ITS/ITSULayer3/ITSUHalfBarrel0/ITSUStave7",
+      "rigidBody": { "TZ": -60e-4, "RY": 5e-5 } }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "#": "DOFs of the closure test of doc/MisalignmentTest.md, example (b): the 6 rigid-body DOFs of the ITS layer 3 half barrel 0 and of ALL its 12 staves (only 2 of them are misaligned by misalign_ITS_L3HB0.json), the mean vertex free. Everything else is fixed and defines the frame. The staves have to be all free: the automatic mean-of-children constraint of the half barrel would otherwise force the mean of just the free ones to 0, biasing the result.",
+  "defaults": { "rigidBody": "fixed" },
+  "rules": [
+    { "match": "PVT/meanVertex", "calib": { "type": "meanvertex", "free": ["X", "Y", "Z"] } },
+    { "match": "ITS/ITSULayer3/ITSUHalfBarrel0", "rigidBody": ["TX", "TY", "TZ", "RX", "RY", "RZ"] },
+    { "match": "ITS/ITSULayer3/ITSUHalfBarrel0/ITSUStave[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RX", "RY", "RZ"] }
+  ]
+}

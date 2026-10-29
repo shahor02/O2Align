@@ -37,7 +37,7 @@ class EnvelopeTPC final : public Volume
  public:
   using Volume::Volume;
 
-  bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const final;
+  bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const final;
 };
 
 } // namespace o2::alignrs

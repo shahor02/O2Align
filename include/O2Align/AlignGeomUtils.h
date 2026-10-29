@@ -46,6 +46,12 @@ inline nlohmann::json parseJsonWithComments(std::istream& in)
   });
 }
 
+/// Read the list of rules of a DOF-config-style JSON file (dofConfigJson, misAlgJson): the file is either
+/// an object with a "rules" array or a bare array. Comment members are dropped (parseJsonWithComments)
+/// and so are the elements left empty by that. An object-level "defaults" is inserted as the first rule
+/// with match ".*" if allowDefaults, else it is fatal. what names the file kind in the messages.
+nlohmann::json readJsonRules(const std::string& path, const char* what, bool allowDefaults);
+
 /// A DOF-config-style symbolic-volume pattern: std::regex_match against either the full name or
 /// the name with an implicit arbitrary prefix (so a suffix pattern can match at any hierarchy depth).
 class VolumePattern

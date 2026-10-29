@@ -42,7 +42,7 @@ Three-stage workflow, the same executable each time:
 2. `pede` (external, from Millepede-II) → `millepede.res`.
 3. `--output MilleRes` — reads no data at all (the workflow inserts `NoInpDummyOutSpec`), only
    rebuilds the hierarchy and translates `millepede.res` into `result.json`, subtracting the
-   injected misalignment if `misAlgJson` is given.
+   injected misalignment if `misAlgJson` is given (and writing `closure.json`).
 
 With `MilleRes`, `WeakModesDiag` also runs `diagnoseWeakModes` ([WeakModes.h](include/O2Align/WeakModes.h)):
 per detector branch it writes `weakModes.json/.root` (prefix `AlignParams.weakModesOutBase`) with the amplitude of every
@@ -133,8 +133,8 @@ sensor's local frame via `computeJacobianL2T`, then transported level by level w
 `getJL2P()`, each volume with a `RigidBodyDOFSet` contributing its columns. The top volume of the
 detector participates; the root, having no DOFs, ends the chain.
 
-The chain is implemented once, in `buildPointGlobals()`; `applyMisalignment()` reuses its first
-step (`getLeafRigidBodyDerivatives`). The derivatives are those of the prediction (= minus those of
+The chain is implemented once, in `buildPointGlobals()`, called once per point in `fillGBLPoints`; its result
+is both added to the GBL point and used by `applyMisalignment()` to inject the misalignment. The derivatives are those of the prediction (= minus those of
 the residual), as Millepede expects; where the *measurement* depends on a parameter (the mean-vertex
 prior) the sign is flipped accordingly. Calibration derivatives are collected from one volume only,
 the direct parent of the measurement leaf (for ITS3 that is the half-barrel sensor above the pseudo
@@ -158,10 +158,15 @@ Two JSON files drive a run, both documented by example in the README:
   an implicit leading `*`), a `rigidBody` and/or `calib` clause. Rules are applied in order, a later
   match replaces an earlier DOF set. This is the only place where DOFs are freed or fixed; the
   hierarchy construction itself fixes nothing.
-- `misAlgJson` — misalignment injected per sensor ID ([MisalignmentUtils](include/O2Align/MisalignmentUtils.h)),
-  reused at stage 3 as the reference to subtract from the fitted values. It is applied when the GBL
-  points are filled, which is serial; only the detector `prepareTrack` + KF refit run under OpenMP
-  (`nthreads`).
+- `misAlgJson` — misalignment to inject (closure test), empty = none; there are no other switches. A rule file in the
+  style of `dofConfigJson` ([MisalignmentUtils](include/O2Align/MisalignmentUtils.h) `MisalignmentConfig`, documented in
+  [doc/MisalignmentTest.md](doc/MisalignmentTest.md)): `match` regex, `rigidBody` DOF values, `calib` values. It is
+  validated in `buildHierarchy` against the final DOF configuration (a DOF which is not free is `LOGP(fatal)`). The values
+  are injected linearly with the derivatives of `buildPointGlobals` in `applyMisalignment`, only
+  `"model": "exact"` ITS3 Legendre/inextensional use the non-linear evaluators. At stage 3 the injected values (and the
+  `misAlgRefMilleRes` control run) are subtracted label by label from the fit before `result.json` is written, and the sensor-level
+  `closure.json` is produced. It is applied when the GBL points are filled, which is serial; only the detector
+  `prepareTrack` + KF refit run under OpenMP (`nthreads`).
 
 ## Repository notes
 

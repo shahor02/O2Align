@@ -2,6 +2,7 @@
 #ifndef O2ALIGN_WEAKMODES_H
 #define O2ALIGN_WEAKMODES_H
 
+#include <array>
 #include <map>
 #include <string>
 #include <cstdint>
@@ -11,6 +12,24 @@ namespace o2::alignrs
 {
 class Volume;
 class Detector;
+
+/// Displacement of a sensor produced by a set of fitted (or injected) rigid-body values.
+struct SensorDisplacement {
+  const Volume* top{};        ///< top volume of the detector branch the sensor belongs to
+  const Volume* vol{};        ///< the sensor
+  int layer{-1};              ///< layer parsed from the symbolic name, -1 if none
+  std::array<double, 3> x{};  ///< position of the sensor centre, cm
+  std::array<double, 3> d{};  ///< displacement of the centre, cm
+  std::array<double, 3> w{};  ///< rotation vector, rad
+};
+
+/// Compose the rigid-body values (raw label -> value, absent = 0) down the hierarchy, like
+/// Detector::MP2AlignParams does, into the displacement of every sensor, i.e. of every volume which is a
+/// leaf and neither virtual nor pseudo. An ITS3 half barrel (a volume whose children are all pseudo tiles)
+/// is a sensor as well: the displacement of its local origin and its rotation are given, the non-rigid
+/// calibration DOFs are not included. Independent of the hierarchy level which carries the values, which
+/// makes it the quantity to compare an alignment result with the injected misalignment of a closure test.
+std::vector<SensorDisplacement> computeSensorDisplacements(Volume* root, const std::map<uint32_t, double>& labelToValue);
 
 /// Diagnose the global deformation modes of Volume::GlobalMode in the fitted rigid-body corrections.
 ///

@@ -1,0 +1,10 @@
+{
+  "#": "Misalignment of the ITS3 layer 0 half barrel 0 (sensor id 0), the closure test of doc/MisalignmentTest.md, example (a). To be used with misalign_dof_ITS3_L0HB0.json.",
+  "rules": [
+    { "#": "rigid body, local frame of the half barrel, cm and rad",
+      "match": "ITS3Layer0/ITS3CarbonForm0",
+      "rigidBody": { "TX": 0.001, "TY": 0.0005, "RY": 0.0001 },
+      "#calib": "exact non-linear Legendre deformation (needs the MC truth): the mode L(1,0) of the DOF config. Remove the 'model' key to inject it linearly, through the derivatives of the fit (works for data as well)",
+      "calib": { "type": "legendre", "model": "exact", "values": { "L(1,0)": 0.0008 } } }
+  ]
+}

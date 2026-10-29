@@ -105,11 +105,10 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   float extraClsErrYTOF = 0.f;
   float extraClsErrZTOF = 0.f;
 
-  // misalignment simulation
-  bool doMisalignmentLeg = false;  // simulate Legendre deformation on ITS3 layers
-  bool doMisalignmentRB = false;   // simulate rigid body misalignment on ITS3 layers
-  bool doMisalignmentInex = false; // simulate in-extensional deformation on ITS3 layers
-  std::string misAlgJson;          // JSON file with deformation and/or rigid body params
+  // misalignment simulation (closure test), see doc/MisalignmentTest.md
+  std::string misAlgJson;                    // rule file naming the volumes, DOFs and values of the misalignment to inject, none if empty
+  std::string misAlgRefMilleRes;             // millepede.res of a control run (same data and DOF config, no misalignment) subtracted at MilleRes stage in addition to the injected values: needed for the closure on real data
+  std::string closureOutJson = "closure.json"; // MilleRes stage with misAlgJson: sensor-level closure summary
 
   // DOF configuration (JSON file defining which volumes have which DOFs)
   std::string dofConfigJson; // if empty, no DOFs are configured

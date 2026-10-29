@@ -56,22 +56,6 @@ struct ModeEquationOptions {
 
 class Volume
 {
- protected:
-  /// injected misalignment loaded from a closure-test JSON, indexed by sensor ID; used by
-  /// writeMillepedeResults to subtract the known input from the fitted values. Protected (rather
-  /// than private) so the type is nameable in the MP2JSON_Calib/MP2ROOT_Calib overrides. Declared
-  /// first since it must be visible when used as a parameter type by the public methods below.
-  struct InjectedMisalignment {
-    std::map<int, std::vector<double>> rigidBody;
-    std::map<int, std::vector<std::vector<double>>> matrix;
-    struct Inextensional {
-      std::map<int, std::array<double, 4>> modes;
-      double alpha{0.};
-      double beta{0.};
-    };
-    std::map<int, Inextensional> inextensional;
-  };
-
  public:
   using Ptr = std::unique_ptr<Volume>;
   using SensorMapping = std::map<Label, Volume*>;
@@ -90,7 +74,7 @@ class Volume
   static void applyDOFConfig(Volume* root, const std::string& jsonPath);
   /// parse millepede.res into label -> fitted value, fixed parameters included (at their preset value)
   static std::map<uint32_t, double> readMillepedeResults(const std::string& milleResPath);
-  static void writeMillepedeResults(Volume* root, const std::map<uint32_t, double>& labelToValue, const std::string& outJsonPath, const std::string& injectedJsonPath = "");
+  static void writeMillepedeResults(Volume* root, const std::map<uint32_t, double>& labelToValue, const std::string& outJsonPath);
 
   /// create the common root of the whole hierarchy: a fictitious volume with the identity L2G, whose
   /// children are the top volumes of the individual detectors. It is not rigid-body alignable, hence
@@ -286,6 +270,14 @@ class Volume
     }
   }
 
+  /// visit the direct children
+  void forEachChild(const std::function<void(const Volume*)>& visitor) const
+  {
+    for (const auto& c : mChildren) {
+      visitor(c.get());
+    }
+  }
+
   std::string getSymName() const noexcept { return mSymName; }
   Label getLabel() const noexcept { return mLabel; }
   Volume* getParent() const { return mParent; }
@@ -350,11 +342,11 @@ class Volume
   const Matrix66& getJL2P() const { return mJL2P; }
   const Matrix66& getJP2L() const { return mJP2L; }
 
-  /// write the rigid-body block of the closure-test JSON output for this volume, subtracting the
-  /// injected reference value (if inj is not nullptr) from the fitted one. Generic over any
+  /// write the rigid-body block of the JSON output (result.json) for this volume, the fitted values
+  /// as given in labelToValue. Generic over any
   /// RigidBodyDOFSet layout, hence implemented once in the base class. The caller
   /// (writeMillepedeResults) only calls this when the volume has free rigid-body DOFs.
-  virtual bool MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, const std::vector<double>* inj, nlohmann::json& entry) const;
+  virtual bool MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const;
   /// local delta (LOC->LOC, l' = delta*l) built from the fitted rigid-body parameters of this volume.
   /// Returns false if it has no free rigid-body DOF or all its fitted values are 0 (fixed parameters
   /// are absent from labelToValue, hence count as 0).
@@ -367,14 +359,13 @@ class Volume
   }
   /// write the calibration block of the closure-test JSON output for this volume. The base
   /// implementation writes, under "calib", the absolute fitted values of the free DOFs of every
-  /// calibration slot (see calibSlotsToJSON); a detector-specific layout or the subtraction of an
-  /// injected calibration (inj, nullptr if none) needs an override. The caller only calls this when
+  /// calibration slot (see calibSlotsToJSON); a detector-specific layout needs an override. The caller only calls this when
   /// the volume has free calibration DOFs.
-  virtual bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const;
+  virtual bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const;
 
   /// ROOT-output counterparts of MP2JSON_RB/MP2JSON_Calib, same signature, not yet implemented.
-  virtual bool MP2ROOT_RB(const std::map<uint32_t, double>& labelToValue, const std::vector<double>* inj, nlohmann::json& entry) const;
-  virtual bool MP2ROOT_Calib(const std::map<uint32_t, double>& labelToValue, const InjectedMisalignment* inj, nlohmann::json& entry) const;
+  virtual bool MP2ROOT_RB(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const;
+  virtual bool MP2ROOT_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const;
 
   uint32_t getDataCounter() const noexcept { return mStat; }
   void incDataCounter() noexcept { ++mStat; }
@@ -407,7 +398,6 @@ class Volume
   nlohmann::json calibSlotsToJSON(const std::map<uint32_t, double>& labelToValue) const;
 
  private:
-  static InjectedMisalignment loadInjectedMisalignment(const std::string& injectedJsonPath);
   /// apply the "fixed"/"free"/"fix" clauses of a calib rule, common to all calibration DOF types
   static void applyFreeFixConfig(DOFSet& dofSet, const nlohmann::json& cal);
   /// DOF sets described by the rigidBody / calib clauses of a rule of the DOF configuration

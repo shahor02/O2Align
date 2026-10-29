@@ -1,35 +1,14 @@
 # Simulate ITS/ITS3 misalignment and re-alignment
 
+A known misalignment, defined by a file of rules (volumes, DOFs, values), is injected into the data
+by setting `AlignParams.misAlgJson`; the result of the alignment is then given relative to it. See
+[doc/MisalignmentTest.md](doc/MisalignmentTest.md) for the format of the file, the checks against the DOF
+configuration, two examples (ITS3 layer 0 half barrel 0; ITS layer 3 half barrel 0 and two of its staves) and
+the instructions of the closure test.
 
 ```bash
-o2-dev-alignment-workflow --track-sources ITS --output MilleData,MilleSteer --configKeyValues "AlignmentParams.minPt=0.1;AlignmentParams.doMisalignmentLeg=true;AlignmentParams.doMisalignmentRB=true;AlignmentParams.misAlgJson=test_closure.json;AlignmentParams.extraClsErrZ[0]=10e-4;AlignmentParams.extraClsErrY[0]=10e-4;AlignmentParams.extraClsErrZ[3]=10e-4;AlignmentParams.extraClsErrY[3]=10e-4;AlignmentParams.dofConfigJson=dofSet.json" -b --run
+o2-dev-alignment-workflow --with-its3 --track-sources ITS --output MilleData,MilleSteer --configKeyValues "AlignParams.minPt=0.1;AlignParams.dofConfigJson=doc/misalign_dof_ITS3_L0HB0.json;AlignParams.misAlgJson=doc/misalign_ITS3_L0HB0.json" -b --run
 ```
-
-test_closure.json:
-```json
-[
-  {
-    "id": 0,
-    "rigidBody": [0.001, 0.0005, 0.0, 0.0, 0.0001, 0.0],
-    "matrix": [[0.0], [0.0008, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]]
-  }
-]
-```
-
-dofSet.json:
-```json
-{
-  "defaults": { "rigidBody": "fixed" },
-  "rules": [
-    {
-      "match": "ITS3Layer0/ITS3CarbonForm0",
-      "rigidBody": ["TX", "TY", "RY"],
-      "calib": { "type": "legendre", "order": 1, "fix": [0, 2] }
-    }
-  ]
-}
-```
-
 
 ## Running workflow
 

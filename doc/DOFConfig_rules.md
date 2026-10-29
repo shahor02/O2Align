@@ -1,6 +1,6 @@
 # DOF Configuration Rules
 
-The name of the JSON file for alignment configuration is passed to the workflow by AlignParams.dofConfigJson configurable. Below the rules to build such file are described. Note that any JSON input 
+The name of the JSON file for alignment configuration is passed to the workflow by AlignParams.dofConfigJson configurable. Below the rules to build such file are described. The misalignment to inject for a closure test (`AlignParams.misAlgJson`) is given by a file of rules of the same style, see [MisalignmentTest.md](MisalignmentTest.md). Note that any JSON input 
 `"#<something>" : "your comment"` or `"_comment<somethig>" : "your comment"` are ignored as user comments (avoid repeting `<something>` to not repeat the same key twice).
 
 `Volume::applyDOFConfig` traverses the hierarchy and applies matching rules to non-pseudo volumes. A `defaults` object, if present, is applied first to every volume; rules then run in order, and a later matching clause replaces the earlier DOF set of the same kind. Patterns are matched against symbolic volume names, as regular expressions, also retried with an implicit leading `.*`. Since `.*` can match `/`, use exact-depth patterns when targeting a hierarchy level.

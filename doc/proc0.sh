@@ -2,21 +2,40 @@
 
 #Lanes=3 Nthreads=5 runOPTL="-b --run" ./proc0.sh  | tee rr1.log
 
-: ${DataDir:="data/_alice_data_2025_LHC25ab_562862_apass1_alignment_its_0010_o2_ctf_run00562862_orbit0261432416_tf0000451373_epn313"}
+if [[ -z $DataDir ]] || [[ -z $Config ]] ; then
+  echo "Config $Config or DataDir $DataDir are nor defined"
+  exit 1  
+fi
 
-: ${confString:="AlignParams.dofConfigJson=/home/shahoian/alice/O2Align/doc/ITS_RB_from_staves.json"}
+export ALICEO2_CCDB_CURL_TIMEOUT_DOWNLOAD=200
+
+: ${ConfString:="AlignParams.dofConfigJson=$Config;AlignParams.maxChi2Ndf=15;AlignParams.useMultiTrackPVConstraint=2;AlignParams.maxTracksPerMultiTrackPV=20;AlignParams.minITSClsTrack=6;AlignParams.MVTimeSlotsJson=/data0/devAlg/data/MV_B0BPBM.json;$EXTRACONF;"}
+#: ${ConfString:="AlignParams.dofConfigJson=$Config;AlignParams.useMultiTrackPVConstraint=2;AlignParams.maxTracksPerMultiTrackPV=20;AlignParams.minITSClsTrack=6;AlignParams.MVTimeSlotsJson=/data0/devAlg/data/MV_B0BPBM.json"}
+#: ${ConfString:="AlignParams.dofConfigJson=$Config;AlignParams.useMultiTrackPVConstraint=2;AlignParams.maxTracksPerMultiTrackPV=20;"}
 #export ALICEO2_CCDB_LOCALCACHE=ccdb
+
+: ${Lanes:=1}
+: ${TFTHROT:=$Lanes}
+: ${DetList:=ITS}
+: ${TrackSrc:=ITS,ITS-TPC,ITS-TPC-TRD,ITS-TPC-TRD-TOF,ITS-TPC-TOF}
+: ${OutType:="MilleData,MilleSteer"}
 
 export DPL_DISABLE_TPC_TRIGGER_READER=1
 export DPL_REPORT_PROCESSING=1
-GLOSET="--shm-segment-size ${SHMSIZE:-8000000000} --hbfutils-config ${DataDir}/o2_tfidinfo.root,upstream --timeframes-rate-limit ${TFTHROT:-1} --timeframes-rate-limit-ipcid $(($(date +%s%3N) % 1234567))"
 
-: ${PVOPT:="pvertexer.useMeanVertexConstraint=false;pvertexer.meanVertexExtraErrSelection=0.2;pvertexer.iniScale2=100;pvertexer.acceptableScale2=10."}
+if [[ $OutType == *"MilleRes"* ]] || [[ $OutType == "MilleSteer" ]] || [[ $OutType == *"WeakModesDiag"* ]] ; then
+    : ${TimeStamp:=1746914681240}
+      o2-dev-alignment-workflow  --shm-segment-size ${SHMSIZE:-8000000000} --disable-mc  --detectors ${DetList}  --output $OutType --hbfutils-config hbfutils --configKeyValues "HBFUtils.startTime=$TimeStamp;${ConfString};" ${runOPTL}
+      echo "Extracted $OutType"
+      exit 0
+fi
+
+GLOSET="--shm-segment-size ${SHMSIZE:-6000000000} --hbfutils-config ${DataDir}/o2_tfidinfo.root,upstream --timeframes-rate-limit ${TFTHROT} --timeframes-rate-limit-ipcid $(($(date +%s%3N) % 1234567))"
 
 cmd="o2-reader-driver-workflow $GLOSET --max-tf ${MAXTF:--1} | \
-o2-dev-alignment-workflow $GLOSET --disable-mc --pipeline barrel-alignment:${Lanes:-1}  --input-dir $DataDir --nthreads ${Nthreads:-1} --output MilleData,MilleSteer \
---track-sources ${TrackSrc:-ITS,ITS-TPC,ITS-TPC-TRD,ITS-TPC-TRD-TOF,ITS-TPC-TOF} --detectors ${DetList:-ITS}  --config-macro ${CONFMACRO:-none} \
---configKeyValues \"$PVOPT;$confString\" ${runOPTL} "
+o2-dev-alignment-workflow $GLOSET --disable-mc --pipeline barrel-alignment:${Lanes}  --input-dir $DataDir --nthreads ${Nthreads:-1} --output MilleData,MilleSteer \
+--track-sources ${TrackSrc} --detectors ${DetList}  --config-macro ${CONFMACRO:-none} \
+--configKeyValues \"$PVOPT;$ConfString\" ${runOPTL} "
 
 echo "Executing: $cmd"
 echo "$cmd" > wf.log

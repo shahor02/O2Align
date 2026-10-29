@@ -348,26 +348,32 @@ class AlignmentSpec final : public Task
   // build track to vertex association
   void buildT2V();
 
-  // apply some misalignment on inner ITS3 layers
-  // it can happen that a measurement is pushed outside of
-  // ITS3 acceptance so false is to discard track
-  bool applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk);
-
-  // combine the fitted rigid-body corrections with the initial alignment and write them as AlignParam
-  // vector, regularized if OutputOpt::Regularize is requested
-  void writeAlignParams(const std::map<uint32_t, double>& labelToValue) const;
-
   /// global (alignment + calibration) derivatives of one measured point, with their labels
   struct PointGlobals {
     std::vector<int> labels;
     Eigen::MatrixXd der;
   };
+
+  // inject the misalignment of mMisalignment into the residual of a measured point: the linear part
+  // through the derivatives of the point (globals), the exact ITS3 model, if requested, by its own
+  // evaluators. The exact Legendre shift can push a measurement outside of the ITS3 acceptance:
+  // false is to discard the track.
+  bool applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk, const PointGlobals& globals);
+  bool applyExactMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk, const Volume& halfBarrel, const SensorMisalignment& model);
+  // fit result minus the reference run and the injected misalignment, label by label
+  std::map<uint32_t, double> subtractInjected(const std::map<uint32_t, double>& fitted) const;
+  // sensor-level closure summary of the subtracted result, logged and written to Params::closureOutJson
+  void writeClosureReport(const std::map<uint32_t, double>& relative) const;
+
+  // combine the fitted rigid-body corrections with the initial alignment and write them as AlignParam
+  // vector, regularized if OutputOpt::Regularize is requested
+  void writeAlignParams(const std::map<uint32_t, double>& labelToValue) const;
+
   PointGlobals buildPointGlobals(const FrameInfoExt& frame, const TrackD& wTrk, std::vector<Volume*>& contributingVolumes);
 
   // steps of updateTimeDependentParams
   void initOnFirstTF();
   void initVertexer();
-  void initMisalignment();
   void updateTPCCalibration(ProcessingContext& pc);
   void loadConfigMacro();
   void executeConfigMacro();
@@ -415,7 +421,7 @@ class AlignmentSpec final : public Task
   int mLane = 0;
   int mNLanes = 1;
   std::string mMilleOutName{};
-  MisalignmentModel mMisalignment;
+  std::optional<MisalignmentConfig> mMisalignment; // injected misalignment, if AlignParams.misAlgJson is given
 };
 
 void AlignmentSpec::init(InitContext& ic)
@@ -849,7 +855,6 @@ void AlignmentSpec::initOnFirstTF()
   if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes]) {
     initVertexer();
   }
-  initMisalignment();
 }
 
 void AlignmentSpec::initVertexer()
@@ -858,14 +863,6 @@ void AlignmentSpec::initVertexer()
     return;
   }
   mVertexer.init();
-}
-
-void AlignmentSpec::initMisalignment()
-{
-  if (!(mParams->doMisalignmentLeg || mParams->doMisalignmentRB || mParams->doMisalignmentInex)) {
-    return;
-  }
-  mMisalignment = loadMisalignmentModel(mParams->misAlgJson); // empty model for an empty path
 }
 
 // Derivatives of the prediction of one measured point (i.e. minus those of the residual, as Millepede
@@ -993,6 +990,9 @@ void AlignmentSpec::buildHierarchy()
     if (mPVT->getFreeDOFLabels().empty()) {
       LOGP(info, "Mean vertex position and slope are fixed, they are imposed as a prior w/o being aligned");
     }
+  }
+  if (!mParams->misAlgJson.empty()) { // validated against the final DOF configuration, and needed at every stage
+    mMisalignment = MisalignmentConfig::load(mHierarchy.get(), mParams->misAlgJson, !mOutOpt[o2::alignrs::OutputOpt::ProcessData] || mUseMC);
   }
   // the steering files (mp2tree.txt/mp2con.txt/mp2param.txt) are written from endOfStream(), not here:
   // with ProcessData, Volume::getDataCounter() is only final once every TF of this lane is processed;
@@ -1230,7 +1230,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
   if (mParams->useStableRef) {
     refLin = &(trkRef = wTrk);
   }
-  // the MC index of the ITS part, needed only by the MC-based misalignment simulation
+  // the MC index of the ITS part, needed only by the MC-based exact ITS3 misalignment simulation
   const auto itsGID = mRecoData->getITSContributorGID(resTrack.gid);
   const size_t iTrk = itsGID.isIndexSet() ? itsGID.getIndex() : 0;
   points.clear();
@@ -1286,6 +1286,12 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
 
     // wTrk is now in the measurment frame
     gbl::GblPoint point(jacGBL);
+    // global derivatives of the point (the vertex point has no alignable volume behind it), they also
+    // serve to inject the misalignment
+    PointGlobals globals;
+    if (!frame.isVertex()) {
+      globals = buildPointGlobals(frame, wTrk, contributingVolumes);
+    }
     // measurement
     const auto& cluster = frame.cluster;
     Eigen::Vector2d res = Eigen::Vector2d::Zero();
@@ -1295,7 +1301,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       res << cluster.getY() - wTrk.getY(), cluster.getZ() - wTrk.getZ();
 
       // here we can apply some misalignment on the measurment
-      if (!applyMisalignment(res, frame, wTrk, iTrk)) {
+      if (mMisalignment && !frame.isVertex() && !applyMisalignment(res, frame, wTrk, iTrk, globals)) {
         return false;
       }
       if (!getMeasurementPrecision(cluster, prec)) {
@@ -1320,8 +1326,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       lt.clearFast(); // clear if accounted
     }
 
-    if (!frame.isVertex()) { // the vertex point has no alignable volume behind it
-      const auto globals = buildPointGlobals(frame, wTrk, contributingVolumes);
+    if (!frame.isVertex()) {
       point.addGlobals(globals.labels, globals.der);
     } else if (addMeas) {
       // Per-track PV constraint: the track passes through the true vertex V, measured (i) by the
@@ -1631,23 +1636,56 @@ void AlignmentSpec::buildT2V()
   }
 }
 
-bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk)
+// The misalignment is injected as a shift of the measured residual, with the sign of the derivatives
+// of the prediction: res += d(pred)/d(DOF) * value, so that a consistent fit returns the injected values.
+// The derivatives are those of the fit itself (PointGlobals): the rigid-body DOFs of the leaf and all
+// its ancestors and the calibration DOFs of the parent of the leaf, no Z shift where Z is not measured.
+bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk, const PointGlobals& globals)
 {
-  if (!o2::its3::constants::detID::isDetITS3(frame.cluster.getSensorID())) {
-    return true;
+  const Eigen::Vector2d resOrig = res;
+  for (size_t k = 0; k < globals.labels.size(); ++k) {
+    if (const double val = mMisalignment->getLinearValue(static_cast<uint32_t>(globals.labels[k])); val != 0.) {
+      res += globals.der.col(k) * val;
+    }
+  }
+  const auto* leaf = mChip2Hiearchy.at(frame.label); // the same volume as in buildPointGlobals
+  if (const auto* exact = mMisalignment->getExact(leaf->getParent())) {
+    if (!applyExactMisalignment(res, frame, wTrk, iTrk, *leaf->getParent(), *exact)) {
+      return false;
+    }
   }
 
-  const int sensorID = o2::its3::constants::detID::getSensorID(frame.cluster.getSensorID());
-  const int layerID = o2::its3::constants::detID::getDetID2Layer(frame.cluster.getSensorID());
+  if (mOutOpt[o2::alignrs::OutputOpt::MisRes] && mDBGOut && res != resOrig) {
+    (*mDBGOut) << "mis"
+               << "dy=" << res[0]
+               << "dz=" << res[1]
+               << "ddy=" << (res[0] - resOrig[0])
+               << "ddz=" << (res[1] - resOrig[1])
+               << "det=" << static_cast<int>(leaf->getLabel().det())
+               << "sens=" << leaf->getSensorId()
+               << "z=" << frame.cluster.getZ()
+               << "phi=" << frame.alpha
+               << "\n";
+  }
+  return true;
+}
+
+// Non-linear deformation of an ITS3 half barrel (see MisalignmentConfig, "model": "exact"):
+//  - Legendre: the radial deformation seen along the true (MC) trajectory, its shift can push the
+//    measurement outside of the ITS3 acceptance
+//  - in-extensional: the displacement field u(phi,z) = (u_phi, u_z, u_r),
+//    dy = -u_phi + y' * u_r,  dz = -u_z + z' * u_r
+bool AlignmentSpec::applyExactMisalignment(Eigen::Vector2d& res, const FrameInfoExt& frame, const TrackD& wTrk, size_t iTrk, const Volume& halfBarrel, const SensorMisalignment& model)
+{
+  const int sensorID = halfBarrel.getSensorId();
   const MisalignmentFrame misFrame{
     .sensorID = sensorID,
-    .layerID = layerID,
+    .layerID = sensorID / 2,
     .x = frame.x,
     .alpha = frame.alpha,
     .z = frame.cluster.getZ()};
 
-  // --- Legendre deformation (non-rigid-body) ---
-  if (mParams->doMisalignmentLeg && mIsITS3 && mUseMC) {
+  if (model.hasLegendre) { // the load has checked that the MC is available
     const auto prop = o2::base::PropagatorD::Instance();
 
     const auto lbl = mRecoData->getITSTracksMCLabels()[iTrk];
@@ -1671,56 +1709,90 @@ bool AlignmentSpec::applyMisalignment(Eigen::Vector2d& res, const FrameInfoExt& 
       return false;
     }
 
-    const auto shift = evaluateLegendreShift(mMisalignment[sensorID], misFrame, TrackSlopes::computeTrackSlopes(mcAtCl.getSnp(), mcAtCl.getTgl()));
+    const auto shift = evaluateLegendreShift(model, misFrame, TrackSlopes::computeTrackSlopes(mcAtCl.getSnp(), mcAtCl.getTgl()));
     if (!shift.accepted) {
       return false;
     }
-
     res[0] += shift.dy;
     res[1] += shift.dz;
   }
-
-  // --- Rigid body misalignment ---
-  // Must use the same derivative chain as GBL:
-  //   dres/da_parent = dres/da_TRK * J_L2T_tile * J_L2P_tile
-  // The tile is a pseudo-volume; Millepede fits at the halfBarrel (parent) level.
-  if (mParams->doMisalignmentRB) {
-    // use the label assigned by the detector owning the frame: it carries the right detector index
-    const auto volIt = mChip2Hiearchy.find(frame.label);
-    if (volIt == mChip2Hiearchy.end()) {
-      return true; // sensor not in hierarchy, skip
-    }
-    const auto* tileVol = volIt->second;
-
-    // TRK -> tile LOC -> halfBarrel LOC (same chain as the GBL hierarchy walk)
-    const Matrix26 der = getLeafRigidBodyDerivatives(*tileVol, frame, makeDerivativeContext(frame, wTrk)) * tileVol->getJL2P();
-    // apply: delta_res = der * delta_a_halfBarrel
-    const Eigen::Vector2d shift = der * Eigen::Map<const Eigen::Matrix<double, 6, 1>>(mMisalignment[sensorID].rigidBody.data());
-    res[0] += shift[0]; // dy
-    res[1] += shift[1]; // dz
-  }
-
-  // --- In-extensional deformation ---
-  // displacement field u(phi,z) = (u_phi, u_z, u_r)
-  //   dy = -u_phi + y' * u_r,  dz = -u_z + z' * u_r
-  if (mParams->doMisalignmentInex) {
-    const auto shift = evaluateInextensionalShift(mMisalignment[sensorID], misFrame, TrackSlopes::computeTrackSlopes(wTrk.getSnp(), wTrk.getTgl()));
+  if (model.hasInextensional) {
+    const auto shift = evaluateInextensionalShift(model, misFrame, TrackSlopes::computeTrackSlopes(wTrk.getSnp(), wTrk.getTgl()));
     res[0] += shift.dy;
     res[1] += shift.dz;
   }
-
-  if (mOutOpt[o2::alignrs::OutputOpt::MisRes] && mDBGOut) {    
-    (*mDBGOut) << "mis"
-               << "dy=" << res[0]
-               << "dz=" << res[1]
-               << "sens=" << sensorID
-               << "lay=" << layerID
-               << "z=" << frame.cluster.getZ()
-               << "phi=" << frame.alpha
-               << "\n";
-  }
-
   return true;
+}
+
+// Result of a closure test: the fit minus the control run (misAlgRefMilleRes: on real data the fit
+// returns the true misalignment as well) minus the injected values. Labels absent from the fit count as 0.
+std::map<uint32_t, double> AlignmentSpec::subtractInjected(const std::map<uint32_t, double>& fitted) const
+{
+  auto relative = fitted;
+  if (!mParams->misAlgRefMilleRes.empty()) {
+    for (const auto& [label, val] : Volume::readMillepedeResults(mParams->misAlgRefMilleRes)) {
+      relative[label] -= val;
+    }
+  }
+  for (const auto& [label, val] : mMisalignment->getInjectedLabels()) {
+    relative[label] -= val;
+  }
+  return relative;
+}
+
+namespace
+{
+// displacement statistics of a group of sensors (a detector branch, a layer)
+struct ClosureGroup {
+  std::string branch;
+  int layer{-1};
+  int n{0};
+  double sumRes2{0.}, maxRes{0.}, sumInj2{0.}, sumResRot2{0.}, sumInjRot2{0.}; // |d|^2 in um^2, rotations in urad^2
+};
+} // namespace
+
+// Sensor-level closure: per detector branch and layer, the displacement of the sensors produced by the
+// subtracted result (what the fit got wrong) against the one of the injection. At the level of the
+// volumes the result is ambiguous when a DOF is free at several nested levels (the automatic
+// mean-of-children constraint moves a part of the injection to the parent), at the level of the
+// sensors it is not. See doc/MisalignmentTest.md.
+void AlignmentSpec::writeClosureReport(const std::map<uint32_t, double>& relative) const
+{
+  constexpr double CmToUm = 1e4, RadToUrad = 1e6;
+  const auto norm = [](const std::array<double, 3>& v) { return std::sqrt((v[0] * v[0]) + (v[1] * v[1]) + (v[2] * v[2])); };
+  const auto resid = computeSensorDisplacements(mHierarchy.get(), relative);
+  const auto inj = computeSensorDisplacements(mHierarchy.get(), mMisalignment->getInjectedLabels());
+
+  std::map<std::pair<std::string, int>, ClosureGroup> groups;
+  for (size_t i = 0; i < resid.size(); ++i) {
+    auto& g = groups[{resid[i].top->getSymName(), resid[i].layer}];
+    g.branch = resid[i].top->getSymName();
+    g.layer = resid[i].layer;
+    ++g.n;
+    const double dRes = norm(resid[i].d) * CmToUm, dInj = norm(inj[i].d) * CmToUm;
+    g.sumRes2 += dRes * dRes;
+    g.maxRes = std::max(g.maxRes, dRes);
+    g.sumInj2 += dInj * dInj;
+    g.sumResRot2 += std::pow(norm(resid[i].w) * RadToUrad, 2);
+    g.sumInjRot2 += std::pow(norm(inj[i].w) * RadToUrad, 2);
+  }
+  auto jsonOut = nlohmann::json::array();
+  LOGP(info, "Closure at the sensor level (displacement of the sensor centres, residual = fit - reference - injected):");
+  LOGP(info, "  {:<12s} {:>5s} {:>7s} {:>12s} {:>12s} {:>12s} {:>14s} {:>14s}", "branch", "layer", "Nsens", "res.rms[um]", "res.max[um]", "inj.rms[um]", "res.rot[urad]", "inj.rot[urad]");
+  for (const auto& [key, g] : groups) {
+    const double rms = std::sqrt(g.sumRes2 / g.n), injRms = std::sqrt(g.sumInj2 / g.n), rotRms = std::sqrt(g.sumResRot2 / g.n), injRot = std::sqrt(g.sumInjRot2 / g.n);
+    if (rms == 0. && injRms == 0. && rotRms == 0. && injRot == 0.) {
+      continue; // nothing fitted nor injected there
+    }
+    LOGP(info, "  {:<12s} {:>5d} {:>7d} {:>12.3f} {:>12.3f} {:>12.3f} {:>14.3f} {:>14.3f}", g.branch, g.layer, g.n, rms, g.maxRes, injRms, rotRms, injRot);
+    jsonOut.push_back({{"branch", g.branch}, {"layer", g.layer}, {"nSensors", g.n}, {"residualRmsUm", rms}, {"residualMaxUm", g.maxRes}, {"injectedRmsUm", injRms}, {"residualRotRmsUrad", rotRms}, {"injectedRotRmsUrad", injRot}});
+  }
+  std::ofstream fout(mParams->closureOutJson);
+  if (!fout.is_open()) {
+    LOGP(fatal, "Cannot open output file: {}", mParams->closureOutJson);
+  }
+  fout << jsonOut.dump(2) << '\n';
+  LOGP(info, "Wrote the closure summary to {}", mParams->closureOutJson);
 }
 
 // For every attached detector with a geometry counterpart: read its initial alignment (the CCDB
@@ -1789,8 +1861,17 @@ void AlignmentSpec::endOfStream(EndOfStreamContext& /*ec*/)
     if (mOutOpt[o2::alignrs::OutputOpt::MilleRes] || mOutOpt[o2::alignrs::OutputOpt::WeakModesDiag]) {
       const auto fitted = Volume::readMillepedeResults(mParams->milleResFile);
       if (mOutOpt[o2::alignrs::OutputOpt::MilleRes]) { // conversion of pede results to alignment and calibration objects
-        Volume::writeMillepedeResults(mHierarchy.get(), fitted, mParams->milleResOutJson, mParams->misAlgJson);
-        if (!mParams->algParamsOutFile.empty()) {
+        if (!mParams->misAlgRefMilleRes.empty() && !mMisalignment) {
+          LOGP(warn, "AlignParams.misAlgRefMilleRes is ignored without AlignParams.misAlgJson");
+        }
+        if (mMisalignment) { // closure test: the result is the one relative to the injection
+          const auto relative = subtractInjected(fitted);
+          Volume::writeMillepedeResults(mHierarchy.get(), relative, mParams->milleResOutJson);
+          writeClosureReport(relative);
+        } else {
+          Volume::writeMillepedeResults(mHierarchy.get(), fitted, mParams->milleResOutJson);
+        }
+        if (!mParams->algParamsOutFile.empty()) { // the alignment is the absolute one
           writeAlignParams(fitted);
         }
       }

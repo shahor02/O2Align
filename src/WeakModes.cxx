@@ -74,7 +74,22 @@ SensorDisp makeSensorDisp(const Volume* vol, const TGeoHMatrix& cumulative)
 
 // Compose the fitted corrections down the tree like Detector::MP2AlignParams does (cumulative global
 // delta, parents first) and collect the displacement of every sensor, grouped by detector branch.
-std::vector<Branch> collectBranches(Volume* root, const std::map<uint32_t, double>& labelToValue)
+// withHalfBarrels: also the volumes whose children are all pseudo (ITS3 half barrels) are sensors, which
+// the weak-modes diagnostics do not use.
+bool isSensorVolume(const Volume* vol, bool withHalfBarrels)
+{
+  if (vol->isRoot() || vol->isVirtual() || vol->isPseudo()) {
+    return false;
+  }
+  if (vol->isLeaf()) {
+    return true;
+  }
+  bool allPseudo = true;
+  vol->forEachChild([&](const Volume* c) { allPseudo = allPseudo && c->isPseudo(); });
+  return withHalfBarrels && allPseudo;
+}
+
+std::vector<Branch> collectBranches(Volume* root, const std::map<uint32_t, double>& labelToValue, bool withHalfBarrels = false)
 {
   std::vector<Branch> branches;
   std::unordered_map<const Volume*, TGeoHMatrix> cumulative;
@@ -94,7 +109,7 @@ std::vector<Branch> collectBranches(Volume* root, const std::map<uint32_t, doubl
       pn = pn * l2g * delta * l2g.Inverse();
     }
     cumulative[vol] = pn;
-    if (vol->isLeaf() && !vol->isRoot() && !vol->isVirtual() && !vol->isPseudo()) {
+    if (isSensorVolume(vol, withHalfBarrels)) {
       branches[branchOf.at(vol)].sensors.push_back(makeSensorDisp(vol, pn));
     }
   });
@@ -499,6 +514,17 @@ void writeRoot(const std::string& fileName, const std::vector<Branch>& branches,
   tMode.Write();
 }
 } // namespace
+
+std::vector<SensorDisplacement> computeSensorDisplacements(Volume* root, const std::map<uint32_t, double>& labelToValue)
+{
+  std::vector<SensorDisplacement> out;
+  for (const auto& br : collectBranches(root, labelToValue, true)) {
+    for (const auto& s : br.sensors) {
+      out.push_back({br.top, s.vol, s.layer, s.x, s.d, s.w});
+    }
+  }
+  return out;
+}
 
 void diagnoseWeakModes(Volume* root, const std::map<uint32_t, double>& labelToValue, const std::string& outBase)
 {
