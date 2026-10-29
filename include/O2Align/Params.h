@@ -110,6 +110,10 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   std::string misAlgRefMilleRes;             // millepede.res of a control run (same data and DOF config, no misalignment) subtracted at MilleRes stage in addition to the injected values: needed for the closure on real data
   std::string closureOutJson = "closure.json"; // MilleRes stage with misAlgJson: sensor-level closure summary
 
+  // debug output: fraction of the tracks (randomly selected) written with their points, GBL residuals and kinks
+  // to the "gbltrack" tree of debug_alg[_<lane>].root (DbgTrack, see AlignmentDbg.h). <=0: none, >=1: all
+  float debugTracksFraction = -1.f;
+
   // DOF configuration (JSON file defining which volumes have which DOFs)
   std::string dofConfigJson; // if empty, no DOFs are configured
 

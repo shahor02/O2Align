@@ -221,5 +221,5 @@ The geometry comes from the CCDB (`ALICEO2_CCDB_LOCALCACHE` can point to a local
 
 ## Debug output
 
-With `--output MisRes` (and the debug tree stream) a tree `mis` of the points with a non-zero injected shift
-is written: the shifted residual `dy,dz`, the injected `ddy,ddz`, the detector `det`, the sensor `sens`, `z`, `phi`.
+With `--output MisRes` and `misAlgJson` set, a tree `mis` of the points with a non-zero injected shift
+is written to `debug_alg[_<lane>].root` (see [DebugInfo.md](DebugInfo.md)): the shifted residual `dy,dz`, the injected `ddy,ddz`, the detector `det`, the sensor `sens`, `z`, `phi`.

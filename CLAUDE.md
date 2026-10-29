@@ -50,7 +50,9 @@ global mode, from the constraint projection (A) and from a fit of the sensor dis
 `macro/drawWeakModes.C` plots them.
 
 `--output` is a comma-separated `EnumFlags` list: `VerboseGBL, MilleData, MilleSteer, MilleRes,
-MisRes, WeakModesDiag, WeakModesDiagIni, Regularize, Debug` ([AlignmentSpec.h](include/O2Align/AlignmentSpec.h)).
+MisRes, WeakModesDiag, WeakModesDiagIni, Regularize` ([AlignmentSpec.h](include/O2Align/AlignmentSpec.h)).
+`AlignParams.debugTracksFraction>0` writes a random fraction of the tracks, with their GBL points, residuals and kinks, to the `gbltrack` tree of
+`debug_alg[_<lane>].root` (see [doc/DebugInfo.md](doc/DebugInfo.md)); the file is created only if something is to be written into it.
 `WeakModesDiagIni` is a standalone pass, independent of `MilleRes`: it diagnoses the weak modes
 already present in the initial (CCDB) alignment baked into the loaded geometry, relative to the
 ideal geometry, with no millepede.res involved (see [doc/WeakModes.md](doc/WeakModes.md)).

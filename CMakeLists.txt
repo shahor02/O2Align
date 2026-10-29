@@ -81,6 +81,7 @@ add_root_dictionary(O2Align
                             include/O2Align/Volume.h
                             include/O2Align/Constraint.h
                             include/O2Align/AlignmentTypes.h
+                            include/O2Align/AlignmentDbg.h
                             include/O2Align/TimeSlotsSet.h
                             include/O2Align/ProcessingStats.h
 			    LINKDEF src/O2AlignLinkDef.h)
@@ -97,8 +98,8 @@ if(TARGET O2::fpu_support)
   target_link_libraries(O2exe-alignment-workflow PUBLIC O2::fpu_support)
 endif()
 
-# target_compile_options(O2Align PRIVATE -O0 -g)
-# target_compile_options(O2exe-alignment-workflow PRIVATE -O0 -g)
+target_compile_options(O2Align PRIVATE -O0 -g)
+target_compile_options(O2exe-alignment-workflow PRIVATE -O0 -g)
 
 install(TARGETS O2Align
         EXPORT AlignTargets

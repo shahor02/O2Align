@@ -31,7 +31,6 @@ enum class OutputOpt : uint16_t {
   WeakModesDiag, // with MilleRes: diagnose the global weak modes of the fitted corrections
   WeakModesDiagIni, // standalone: diagnose the global weak modes already in the initial (CCDB) alignment
   Regularize,       // write <DET>_<algParamsOutFile> with the common motion of the children transferred to their parents: of the MilleRes result, or else of the initial (CCDB) alignment
-  Debug,
 };
 using OutputEnum = utils::EnumFlags<OutputOpt>;
 
