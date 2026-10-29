@@ -1716,7 +1716,7 @@ void AlignmentSpec::fillDbgFitResults(gbl::GblTrajectory& traj, unsigned int fir
       dp.dzFit = dp.dzPre - par[4];
     }
     unsigned int nData = 0;
-    const bool kinkUnavailable = i == 1 && firstLabel > 1;
+    const bool kinkUnavailable = i == 1 && firstLabel > 1; // GBL bug workaround, remove once GBL is patched (see doc/DebugInfo.md)
     if (dp.hasKink() && !kinkUnavailable && !traj.getScatResults(label, nData, res, measErr, resErr, downW) && nData == 2) {
       points[i].getScatTransformation(trans);
       const Eigen::Vector2d kink = -(trans.transpose() * res.head<2>()); // GBL gives measured (0) minus fitted kink
