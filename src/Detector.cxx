@@ -25,6 +25,8 @@
 #include "DetectorsBase/GRPGeomHelper.h"
 #include "O2Align/AlignGeomUtils.h"
 #include "O2Align/Detector.h"
+#include "O2Align/Params.h"
+#include "DetectorsBase/Propagator.h"
 
 namespace o2::alignrs
 {
@@ -390,5 +392,12 @@ std::string Detector::reportDOFSummary() const
 }
 
 // The KF (re)fit of the prepared track moved to Track::fitTrack / Track::continueFitOutward
+
+bool Detector::propagateCosmicRef(const o2::track::TrackParCovD& ref, double alpha, double x, o2::track::TrackParCovD& trk)
+{
+  const auto& params = Params::Instance();
+  trk = ref;
+  return o2::base::PropagatorD::Instance()->propagateToAlphaX(trk, nullptr, alpha, x, false, params.maxSnp, params.maxStep, 1, o2::base::PropagatorD::MatCorrType::USEMatCorrNONE);
+}
 
 } // namespace o2::alignrs

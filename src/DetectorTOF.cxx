@@ -134,7 +134,6 @@ int DetectorTOF::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
   const auto& params = Params::Instance();
   constexpr float SigY2 = o2::tof::Geo::XPAD * o2::tof::Geo::XPAD / 12.f;
   constexpr float SigZ2 = o2::tof::Geo::ZPAD * o2::tof::Geo::ZPAD / 12.f;
-  auto prop = o2::base::PropagatorD::Instance();
   FrameInfoExt bestPnt;
   bool found = false;
   double bestChi2 = params.cosmMaxChi2Cl;
@@ -146,8 +145,8 @@ int DetectorTOF::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
     if (!pnt.isValid()) {
       continue;
     }
-    auto trk = ref;
-    if (!prop->propagateToAlphaX(trk, nullptr, pnt.alpha, pnt.x, false, params.maxSnp, params.maxStep, 1, o2::base::PropagatorD::MatCorrType::USEMatCorrNONE)) {
+    o2::track::TrackParCovD trk;
+    if (!propagateCosmicRef(ref, pnt.alpha, pnt.x, trk)) {
       continue;
     }
     const double chi2 = trk.getPredictedChi2Quiet(pnt.cluster);

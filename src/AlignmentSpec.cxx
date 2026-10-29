@@ -286,6 +286,8 @@ class AlignmentSpec final : public Task
 
   // fill resTrack with the points of the cosmic and the KF fit of them, the reference state is at the highest point
   bool prepareCosmicTrack(const o2::dataformats::TrackCosmicsExtended& cosm, Track& resTrack);
+  bool collectCosmicFrames(const o2::dataformats::TrackCosmicsExtended& cosm, const std::array<const TrackD*, 2>& refLeg, std::array<std::vector<FrameInfoExt>, 2>& frames, DetID::mask_t& contributed, std::string& why);
+  bool fitCosmicLegs(Track& resTrack, const TrackD& refDown, int nTop, int nTot, std::string& why);
   void setCosmicTPCTransformation(const o2::dataformats::CosmicsTFInfo& tfInfo);
 
   // write mp2tree.txt/mp2con.txt/mp2param.txt. statWeighted is forwarded to
@@ -588,6 +590,64 @@ static float yLab(const FrameInfoExt& frame)
   return frame.x * std::sin(frame.alpha) + frame.cluster.getY() * std::cos(frame.alpha);
 }
 
+// Ask the detectors for the points of both legs, the references of the legs being used for the track dependent quantities. A detector
+// which has fewer measurements than required is dropped and the collection restarted without it, unless it is obligatory, in which
+// case the cosmic is lost (the reason is returned in `why`). `contributed` gets the detectors providing the points.
+bool AlignmentSpec::collectCosmicFrames(const o2::dataformats::TrackCosmicsExtended& cosm, const std::array<const TrackD*, 2>& refLeg, std::array<std::vector<FrameInfoExt>, 2>& frames, DetID::mask_t& contributed, std::string& why)
+{
+  std::vector<bool> disabled(mDetectors.size(), false);
+  for (bool repeat = true; repeat;) {
+    repeat = false;
+    frames[0].clear();
+    frames[1].clear();
+    contributed.reset();
+    for (size_t idet = 0; idet < mDetectors.size() && !repeat; ++idet) {
+      auto* det = mDetectors[idet];
+      const int detID = det->getO2DetID();
+      if (detID < 0 || disabled[idet]) {
+        continue;
+      }
+      int nMeas = 0;
+      for (int leg = 0; leg < 2; ++leg) {
+        nMeas += det->prepareCosmicLeg(cosm, leg, *refLeg[leg], frames[leg]);
+      }
+      if (nMeas == 0) { // nothing from this detector
+        continue;
+      }
+      if (nMeas < det->getMinCosmicMeasurements()) {
+        if (mObligatoryDets[detID]) {
+          why = fmt::format("obligatory {} has {} < {} measurements", det->getDetName(), nMeas, det->getMinCosmicMeasurements());
+          return false;
+        }
+        disabled[idet] = true;
+        repeat = true; // start over w/o this detector
+        continue;
+      }
+      contributed.set(detID);
+    }
+  }
+  return true;
+}
+
+// KF fit of the ordered points of the cosmic (top leg first, then the bottom one starting at resTrack.invertAt = nTop), the result
+// is the state at info[0]. refDown is the reference in the downward parametrisation, used as the seed.
+bool AlignmentSpec::fitCosmicLegs(Track& resTrack, const TrackD& refDown, int nTop, int nTot, std::string& why)
+{
+  // the bottom leg: outward in the downward parametrisation, then back inward, to its innermost point
+  resTrack.track = refDown;
+  if (!resTrack.fitTrack(nTop, nTot - 1, false, true) || !resTrack.fitTrack(nTot - 1, nTop, false, true)) {
+    why = "KF fit of the bottom leg failed";
+    return false;
+  }
+  // the top leg: upward, i.e. outward, to the highest point
+  resTrack.track.invert();
+  if (!resTrack.fitTrack(nTop - 1, 0, false, false)) {
+    why = "KF fit of the top leg failed";
+    return false;
+  }
+  return true;
+}
+
 // Let the detectors provide the points of the 2 legs of the cosmic and fit them with KF, as MatchCosmics::refitWinners does: a track
 // parametrisation cannot describe the motion in the direction opposite to that of the X axis of the tracking frame, which is the case
 // for the points of the top leg if the muon moves downward and vice versa. The reference track (upward, close to the beam line) is
@@ -619,38 +679,11 @@ bool AlignmentSpec::prepareCosmicTrack(const o2::dataformats::TrackCosmicsExtend
   refDown.invert();
   const std::array<const TrackD*, 2> refLeg{&refDown, &refUp}; // bottom, top leg: the references in the direction of the legs' points
 
-  std::vector<bool> disabled(mDetectors.size(), false);
   std::array<std::vector<FrameInfoExt>, 2> frames;
   DetID::mask_t contributed;
-  for (bool repeat = true; repeat;) {
-    repeat = false;
-    frames[0].clear();
-    frames[1].clear();
-    contributed.reset();
-    for (size_t idet = 0; idet < mDetectors.size() && !repeat; ++idet) {
-      auto* det = mDetectors[idet];
-      const int detID = det->getO2DetID();
-      if (detID < 0 || disabled[idet]) {
-        continue;
-      }
-      std::array<size_t, 2> nFramesIni{frames[0].size(), frames[1].size()};
-      int nMeas = 0;
-      for (int leg = 0; leg < 2; ++leg) {
-        nMeas += det->prepareCosmicLeg(cosm, leg, *refLeg[leg], frames[leg]);
-      }
-      if (nMeas == 0) { // nothing from this detector
-        continue;
-      }
-      if (nMeas < det->getMinCosmicMeasurements()) {
-        if (mObligatoryDets[detID]) {
-          return reject(fmt::format("obligatory {} has {} < {} measurements", det->getDetName(), nMeas, det->getMinCosmicMeasurements()).c_str());
-        }
-        disabled[idet] = true;
-        repeat = true; // start over w/o this detector
-        continue;
-      }
-      contributed.set(detID);
-    }
+  std::string why;
+  if (!collectCosmicFrames(cosm, refLeg, frames, contributed, why)) {
+    return reject(why.c_str());
   }
   if (frames[0].empty() || frames[1].empty()) {
     return reject(fmt::format("single leg: {} bottom, {} top points", frames[0].size(), frames[1].size()).c_str());
@@ -666,15 +699,8 @@ bool AlignmentSpec::prepareCosmicTrack(const o2::dataformats::TrackCosmicsExtend
   resTrack.info.insert(resTrack.info.end(), frames[0].begin(), frames[0].end());
   resTrack.invertAt = nTop;
   resTrack.kfFit.chi2 = 0.f;
-  // the bottom leg: outward in the downward parametrisation, then back inward, to its innermost point
-  resTrack.track = refDown;
-  if (!resTrack.fitTrack(nTop, nTot - 1, false, true) || !resTrack.fitTrack(nTot - 1, nTop, false, true)) {
-    return reject("KF fit of the bottom leg failed");
-  }
-  // the top leg: upward, i.e. outward, to the highest point
-  resTrack.track.invert();
-  if (!resTrack.fitTrack(nTop - 1, 0, false, false)) {
-    return reject("KF fit of the top leg failed");
+  if (!fitCosmicLegs(resTrack, refDown, nTop, nTot, why)) {
+    return reject(why.c_str());
   }
   return true;
 }

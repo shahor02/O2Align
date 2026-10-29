@@ -587,7 +587,6 @@ int DetectorITS::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
   if (findOverlaps && mOverlaps.empty()) {
     mOverlaps = o2::itsmft::ChipMappingITS{}.getOverlapsInfo();
   }
-  auto prop = o2::base::PropagatorD::Instance();
   struct Candidate {
     FrameInfoExt frame;
     double chi2{0.};
@@ -607,8 +606,8 @@ int DetectorITS::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
     if (frame.cluster.getBits() && frame.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
       continue;
     }
-    auto trk = ref;
-    if (!prop->propagateToAlphaX(trk, nullptr, frame.alpha, frame.x, false, params.maxSnp, params.maxStep, 1, o2::base::PropagatorD::MatCorrType::USEMatCorrNONE)) {
+    o2::track::TrackParCovD trk;
+    if (!propagateCosmicRef(ref, frame.alpha, frame.x, trk)) {
       continue;
     }
     const double chi2 = trk.getPredictedChi2Quiet(frame.cluster);

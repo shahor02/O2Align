@@ -316,7 +316,6 @@ int DetectorTPC::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
   }
   std::sort(selected.begin(), selected.end(), [](const auto& a, const auto& b) { return a.yLab() < b.yLab(); });
 
-  auto prop = o2::base::PropagatorD::Instance();
   size_t iNext = 0;
   auto nextCluster = [&]() -> std::optional<SelectedCluster> {
     return iNext < selected.size() ? std::optional<SelectedCluster>(selected[iNext++]) : std::nullopt;
@@ -324,8 +323,8 @@ int DetectorTPC::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
   int npntCut = 0, nClUsed = 0;
   forEachSuperCluster(nextCluster, params.maxTPCRowsCombined, npntCut, [&](const SuperCluster& sc) {
     const auto pnt3D = sc.position();
-    auto trkParam = ref;
-    if (!prop->propagateToAlphaX(trkParam, nullptr, sc.alpha(), pnt3D[0], false, params.maxSnp, params.maxStep, 1, o2::base::PropagatorD::MatCorrType::USEMatCorrNONE)) {
+    o2::track::TrackParCovD trkParam;
+    if (!propagateCosmicRef(ref, sc.alpha(), pnt3D[0], trkParam)) {
       return true; // the supercluster is just not used
     }
     frames.push_back(superClusterFrame(mDetIdx, sc, pnt3D, superClusterCov(*mTPCParam, sc, pnt3D[2], trkParam.getSnp(), trkParam.getTgl())));

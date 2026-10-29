@@ -141,6 +141,9 @@ class Detector
   /// that the slot-dependent state (e.g. the mean vertex prior) is always initialised by it.
   virtual void onSlotChange(int /*slotID*/) {}
 
+  /// the reference track of a cosmic leg propagated to the given frame (no material), the cluster candidates are compared with it
+  static bool propagateCosmicRef(const o2::track::TrackParCovD& ref, double alpha, double x, o2::track::TrackParCovD& trk);
+
   DetIdx mDetIdx{DetPVT};
   Volume* mTopVolume{nullptr};              // top volume of the detector, owned by the common hierarchy
   std::unique_ptr<TimeSlotsSet> mTimeSlots; // calibration intervals of this detector, if any

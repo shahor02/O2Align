@@ -226,7 +226,6 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
 int DetectorTRD::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames)
 {
   const auto& params = Params::Instance();
-  auto prop = o2::base::PropagatorD::Instance();
   std::array<FrameInfoExt, o2::trd::constants::NLAYER> best{};
   std::array<double, o2::trd::constants::NLAYER> bestChi2{};
   bestChi2.fill(params.cosmMaxChi2Cl);
@@ -241,8 +240,8 @@ int DetectorTRD::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
     if (!trackletToTrackingFrame(trackletRaw, trkltLoc, traXYZ, alpSens)) {
       continue;
     }
-    auto trk = ref;
-    if (!prop->propagateToAlphaX(trk, nullptr, alpSens, traXYZ[0], false, params.maxSnp, params.maxStep, 1, o2::base::PropagatorD::MatCorrType::USEMatCorrNONE)) {
+    o2::track::TrackParCovD trk;
+    if (!propagateCosmicRef(ref, alpSens, traXYZ[0], trk)) {
       continue;
     }
     const auto pnt = makeTrackletPoint(trackletRaw, traXYZ, alpSens, trk);
