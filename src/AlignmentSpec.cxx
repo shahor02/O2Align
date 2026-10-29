@@ -451,7 +451,8 @@ void AlignmentSpec::init(InitContext& ic)
   }
   // the debug trees are created only if there is something to write into them: the tracks selected by
   // debugTracksFraction (gbltrack) or the injected misalignment (mis), see doc/DebugInfo.md
-  const auto& par = Params::Instance();
+  mParams = &Params::Instance(); // also needed by endOfStream of a lane which gets no TF at all
+  const auto& par = *mParams;
   const bool wantDebugOut = par.debugTracksFraction > 0.f || (mOutOpt[o2::alignrs::OutputOpt::MisRes] && !par.misAlgJson.empty());
   if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes] && wantDebugOut) {
     const auto dbgOutName = mNLanes > 1 ? fmt::format("debug_alg_{}.root", mLane) : std::string("debug_alg.root");
@@ -1691,11 +1692,13 @@ bool AlignmentSpec::selectForDebug()
 }
 
 // Add to the debug points the results of the GBL fit: the residuals wrt the fitted track (measurement
-// minus track) and the kinks. Only the per-data-block results of the trajectory are used (getMeasResults,
-// getScatResults), they are given in the diagonalised basis of the measurement/scatterer and are rotated
-// back to the (Y,Z) / (snp,tgl) basis with the transformation GBL stored in the point. The (more natural)
-// getResults, going via the fit-to-local jacobian, is not used: it must not be called on the composed
-// trajectories, for which it corrupts the heap (observed for the zero-field kinematic inner transformation).
+// minus track: the prefit residual minus the fitted correction of the offsets of the local parameters,
+// which are (q/p, 2 slopes, 2 offsets), and the kinks.
+// The kinks are read with getScatResults, which GBL gives in the diagonalised basis of the scatterer,
+// rotated back with the transformation stored in the point. GBL leaves the data index of the scatterers
+// unset for the 1st point of every component of a composed trajectory, hence getScatResults of the
+// 2nd point of the 2nd, 3rd, ... components returns a bogus range of data blocks and overruns the output
+// vectors: the kinks of these points are skipped.
 // GBL labels the points of the trajectory consecutively from 1, firstLabel is the label of points[0].
 void AlignmentSpec::fillDbgFitResults(gbl::GblTrajectory& traj, unsigned int firstLabel, std::vector<gbl::GblPoint>& points, std::vector<DbgPoint>& dbgPoints) const
 {
@@ -1703,22 +1706,16 @@ void AlignmentSpec::fillDbgFitResults(gbl::GblTrajectory& traj, unsigned int fir
     LOGP(error, "Debug points ({}) and GBL points ({}) are out of sync", dbgPoints.size(), points.size());
     return;
   }
-  Eigen::VectorXd res(2), measErr(2), resErr(2), downW(2);
-  Eigen::MatrixXd trans;
+  Eigen::VectorXd par, res(2), measErr(2), resErr(2), downW(2);
+  Eigen::MatrixXd cov, trans;
   for (size_t i = 0; i < dbgPoints.size(); ++i) {
     auto& dp = dbgPoints[i];
     const unsigned int label = firstLabel + i;
-    unsigned int nData = 0;
-    if (dp.hasMeas() && !traj.getMeasResults(label, nData, res, measErr, resErr, downW) && nData == 2) {
-      points[i].getMeasBegin()->getMeasTransformation(trans); // diagonal basis = trans * (Y,Z)
-      const Eigen::Vector2d fitRes = trans.transpose() * res.head<2>();
-      dp.dyFit = fitRes[0];
-      dp.dzFit = fitRes[1];
+    if (dp.hasMeas() && !traj.getResults(label, par, cov)) {
+      dp.dyFit = dp.dyPre - par[3];
+      dp.dzFit = dp.dzPre - par[4];
     }
-    nData = 0;
-    // GBL leaves scatDataIndex unset for the 1st point of every component of a composed trajectory, hence
-    // getScatResults of the 2nd point of the 2nd, 3rd, ... components returns a bogus range of data blocks,
-    // and overruns the output vectors: the kinks of these points are skipped
+    unsigned int nData = 0;
     const bool kinkUnavailable = i == 1 && firstLabel > 1;
     if (dp.hasKink() && !kinkUnavailable && !traj.getScatResults(label, nData, res, measErr, resErr, downW) && nData == 2) {
       points[i].getScatTransformation(trans);
