@@ -1,0 +1,36 @@
+[
+  { "#comment1": "TEST CONFIG, not a production alignment. Question: do stave-level DOFs alone build the IB/OB direction kink seen in checkResid (dPar2 = IB-OB snp at 12 cm, n=2 vs phi: 73 urad in V10n, ~175 urad in v8..v18)?",
+    "#comment2": "In v18 - V10n the kink is carried entirely by translations of the IB half barrels/staves (-2..-3.4 um r*dphi ~cos2phi) and of the OB staves (Lr3,4 -6..-7 um, Lr6 +7 um); modules, chips and sensor rotations contribute < 0.3 um.",
+    "#comment3": "So everything below the staves is fixed, and so are the stave rotations (they only give z-odd terms). Run it on the same V10n-based Mille data as v8..v18 and compare dPar2 vs phi (and the per-layer n=2 r*dphi vs V10n) with v18.",
+    "#comment4": "Gauge as in v19: no rdphi ray cells (they pinned the OB rotation relative to IB+vertex); the whole-ray r*dphi rotation is pinned on the IB only (tangentialHarmonic), curl by the ITS RZ pin. dz/dr ray cells kept OB-only but with nT=1, since stave DOFs at z~0 cannot realise a t dependence (16 t cells would be redundant equations)." },
+
+  { "match": ".*", "rigidBody": "fixed" },
+
+  { "match": "PVT/meanVertex", "calib": { "type": "meanvertex", "free": ["X", "Y", "Z", "SlopeX", "SlopeY"] } },
+
+  { "match": "ITS", "rigidBody": "fixed",
+    "pinChildrenMeanNoCross": ["TX", "TY", "TZ", "RZ"],
+    "rayModes": { "nPhi": 24, "nT": 1, "tMax": 4.0, "rMin": 10.0, "components": ["dz", "dr"] } },
+
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]", "rigidBody": ["TX", "TY", "TZ", "RZ"] },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.003], "TZ": [0.0, 0.003], "RZ": [0.0, 0.001] } },
+
+  { "#comment": "OB half barrels stay fixed; with only the staves free below them the mean-of-staves pin catches any net half-barrel motion, so the v18 globalShift groupModes (needed against the module-level scissor) would duplicate it",
+    "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]", "rigidBody": "fixed",
+    "pinChildrenMeanNoCross": ["TX", "TY", "TZ"] },
+
+  { "#comment": "same stave TX prior as v18, for comparability",
+    "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "rigidBody": ["TX", "TY", "TZ"] },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "measurement": { "TX": [0.0, 0.0005] } },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "rigidBody": ["TX", "TY", "TZ"] },
+
+  { "#comment": "whole-ray rotation r*dphi = eps*r*cos/sin(l*phi), l=1..4, pinned on the IB only: the OB rotation relative to IB+vertex is left to the tracks",
+    "match": "ITS/ITSULayer[0-2]/.+", "globalModes": ["tangentialHarmonic"] },
+
+  { "#comment": "v18 OB global modes reachable by stave translations (twist and the t-odd polar members need z-distributed DOFs or RY, which are fixed here)",
+    "match": "ITS/ITSULayer[3-6]/.+",
+    "globalModes": ["radialPolar_r0t0", "radialPolar_r0t2",
+                "tangentialPolar_r0t0", "tangentialPolar_r0t2",
+                "longitudinalPolar_r0t2"] }
+]

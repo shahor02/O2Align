@@ -1,0 +1,47 @@
+[
+  { "match": ".*", "rigidBody": "fixed" },
+
+  { "match": "PVT/meanVertex", "calib": { "type": "meanvertex", "free": ["X", "Y", "Z", "SlopeX", "SlopeY"] } },
+
+  { "match": "ITS", "rigidBody": "fixed",
+    "pinChildrenMeanNoCross": ["TX", "TY", "TZ", "RZ"],
+    "rayModes": { "nPhi": 24, "nT": 16, "tMax": 4.0, "rMin": 10.0, "components": ["dz", "dr"] } },
+
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]", "rigidBody": ["TX", "TY", "TZ", "RZ"] },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.003], "TZ": [0.0, 0.003], "RZ": [0.0, 0.001] } },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]", "rigidBody": "fixed",
+    "pinChildrenMeanNoCross": ["TX", "TY", "TZ", "RY"],
+    "groupModes": ["globalShift_x", "globalShift_y"] },
+
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RX", "RY"] },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "measurement": { "TX": [0.0, 0.0005], "RX": [0.0, 0.0005] } },
+
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUChip[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RX", "RY", "RZ"] },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUChip[0-9]+", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.005], "TZ": [0.0, 0.003], "RX": [0.0, 0.003], "RZ": [0.0, 0.003] } },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RY"] },
+  { "match": "ITS/ITSULayer3/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "groupModes": { "group": "OB-Lr3", "modes": ["bowing"] } },
+  { "match": "ITS/ITSULayer4/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "groupModes": { "group": "OB-Lr4", "modes": ["bowing"] } },
+  { "match": "ITS/ITSULayer5/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "groupModes": { "group": "OB-Lr5", "modes": ["bowing"] } },
+  { "match": "ITS/ITSULayer6/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "groupModes": { "group": "OB-Lr6", "modes": ["bowing"] } },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RY"] },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RY"] },
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule[0-9]+", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.003], "TZ": [0.0, 0.003] } },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule[0-9]+/ITSUChip[0-9]+", "rigidBody": ["TX"] },
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule[0-9]+/ITSUChip[0-9]+", "measurement": { "TX": [0.0, 0.002] } },
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule0/ITSUChip(0|13)", "measurement": { "TX": [0.0, 0.0005] } },
+  { "match": "ITS/ITSULayer[3-4]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule3/ITSUChip[67]", "measurement": { "TX": [0.0, 0.0005] } },
+  { "match": "ITS/ITSULayer[5-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule6/ITSUChip[67]", "measurement": { "TX": [0.0, 0.0005] } },
+
+  { "match": "ITS/ITSULayer[0-2]/.+", "globalModes": ["tangentialHarmonic"] },
+
+  { "match": "ITS/ITSULayer[3-6]/.+",
+    "globalModes": ["twist",
+                "radialPolar_r0t0", "radialPolar_r0t1", "radialPolar_r0t2",
+                "tangentialPolar_r0t0", "tangentialPolar_r0t2",
+                "longitudinalPolar_r0t1", "longitudinalPolar_r0t2"] }
+]
