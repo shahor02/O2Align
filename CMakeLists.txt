@@ -11,6 +11,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(O2 REQUIRED)
 find_package(OpenMP)
+find_package(Mille CONFIG REQUIRED)
 
 include(AddRootDictionary)
 
@@ -31,7 +32,7 @@ set(O2_ALIGN_PUBLIC_LIBRARIES
     O2::DetectorsVertexing
     nlohmann_json::nlohmann_json
     GBL::GBL
-    Mille::Mille2)
+    Mille2)
 
 add_library(O2Align SHARED
             src/DOFSet.cxx
