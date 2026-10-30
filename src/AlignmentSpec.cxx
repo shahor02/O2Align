@@ -1876,10 +1876,7 @@ bool AlignmentSpec::selectForDebug()
 // minus track: the prefit residual minus the fitted correction of the offsets of the local parameters,
 // which are (q/p, 2 slopes, 2 offsets), and the kinks.
 // The kinks are read with getScatResults, which GBL gives in the diagonalised basis of the scatterer,
-// rotated back with the transformation stored in the point. GBL leaves the data index of the scatterers
-// unset for the 1st point of every component of a composed trajectory, hence getScatResults of the
-// 2nd point of the 2nd, 3rd, ... components returns a bogus range of data blocks and overruns the output
-// vectors: the kinks of these points are skipped.
+// rotated back with the transformation stored in the point.
 // GBL labels the points of the trajectory consecutively from 1, firstLabel is the label of points[0].
 void AlignmentSpec::fillDbgFitResults(gbl::GblTrajectory& traj, unsigned int firstLabel, std::vector<gbl::GblPoint>& points, std::vector<DbgPoint>& dbgPoints) const
 {
@@ -1897,8 +1894,7 @@ void AlignmentSpec::fillDbgFitResults(gbl::GblTrajectory& traj, unsigned int fir
       dp.dzFit = dp.dzPre - par[4];
     }
     unsigned int nData = 0;
-    const bool kinkUnavailable = i == 1 && firstLabel > 1; // GBL bug workaround, remove once GBL is patched (see doc/DebugInfo.md)
-    if (dp.hasKink() && !kinkUnavailable && !traj.getScatResults(label, nData, res, measErr, resErr, downW) && nData == 2) {
+    if (dp.hasKink() && !traj.getScatResults(label, nData, res, measErr, resErr, downW) && nData == 2) {
       points[i].getScatTransformation(trans);
       const Eigen::Vector2d kink = -(trans.transpose() * res.head<2>()); // GBL gives measured (0) minus fitted kink
       dp.kinkY = kink[0];

@@ -103,11 +103,6 @@ multiple scattering of the crossed material. The pull should have unit RMS if th
 pull RMS above 1 means that the scattering is underestimated or that the points around it are not well described. The pulls are
 given in the diagonal basis of the scatterer, which is the `snp`/`tgl` basis here.
 
-**Missing kinks.** Due to a feature of GBL, the data range of the second point of the 2nd, 3rd, ... component of a composed
-trajectory is undefined, hence for the tracks with the common vertex the kink of the point at index 1 of the points, beyond
-the 1st track of the vertex, is not available: `HasKink` is set, but `kinkY=kinkZ=pull=0`. This is by far most of the tracks with
-`composed=true`. Do not select on `kinkY==0` to find the points without a scatterer, use `HasKink`.
-
 **Fit quality.** `kfFit.chi2Ndf` is the chi2 per ndf of the KF refit; `gblFit.chi2Ndf` should be close to 1 for good tracks. For the tracks of a
 composed trajectory all tracks have the same `gblFit`.
 
