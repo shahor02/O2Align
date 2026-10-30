@@ -672,8 +672,8 @@ bool AlignmentSpec::prepareCosmicTrack(const o2::dataformats::TrackCosmicsExtend
   const auto& srcTrack = cosm.chi2MatchPolished >= 0.f ? cosm.polished : static_cast<const o2::track::TrackParCov&>(cosm.cosmic);
   TrackD refUp = convertTrack<double>(srcTrack);
   refUp.setPID(o2::track::PID::Muon, true);
-  if (mFieldOFF && mParams->meanPtB0 > 0.) {
-    refUp.setQ2Pt(1. / mParams->meanPtB0);
+  if (mFieldOFF && mParams->meanPtB0Cosm > 0.) {
+    refUp.setQ2Pt(1. / mParams->meanPtB0Cosm);
   }
   TrackD refDown = refUp;
   refDown.invert();
