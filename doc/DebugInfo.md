@@ -4,6 +4,7 @@ The data-processing stage can write, for a random fraction of the tracks, everyt
 the track parameters at the reference point and, for each point of the GBL trajectory, the measurement, the residuals before and
 after the GBL fit and the kinks. The records are `DbgTrack` and `DbgPoint` ([AlignmentDbg.h](../include/O2Align/AlignmentDbg.h)).
 
+
 ## Activation
 
 ```bash
