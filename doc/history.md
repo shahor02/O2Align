@@ -294,3 +294,9 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   on the same data; v19s/v19rmc test the DOF set and combined rdphi cells (`rayModes` as an array of equation sets,
   `combineRanges`): OB-only dz,dr cells (rMin 10) plus combined rdphi cells over IB + OB (`rEdges [10]`) with IB
   `tangentialHarmonic` modes pin IB and OB separately against the relative-rotation (n = 2 kink) mode.
+- v19 pp B0 checkResid shows an IB/OB kink (dPar2 n = 1, 2 up to ~230 µrad at |tgλ| > 1.2, sub-tracks crossing at
+  R ≈ 12 cm). A linear response model of dPar2 to the hit rφ shifts, fitted on V10n/v18/v19/v19rmc, gives the OB
+  ray rotation about 12 cm that removes it; applied to v19 as OB chip TX (`cure012`, 10-31) it brings pp dPar2 to
+  ≤ 34 µrad but worsens OO B+ by the same amount, so the pp/OO kink difference is not geometric. Tools:
+  `macro/kinkMap.C`, `macro/kinkResponse.C`, `macro/makeKinkCure.C`, `doc/resToCCDB.sh`
+  (see `doc/handovers/kink_cure.md`). Whether the Mille data reject the cure (pede with all labels fixed) is pending.
