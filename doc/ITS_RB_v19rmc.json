@@ -1,0 +1,52 @@
+[
+  { "#comment1": "TEST CONFIG, v19 with the ray gauge changed (rmc = ray modes combined). Question: is the IB/OB direction kink at large |tgl| left in v19 (dPar2 n=2 ~110 urad at |tgl|>0.6, ~34 at |tgl|<0.6), and the z-dependent OB sin2phi r*dphi motion (Lr5/6 up to 30-50 um at |z|~60), due to the tgl-dependent whole-ray rotation eps(phi,t) that v19 leaves unconstrained?",
+    "#comment2": "v19 pins the whole-ray r*dphi rotation only through the IB tangentialHarmonic (l=1..4, independent of t). Here it is pinned per (phi,t) cell instead, by a second rayModes set: rdphi over IB+OB with combineRanges, i.e. the IB and OB mean angular displacements of a cell enter with equal weight, so only their common rotation is removed and the relative IB/OB one is left to the tracks (v18 pinned the OB alone, building the kink).",
+    "#comment3": "Hence the IB tangentialHarmonic is dropped (together with the combined cells it would pin IB and OB separately), and so is RZ from the ITS pinChildrenMeanNoCross (the combined cells already contain the common n=0 rotation; keeping both would pin the relative IB/OB rotation about z). Everything else is as in v19. Run on the same V10n-based Mille data as v19 and compare dPar2 vs (phi, tgl), the OB r*dphi vs z, and the residuals with v19.",
+    "#comment4": "Needs the rayModes array and combineRanges options (O2Align after v19, see doc/DOFConfig_rules.md). A coarse rdphi binning (12 x 8) keeps the IB populated in most cells; the |t|>3 cells hold IB sensors only and get an IB-only equation (16 cells, plus 8 single-layer cells skipped)." },
+
+  { "match": ".*", "rigidBody": "fixed" },
+
+  { "match": "PVT/meanVertex", "calib": { "type": "meanvertex", "free": ["X", "Y", "Z", "SlopeX", "SlopeY"] } },
+
+  { "match": "ITS", "rigidBody": "fixed",
+    "pinChildrenMeanNoCross": ["TX", "TY", "TZ"],
+    "rayModes": [ { "nPhi": 24, "nT": 16, "tMax": 4.0, "rMin": 10.0, "components": ["dz", "dr"] },
+                  { "nPhi": 12, "nT": 8, "tMax": 4.0, "rEdges": [10.0], "combineRanges": true, "components": ["rdphi"] } ] },
+
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]", "rigidBody": ["TX", "TY", "TZ", "RZ"] },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.003], "TZ": [0.0, 0.003], "RZ": [0.0, 0.001] } },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]", "rigidBody": "fixed",
+    "pinChildrenMeanNoCross": ["TX", "TY", "TZ", "RY"],
+    "groupModes": ["globalShift_x", "globalShift_y"] },
+
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RX", "RY"] },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "measurement": { "TX": [0.0, 0.0005], "RX": [0.0, 0.0005] } },
+
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUChip[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RX", "RY", "RZ"] },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUChip[0-9]+", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.005], "TZ": [0.0, 0.003], "RX": [0.0, 0.003], "RZ": [0.0, 0.003] } },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RY"] },
+  { "match": "ITS/ITSULayer3/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "groupModes": { "group": "OB-Lr3", "modes": ["bowing"] } },
+  { "match": "ITS/ITSULayer4/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "groupModes": { "group": "OB-Lr4", "modes": ["bowing"] } },
+  { "match": "ITS/ITSULayer5/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "groupModes": { "group": "OB-Lr5", "modes": ["bowing"] } },
+  { "match": "ITS/ITSULayer6/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "groupModes": { "group": "OB-Lr6", "modes": ["bowing"] } },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RY"] },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RY"] },
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule[0-9]+", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.003], "TZ": [0.0, 0.003] } },
+
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule[0-9]+/ITSUChip[0-9]+", "rigidBody": ["TX"] },
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule[0-9]+/ITSUChip[0-9]+", "measurement": { "TX": [0.0, 0.002] } },
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule0/ITSUChip(0|13)", "measurement": { "TX": [0.0, 0.0005] } },
+  { "match": "ITS/ITSULayer[3-4]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule3/ITSUChip[67]", "measurement": { "TX": [0.0, 0.0005] } },
+  { "match": "ITS/ITSULayer[5-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+/ITSUModule6/ITSUChip[67]", "measurement": { "TX": [0.0, 0.0005] } },
+
+
+  { "match": "ITS/ITSULayer[3-6]/.+",
+    "globalModes": ["twist",
+                "radialPolar_r0t0", "radialPolar_r0t1", "radialPolar_r0t2",
+                "tangentialPolar_r0t0", "tangentialPolar_r0t2",
+                "longitudinalPolar_r0t1", "longitudinalPolar_r0t2"] }
+]

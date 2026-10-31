@@ -502,9 +502,50 @@ radius r at t + z_v/r. With σ(z_v) ≈ 5 cm this shifts t by about ±2 at the I
 null direction. Use `rMin` (e.g. 10 cm for the ITS) to bin only the OB; see
 AlignmentWeakModes_handover.md section 6 for the measured effect.
 | `components` | all | any of `rdphi`, `dz`, `dr` |
+| `combineRanges` | false | needs `rEdges`: one equation per (φ, t) cell over all radial ranges, each range with equal weight (see below) |
 
 `true` takes the defaults and `false` removes the flag. A flagged ancestor takes precedence over a
 flagged descendant.
+
+**Several equation sets on one branch.** `rayModes` may also be an array of objects. Each one is
+binned and written independently, with its own components, binning and radial selection. Since a
+flagged branch is one volume, this is the only way to treat the components differently, e.g. `dz`, `dr`
+over the OB only and `rdphi` over IB + OB.
+
+**Combining the radial ranges.** Without `combineRanges`, each `rEdges` range gets its own cells. The
+equations then pin the ray motion of every range separately, and with it their relative motion. For
+the ITS with `rEdges: [10]`, that is the IB/OB kink, which the tracks measure. With
+`"combineRanges": true` the ranges sharing a (φ, t) cell give a single equation:
+
+  Σ over the ranges k of (1/nₖ) Σ over the sensors s of range k in the cell of (**e**·**d**ₛ)/rₛ = 0
+
+nₖ is the number of sensors of range k in the cell. This is the mean angular displacement of each
+range, averaged with equal weight per range. It removes only the common ray motion of all ranges and
+leaves their relative motion to the data. A single range with unit sensor weights (`rMin` = 0, no
+`rEdges`) also removes the common motion. But in the ITS there are many more OB sensors than IB
+sensors per cell, so that equation in practice pins the OB, like `rMin` = 10 does.
+
+Cells populated in only one range fall back to that range's equation. The log counts them as
+"missing some radial range". Choose nPhi and nT so that this is rare: an IB layer has only 12–20
+staves, and its chips cover a wide t range.
+
+The IB t of a cell is smeared by z_v/r (see above), so the IB half of a combined `rdphi` equation
+effectively averages the ray rotation over several t cells. The IB sub-track direction of a track
+depends on the vertex too, so that is the same averaging the data see.
+
+**Do not add the IB `tangentialHarmonic` modes on top of a combined `rdphi` set.** Together with the
+combined equations they pin the IB and the OB separately, which is the relative-rotation pin that
+`combineRanges` is meant to avoid. The same applies to any other rotation mode restricted to one
+range.
+
+Example: the OB-only `dz`, `dr` cells of ITS_RB_v19, plus `rdphi` cells over IB + OB in which the IB
+and the OB weigh equally:
+
+```json
+{ "match": "ITS", "rigidBody": "fixed",
+  "rayModes": [ { "nPhi": 24, "nT": 16, "tMax": 4.0, "rMin": 10.0, "components": ["dz", "dr"] },
+                { "nPhi": 12, "nT": 8, "tMax": 4.0, "rEdges": [10.0], "combineRanges": true, "components": ["rdphi"] } ] }
+```
 
 **Do not combine with the global modes that lie in the ray span.** That excludes `radialScaling`,
 `curl`, `zScaling`, `globalTilt`, the two harmonic families, and the p = 1 members of the polar

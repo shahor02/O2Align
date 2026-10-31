@@ -888,17 +888,33 @@ const char* Volume::rayCompName(int comp)
 
 // Apply the "rayModes" clause of a rule, e.g.
 //   { "match": "ITS", "rayModes": { "nPhi": 24, "nT": 16, "tMax": 4.0, "components": ["rdphi", "dz", "dr"] } }
-// true takes the RayModesConfig defaults, false removes the flag. Like globalModes it frees nothing; it
-// flags a branch whose sensors are binned, see writeRayModeConstraints.
+// true takes the RayModesConfig defaults, false removes the flag, an array of objects gives several
+// independent sets of equations (e.g. dz, dr over the OB only and rdphi over IB + OB with combineRanges).
+// Like globalModes it frees nothing; it flags a branch whose sensors are binned, see writeRayModeConstraints.
 void Volume::applyRayModesConfig(const nlohmann::json& cfg, const std::string& pattern)
 {
   if (cfg.is_boolean()) {
-    mRayModes = cfg.get<bool>() ? std::make_shared<const RayModesConfig>() : nullptr;
+    mRayModes = cfg.get<bool>() ? std::make_shared<const std::vector<RayModesConfig>>(1) : nullptr;
     return;
   }
-  if (!cfg.is_object()) {
-    LOGP(fatal, "Invalid rayModes clause in the rule '{}': a bool or an object is expected", pattern);
+  std::vector<RayModesConfig> sets;
+  if (cfg.is_object()) {
+    sets.push_back(parseRayModesConfig(cfg, pattern));
+  } else if (cfg.is_array() && !cfg.empty()) {
+    for (const auto& item : cfg) {
+      if (!item.is_object()) {
+        LOGP(fatal, "Invalid rayModes clause in the rule '{}': the array elements must be objects", pattern);
+      }
+      sets.push_back(parseRayModesConfig(item, pattern));
+    }
+  } else {
+    LOGP(fatal, "Invalid rayModes clause in the rule '{}': a bool, an object or a non-empty array of objects is expected", pattern);
   }
+  mRayModes = std::make_shared<const std::vector<RayModesConfig>>(std::move(sets));
+}
+
+Volume::RayModesConfig Volume::parseRayModesConfig(const nlohmann::json& cfg, const std::string& pattern)
+{
   RayModesConfig c;
   for (const auto& [key, val] : cfg.items()) {
     if (key == "nPhi") {
@@ -930,14 +946,19 @@ void Volume::applyRayModesConfig(const nlohmann::json& cfg, const std::string& p
         }
         c.comps[comp] = true;
       }
+    } else if (key == "combineRanges") {
+      c.combineRanges = val.get<bool>();
     } else {
-      LOGP(fatal, "Unknown rayModes key '{}' in the rule '{}', allowed are nPhi, phi0, nT, tMax, rSpanMin, rEdges, rMin, rMax, components", key, pattern);
+      LOGP(fatal, "Unknown rayModes key '{}' in the rule '{}', allowed are nPhi, phi0, nT, tMax, rSpanMin, rEdges, rMin, rMax, components, combineRanges", key, pattern);
     }
   }
   if (c.nPhi < 1 || c.nT < 1 || c.tMax <= 0. || !std::is_sorted(c.rEdges.begin(), c.rEdges.end())) {
     LOGP(fatal, "Invalid rayModes binning in the rule '{}': nPhi, nT >= 1, tMax > 0 and increasing rEdges are required", pattern);
   }
-  mRayModes = std::make_shared<const RayModesConfig>(std::move(c));
+  if (c.combineRanges && c.rEdges.empty()) {
+    LOGP(fatal, "Invalid rayModes clause in the rule '{}': combineRanges needs rEdges", pattern);
+  }
+  return c;
 }
 
 namespace
@@ -1011,105 +1032,153 @@ void Volume::writeRayModeConstraints(std::ostream& os) const
   }
   const uint32_t anchor = minFreeRigidBodyLabel(); // called on the root: see writeGlobalModeConstraints
   std::unordered_map<const Volume*, std::array<DOFDisp, RigidBodyDOFSet::NDOF>> dispCache;
-  constexpr double rMin = 1e-4; // cm
   for (const auto* top : tops) {
-    const auto& cfg = *top->mRayModes;
-    const int nR = static_cast<int>(cfg.rEdges.size()) + 1;
-    struct Cell {
-      std::array<std::map<uint32_t, double>, NRayComps> terms;
-      double rLow{std::numeric_limits<double>::max()}, rHigh{0.};
-      int nSensors{0};
-    };
-    std::vector<Cell> cells(nR * cfg.nPhi * cfg.nT);
-    std::vector<const Volume*> sensors;
-    top->collectSensors(sensors);
-    const double dPhi = 2. * M_PI / cfg.nPhi, dT = 2. * cfg.tMax / cfg.nT;
-    for (const auto* s : sensors) {
-      const double* x = s->getMatrixL2G().GetTranslation();
-      const double r = std::hypot(x[0], x[1]);
-      if (r < rMin || r < cfg.rMin || r > cfg.rMax) {
+    for (const auto& cfg : *top->mRayModes) {
+      writeRayModeSet(os, top, cfg, anchor, dispCache);
+    }
+  }
+}
+
+// With combineRanges the cells of the radial ranges sharing (phi, t) give a single equation,
+//   sum over the ranges k of (1/n_k) * sum over the sensors s of range k of (e_s . d_s) / r_s = 0,
+// i.e. the mean angular displacement of the cell is averaged over the ranges with equal weights, so
+// a range with many sensors (the OB) does not pin the ray motion alone: only the common ray motion of
+// all ranges is removed, their relative motion (e.g. an IB/OB kink, measured by the tracks) is left
+// to the data. A cell populated in one range only reduces to the equation of that range (counted in
+// the log as "incomplete").
+int Volume::writeRayModeSet(std::ostream& os, const Volume* top, const RayModesConfig& cfg, uint32_t anchorLabel,
+                            std::unordered_map<const Volume*, std::array<DOFDisp, RigidBodyDOFSet::NDOF>>& dispCache) const
+{
+  constexpr double rMin = 1e-4; // cm
+  const int nR = static_cast<int>(cfg.rEdges.size()) + 1;
+  struct Cell {
+    std::array<std::map<uint32_t, double>, NRayComps> terms;
+    double rLow{std::numeric_limits<double>::max()}, rHigh{0.};
+    int nSensors{0};
+  };
+  std::vector<Cell> cells(nR * cfg.nPhi * cfg.nT);
+  auto cellAt = [&](int iR, int iPhi, int iT) -> Cell& { return cells[(iR * cfg.nPhi + iPhi) * cfg.nT + iT]; };
+  std::vector<const Volume*> sensors;
+  top->collectSensors(sensors);
+  const double dPhi = 2. * M_PI / cfg.nPhi, dT = 2. * cfg.tMax / cfg.nT;
+  for (const auto* s : sensors) {
+    const double* x = s->getMatrixL2G().GetTranslation();
+    const double r = std::hypot(x[0], x[1]);
+    if (r < rMin || r < cfg.rMin || r > cfg.rMax) {
+      continue;
+    }
+    const int iR = static_cast<int>(std::upper_bound(cfg.rEdges.begin(), cfg.rEdges.end(), r) - cfg.rEdges.begin());
+    double phi = std::fmod(std::atan2(x[1], x[0]) - cfg.phi0, 2. * M_PI);
+    phi += phi < 0. ? 2. * M_PI : 0.;
+    const int iPhi = std::min(cfg.nPhi - 1, static_cast<int>(phi / dPhi));
+    const int iT = std::clamp(static_cast<int>(std::floor((x[2] / r + cfg.tMax) / dT)), 0, cfg.nT - 1);
+    auto& cell = cellAt(iR, iPhi, iT);
+    cell.rLow = std::min(cell.rLow, r);
+    cell.rHigh = std::max(cell.rHigh, r);
+    ++cell.nSensors;
+    // angular displacement of the sensor seen from the vertex: e/r with e = phiHat, zHat, rHat
+    const double r2 = r * r;
+    const double field[NRayComps][3] = {{-x[1] / r2, x[0] / r2, 0.}, {0., 0., 1. / r}, {x[0] / r2, x[1] / r2, 0.}};
+    for (const Volume* a = s; a; a = a->mParent) {
+      const auto* rb = a->mRigidBody.get();
+      if (!rb || rb->nFreeDOFs() == 0) {
         continue;
       }
-      const int iR = static_cast<int>(std::upper_bound(cfg.rEdges.begin(), cfg.rEdges.end(), r) - cfg.rEdges.begin());
-      double phi = std::fmod(std::atan2(x[1], x[0]) - cfg.phi0, 2. * M_PI);
-      phi += phi < 0. ? 2. * M_PI : 0.;
-      const int iPhi = std::min(cfg.nPhi - 1, static_cast<int>(phi / dPhi));
-      const int iT = std::clamp(static_cast<int>(std::floor((x[2] / r + cfg.tMax) / dT)), 0, cfg.nT - 1);
-      auto& cell = cells[(iR * cfg.nPhi + iPhi) * cfg.nT + iT];
-      cell.rLow = std::min(cell.rLow, r);
-      cell.rHigh = std::max(cell.rHigh, r);
-      ++cell.nSensors;
-      // angular displacement of the sensor seen from the vertex: e/r with e = phiHat, zHat, rHat
-      const double r2 = r * r;
-      const double field[NRayComps][3] = {{-x[1] / r2, x[0] / r2, 0.}, {0., 0., 1. / r}, {x[0] / r2, x[1] / r2, 0.}};
-      for (const Volume* a = s; a; a = a->mParent) {
-        const auto* rb = a->mRigidBody.get();
-        if (!rb || rb->nFreeDOFs() == 0) {
+      auto it = dispCache.find(a);
+      if (it == dispCache.end()) {
+        it = dispCache.emplace(a, rigidBodyDisplacements(a->getMatrixL2G())).first;
+      }
+      const int nDOF = std::min(rb->nDOFs(), static_cast<int>(RigidBodyDOFSet::NDOF));
+      for (int i = 0; i < nDOF; ++i) {
+        if (!rb->isFree(i)) {
           continue;
         }
-        auto it = dispCache.find(a);
-        if (it == dispCache.end()) {
-          it = dispCache.emplace(a, rigidBodyDisplacements(a->getMatrixL2G())).first;
+        const auto& D = it->second[i];
+        double d[3];
+        for (int k = 0; k < 3; ++k) {
+          d[k] = D[3 * k] * x[0] + D[3 * k + 1] * x[1] + D[3 * k + 2] * x[2] + D[9 + k];
         }
-        const int nDOF = std::min(rb->nDOFs(), static_cast<int>(RigidBodyDOFSet::NDOF));
-        for (int i = 0; i < nDOF; ++i) {
-          if (!rb->isFree(i)) {
-            continue;
-          }
-          const auto& D = it->second[i];
-          double d[3];
-          for (int k = 0; k < 3; ++k) {
-            d[k] = D[3 * k] * x[0] + D[3 * k + 1] * x[1] + D[3 * k + 2] * x[2] + D[9 + k];
-          }
-          for (int comp = 0; comp < NRayComps; ++comp) {
-            if (cfg.comps[comp]) {
-              cell.terms[comp][a->mLabel.raw(i)] += field[comp][0] * d[0] + field[comp][1] * d[1] + field[comp][2] * d[2];
-            }
+        for (int comp = 0; comp < NRayComps; ++comp) {
+          if (cfg.comps[comp]) {
+            cell.terms[comp][a->mLabel.raw(i)] += field[comp][0] * d[0] + field[comp][1] * d[1] + field[comp][2] * d[2];
           }
         }
       }
     }
-    int nWritten = 0, nSingleLayer = 0, nEmpty = 0;
-    for (int iR = 0; iR < nR; ++iR) {
-      for (int iPhi = 0; iPhi < cfg.nPhi; ++iPhi) {
-        for (int iT = 0; iT < cfg.nT; ++iT) {
-          const auto& cell = cells[(iR * cfg.nPhi + iPhi) * cfg.nT + iT];
-          if (cell.nSensors == 0) {
-            ++nEmpty;
-            continue;
-          }
-          if (cell.rHigh - cell.rLow < cfg.rSpanMin) {
-            ++nSingleLayer;
-            continue;
-          }
-          for (int comp = 0; comp < NRayComps; ++comp) {
-            const auto& terms = cell.terms[comp];
-            if (!cfg.comps[comp] || terms.size() < 2) {
-              continue;
-            }
-            double norm = 0.;
-            for (const auto& [lab, coeff] : terms) {
-              norm = std::max(norm, std::abs(coeff));
-            }
-            Constraint con(std::format("Ray mode {} over {}: r-range {} phi-cell {} t-cell {} ({} sensors)", rayCompName(comp), top->mSymName, iR, iPhi, iT, cell.nSensors), 0.);
-            for (const auto& [lab, coeff] : terms) {
-              if (std::abs(coeff) > 1e-9 * norm) { // same relative cut as the global modes
-                con.add(lab, coeff / norm);
-              }
-            }
-            if (con.getSize() < 2) {
-              continue;
-            }
-            addPedeGroupingAnchor(con, anchor);
-            con.write(os);
-            ++nWritten;
-          }
-        }
-      }
-    }
-    LOGP(info, "Wrote {} ray-mode constraints over {}: {} sensors in {} x {} x {} cells, {} cells empty, {} skipped as spanning less than {} cm in radius",
-         nWritten, top->mSymName, sensors.size(), nR, cfg.nPhi, cfg.nT, nEmpty, nSingleLayer, cfg.rSpanMin);
   }
+
+  // the cells entering one equation: a single radial range, or all of them with combineRanges
+  int nWritten = 0, nSingleLayer = 0, nEmpty = 0, nIncomplete = 0;
+  auto writeEquation = [&](int iRFirst, int iRLast, int iPhi, int iT) {
+    double rLow = std::numeric_limits<double>::max(), rHigh = 0.;
+    int nSensors = 0, nRanges = 0;
+    for (int iR = iRFirst; iR <= iRLast; ++iR) {
+      const auto& cell = cellAt(iR, iPhi, iT);
+      if (cell.nSensors > 0) {
+        rLow = std::min(rLow, cell.rLow);
+        rHigh = std::max(rHigh, cell.rHigh);
+        nSensors += cell.nSensors;
+        ++nRanges;
+      }
+    }
+    if (nSensors == 0) {
+      ++nEmpty;
+      return;
+    }
+    if (rHigh - rLow < cfg.rSpanMin) {
+      ++nSingleLayer;
+      return;
+    }
+    nIncomplete += nRanges < iRLast - iRFirst + 1;
+    for (int comp = 0; comp < NRayComps; ++comp) {
+      if (!cfg.comps[comp]) {
+        continue;
+      }
+      std::map<uint32_t, double> terms;
+      for (int iR = iRFirst; iR <= iRLast; ++iR) {
+        const auto& cell = cellAt(iR, iPhi, iT);
+        const double w = iRFirst == iRLast ? 1. : 1. / std::max(1, cell.nSensors); // equal weight per range
+        for (const auto& [lab, coeff] : cell.terms[comp]) {
+          terms[lab] += w * coeff;
+        }
+      }
+      if (terms.size() < 2) {
+        continue;
+      }
+      double norm = 0.;
+      for (const auto& [lab, coeff] : terms) {
+        norm = std::max(norm, std::abs(coeff));
+      }
+      const auto rangeName = iRFirst == iRLast ? std::to_string(iRFirst) : std::format("{}-{} combined", iRFirst, iRLast);
+      Constraint con(std::format("Ray mode {} over {}: r-range {} phi-cell {} t-cell {} ({} sensors)", rayCompName(comp), top->mSymName, rangeName, iPhi, iT, nSensors), 0.);
+      for (const auto& [lab, coeff] : terms) {
+        if (std::abs(coeff) > 1e-9 * norm) { // same relative cut as the global modes
+          con.add(lab, coeff / norm);
+        }
+      }
+      if (con.getSize() < 2) {
+        continue;
+      }
+      addPedeGroupingAnchor(con, anchorLabel);
+      con.write(os);
+      ++nWritten;
+    }
+  };
+  for (int iPhi = 0; iPhi < cfg.nPhi; ++iPhi) {
+    for (int iT = 0; iT < cfg.nT; ++iT) {
+      if (cfg.combineRanges) {
+        writeEquation(0, nR - 1, iPhi, iT);
+      } else {
+        for (int iR = 0; iR < nR; ++iR) {
+          writeEquation(iR, iR, iPhi, iT);
+        }
+      }
+    }
+  }
+  LOGP(info, "Wrote {} ray-mode constraints over {}: {} sensors in {} x {} x {} cells{}, {} cells empty, {} skipped as spanning less than {} cm in radius{}",
+       nWritten, top->mSymName, sensors.size(), nR, cfg.nPhi, cfg.nT, cfg.combineRanges ? " (radial ranges combined)" : "", nEmpty, nSingleLayer, cfg.rSpanMin,
+       cfg.combineRanges ? std::format(", {} missing some radial range", nIncomplete) : std::string{});
+  return nWritten;
 }
 
 void Volume::writeGlobalModeConstraints(std::ostream& os, const ModeEquationOptions& opt) const

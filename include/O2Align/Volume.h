@@ -18,6 +18,7 @@
 #include <ostream>
 #include <string>
 #include <map>
+#include <unordered_map>
 #include <array>
 #include <limits>
 #include <algorithm>
@@ -229,6 +230,10 @@ class Volume
     double rMin{0.};                  ///< cm: sensors at smaller radius are not binned (see writeRayModeConstraints)
     double rMax{std::numeric_limits<double>::max()}; ///< cm: nor those at larger radius
     std::array<bool, 3> comps{true, true, true}; ///< components r*dphi, dz, dr
+    /// with rEdges: one equation per (phi, t) cell over all radial ranges, each range entering with
+    /// the same total weight (its sensors weighted by 1/nSensors of the range in the cell), instead
+    /// of one equation per range. Removes the common ray motion of all ranges, leaves their relative one
+    bool combineRanges{false};
   };
   static constexpr int NRayComps = 3;
   static const char* rayCompName(int comp);
@@ -464,9 +469,14 @@ class Volume
   uint32_t minFreeRigidBodyLabel() const;
   /// workaround for the constraint grouping of pede, see writeGlobalModeConstraints
   static void addPedeGroupingAnchor(Constraint& con, uint32_t anchorLabel);
-  /// apply the "rayModes" clause of a rule: true (defaults), false, or an object overriding the
-  /// fields of RayModesConfig ("nPhi", "phi0", "nT", "tMax", "rSpanMin", "rEdges", "components")
+  /// apply the "rayModes" clause of a rule: true (defaults), false, an object overriding the fields of
+  /// RayModesConfig ("nPhi", "phi0", "nT", "tMax", "rSpanMin", "rEdges", "rMin", "rMax", "components",
+  /// "combineRanges"), or an array of such objects, each one an independent set of equations
   void applyRayModesConfig(const nlohmann::json& cfg, const std::string& pattern);
+  static RayModesConfig parseRayModesConfig(const nlohmann::json& cfg, const std::string& pattern);
+  /// the ray-mode equations of one RayModesConfig over the flagged branch top; returns the number written
+  int writeRayModeSet(std::ostream& os, const Volume* top, const RayModesConfig& cfg, uint32_t anchorLabel,
+                      std::unordered_map<const Volume*, std::array<std::array<double, 12>, RigidBodyDOFSet::NDOF>>& dispCache) const;
   /// the sensors (leaves which are neither virtual nor pseudo) of this subtree
   void collectSensors(std::vector<const Volume*>& out) const;
   /// one Millepede "Measurement" per free rigid-body DOF of this volume having one configured
@@ -537,8 +547,8 @@ class Volume
   std::array<bool, NGlobalEq> mGroupModes{};
   std::string mGroupModesName{};
   /// set by the "rayModes" clause: the sensors of this branch enter the ray-mode constraints with this
-  /// binning (a flagged ancestor takes precedence); see writeRayModeConstraints
-  std::shared_ptr<const RayModesConfig> mRayModes{}; //!
+  /// binning(s) (a flagged ancestor takes precedence); see writeRayModeConstraints
+  std::shared_ptr<const std::vector<RayModesConfig>> mRayModes{}; //!
   std::vector<Label> mCalibLabels{};            // calibration label per time slot, filled with the slot 0 in the ctor
   size_t mActiveCalibSlot{0};                   // index in mCalibLabels of the slot being processed
   const TimeSlotsSet* mCalibSlots{nullptr};     //! calibration slots, if declared; not owned
