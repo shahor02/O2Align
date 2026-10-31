@@ -1,7 +1,7 @@
 # Handover: residual patterns after the cluster-x fix (`solA2v5F`)
 
 Written for: the person continuing the ITS alignment tuning (knows O2Align and checkResid).
-State: 2026-10-21. Everything below is read from `/data0/devAlg/tests/solA2v5F` (config `doc/ITS_RB_v5.json`),
+Date: 2026-10-21. State: 2026-10-21. Everything below is read from `/data0/devAlg/tests/solA2v5F` (config `doc/ITS_RB_v5.json`),
 compared with `solA2v5` (before the fix) and with V10n (`/data0/devAlg/tests/v10n`). Nothing was re-run for this note
 except reading existing outputs.
 

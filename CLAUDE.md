@@ -23,8 +23,7 @@ closure test in [README.md](README.md), which injects a known misalignment (`mis
 that the fit recovers it.
 
 `Params` is an O2 `ConfigurableParam` whose prefix is **`AlignParams`** (`O2ParamDef(Params,
-"AlignParams")` in [Params.h](include/O2Align/Params.h)). The README examples still use
-`AlignmentParams.*`, which no longer matches.
+"AlignParams")` in [Params.h](include/O2Align/Params.h)).
 
 Three-stage workflow, the same executable each time:
 1. `--output MilleData,MilleSteer` over reconstructed data — writes `mp2data.bin` and the steering
@@ -64,6 +63,13 @@ fitted to the displacements of its children's bounding-box corners, sensors kept
 initial alignment, otherwise the ideal matrices derived from it are wrong.
 
 If DPL workflow should be piped to a chain of shell comands, it has to have `--run` option before the 1st element not being a workflow, i.e. `... | o2-dev-alignment-workflow --run | tee my.log`.
+
+## Documentation conventions
+
+- [doc/history.md](doc/history.md) records *why* developments happened (observations, found problems, fixes), in
+  chronological order. Feature docs and code comments describe only what the code does and how to use it. Whoever
+  motivates a change by an observation adds the entry to `history.md`, not a narrative to a comment or feature doc.
+- Handovers go to `doc/handovers/`, each with a `Date:` line; superseded notes are moved to `doc/obsoleteNotes/`.
 
 ## Coding preferences
 

@@ -134,7 +134,7 @@ only the 2 staves free, the constraint would force their mean to 0, which biases
 
 ## Example (a): ITS3 layer 0 half barrel 0
 
-This is the test which was previously driven by `doMisalignmentLeg/RB`. ITS3 MC is needed (`--with-its3`, and no
+ITS3 MC is needed (`--with-its3`, and no
 `--disable-mc`) because of the exact Legendre model.
 
 Files: [misalign_ITS3_L0HB0.json](misalign_ITS3_L0HB0.json), [misalign_dof_ITS3_L0HB0.json](misalign_dof_ITS3_L0HB0.json). It injects
@@ -161,7 +161,7 @@ o2-dev-alignment-workflow --with-its3 --track-sources ITS --output MilleRes \
 
 The expected result: the entries of `ITS3Layer0/ITS3CarbonForm0` in `result.json` (`rigidBody` and `matrix`) and the layer 0 line of
 `closure.json` are consistent with 0. The Legendre mode is injected non-linearly, its recovery is
-approximate, to the level of the linearisation (the old test had the same property).
+approximate, to the level of the linearisation.
 
 ## Example (b): ITS layer 3 half barrel 0 and 2 of its staves
 

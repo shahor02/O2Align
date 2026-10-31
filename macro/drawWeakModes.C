@@ -218,8 +218,8 @@ void profilePage(TTree* sens, int ib, const std::string& name, const std::string
   c->Print(pdf.c_str());
 }
 
-// The azimuthal-harmonic families, l = 1..GlobalHarmonicLMax: the modes measured to dominate the ITS
-// corrections once the radial scaling and the curl are constrained away. Left column: the whole family
+// The azimuthal-harmonic families, l = 1..GlobalHarmonicLMax: the modes surviving once the radial
+// scaling and the curl are constrained away. Left column: the whole family
 // summed; right column: each order on its own, so the dominant l is visible.
 void harmonicPage(TTree* sens, int ib, const std::string& name, const std::string& pdf)
 {

@@ -150,13 +150,10 @@ those elements carry the lever arm from the child to the parent. That is the cor
 the parent's DOF is a fit parameter — the degeneracy genuinely is "parent pose vs transported
 children pose". It is the **wrong** operator for pinning a collective drift, because the fit can
 satisfy it with whichever contributing DOF is cheapest in χ², and a weakly-observable rotation with a
-large lever arm is by far the cheapest. Measured in the ITS (see
-[AlignmentWeakModes_handover.md](AlignmentWeakModes_handover.md)): in `DOF TY for …/ITSUStave0` the two
-half-staves moved −119 and −75 µm, and the equation was satisfied to 5·10⁻⁴ µm because each took an
-RZ of ±7.5 mrad — rotation about the sensor normal, which displaces the measured coordinates by
-almost nothing but enters the equation with a coefficient of 0.645 against 0.5 for TY. The pin did not
-prevent the 97 µm drift; it manufactured a 0.43° rotation to pay for it. At the OB half-barrel the
-coefficient ratio is 1.724 vs 0.042 — a factor of 41, the stave radius in cm.
+large lever arm is by far the cheapest. In the ITS that is the RZ of the children (rotation about the
+sensor normal): it displaces the measured coordinates by almost nothing but enters the equation with a
+coefficient of the order of the lever arm (the stave radius in cm at the OB half-barrel), so the pin is
+satisfied by an opposite-sign pair of large RZ instead of preventing the drift of the common mode.
 
 `pinChildrenMeanNoCross` writes the same equation with the cross-terms dropped: the plain mean of the
 children's *own* same-named DOF, which no other DOF of the child can pay for.
@@ -303,9 +300,8 @@ vanish:
 | `globalShift`   | rigid translation along the global X, Y, Z axis (`globalShift_x/_y/_z`) | **3** |
 
 The two harmonic families are the generic form of the azimuthal modes, with the amplitude explicitly
-proportional to r because that is the measured shape: the fitted ε = amplitude/r of the surviving ITS
-modes is coherent to 2-6 % across the IB and the OB, two independently mounted structures spanning
-r = 2.3 → 39 cm. At ℓ = 0 they reduce exactly to `radialScaling` and `curl`, which is why their orders
+proportional to r (the weak modes of the ITS have an ε = amplitude/r coherent across the independently
+mounted IB and OB, which a real deformation would not have). At ℓ = 0 they reduce exactly to `radialScaling` and `curl`, which is why their orders
 start at ℓ = 1, and `tangentialHarmonic2` is the companion that `elliptical` — a purely radial field —
 does not cover. `globalTilt` supplies the two transverse partners of `curl`; it is needed as an
 explicit constraint because a tilt shows up as a child TZ pattern ∝ −r·cos φ whose mean vanishes both
@@ -318,7 +314,7 @@ directions whatever the vertex does. A field f(t) (p = 0) shifts the track's d0 
 only the vertex constraint can see. The members which are already modes of their own are left out:
 radial (1,0) is `radialScaling`, tangential (1,0) is `curl`, longitudinal (1,1) = z is `zScaling`, and
 longitudinal (0,0) is a rigid z shift. Longitudinal (1,0), Δz = ε·r, is the telescope mode, and radial
-(0,1), Δr = ε·z/r, is the cone that showed up as the IB chip-TY dipole. Like `zScaling` these families
+(0,1), Δr = ε·z/r, is a cone. Like `zScaling` these families
 have little or no handle on stave-level DOFs (all at z ≈ 0, see "How the mode coefficients are
 built"): they matter as soon as DOFs distributed in z (modules, chips) are free, which is exactly when
 they must be requested. Note that `bowing`
@@ -326,8 +322,7 @@ they must be requested. Note that `bowing`
 `radialPolar_r0t2`, Δr = ε·z²/r². The equations are named `<family>_r<p>t<k>`, e.g.
 `radialPolar_r0t1`. They are only the axisymmetric, low-order members of a family that is
 really a function of (φ, t): with free DOFs at module/chip granularity a fit can still take large
-amplitudes in, e.g., Δz = r·g(φ, t) with g not covered here (measured in `ITS_RB_v3`, see
-AlignmentWeakModes_handover.md section 6). The `rayModes` clause below covers the whole family.
+amplitudes in, e.g., Δz = r·g(φ, t) with g not covered here. The `rayModes` clause below covers the whole family.
 
 The clause takes a boolean (all equations), the string `"all"`, or an array of names, each of which may
 be a mode name (all its equations), a single order of a harmonic family (`radialHarmonic3`), or a
@@ -354,9 +349,8 @@ selected by `AlignParams.modeSensorProjection` (`Volume::ModeEquationOptions`, s
   **U**·**e**<sub>k</sub>, resp. (**M** − **O** × **U**)·**e**<sub>k</sub>, with **U** = Σ **u**(**p**) and
   **M** = Σ **p** × **u**(**p**), sums which add up over the subtrees (`Volume::collectProjectedModeTerms`).
   Since the sensor displacement is the sum of the contributions of all levels, the equation is the same
-  whichever level realises the motion: a half-barrel shift gives the same total at stave, half-stave or
-  module level (`globalShift_y` over Lr3 HB0 in `ITS_RB_v17`: coefficient sums −7.69, −7.69, −7.71 per
-  level), and a volume counts in proportion to its sensors. The rotations get their lever arm from the
+  whichever level realises the motion: a half-barrel shift gives (to rounding) the same coefficient sum at
+  stave, half-stave or module level, and a volume counts in proportion to its sensors. The rotations get their lever arm from the
   sensors' extent: the rotation of a stave is weighted by its length, that of a chip about its own centre
   by its few cm. This is the metric of the B amplitude of `WeakModesDiag` (a fit of the sensor
   displacements), up to the sampling of the sensor rotations.
@@ -365,10 +359,9 @@ selected by `AlignParams.modeSensorProjection` (`Volume::ModeEquationOptions`, s
   evaluated at the volume's *origin*, onto the corresponding local axis; every volume counts with
   weight 1, whatever its size. The rotation part is what makes `twist` constrain the OB staves' `RY`
   rather than their translations. With several nested levels flagged, the equation then weights the
-  levels by their number of volumes rather than by the displacement they cause (the same Lr3 HB0 shift:
-  −7.69, −15.4, −61.6 at stave, half-stave and module level), so its content depends on which level
-  carries the motion. It reproduces the `mp2con.txt` written before the option existed exactly.
-  Metric A of `WeakModesDiag` still uses these coefficients.
+  levels by their number of volumes rather than by the displacement they cause (the coefficient sum of
+  one and the same half-barrel shift grows with the number of volumes of the level), so its content
+  depends on which level carries the motion. Metric A of `WeakModesDiag` still uses these coefficients.
 
 Each equation is homogeneous, so it is normalised to a largest coefficient of 1, and terms below 1e-9
 of that are dropped as rounding residues of the L2G matrices.
@@ -400,9 +393,8 @@ rigid rotation) and carries no information.
 
 A `globalModes` equation is one equation over the *whole* flagged set, whatever the rules: flagging
 each layer with its own rule still gives a single equation over all of them. A deformation which
-cancels between the parts of the flagged set therefore escapes it. In `ITS_RB_v15`/`v16` the OB bowed
-radially by +12/+13 µm on Lr3/Lr4 and −15…−17 µm on Lr6 at the stave ends, which meets the single
-`bowing` equation by cancellation between layers. The `groupModes` clause writes the equations per
+cancels between the parts of the flagged set therefore escapes it (e.g. a bow of opposite sign in different
+layers meets a single `bowing` equation). The `groupModes` clause writes the equations per
 group instead:
 
 ```json
@@ -428,20 +420,17 @@ group instead:
   built"). Nothing has to be
   flagged below, and the matched volume itself needs no free DOF (a fixed half barrel is fine).
   Summing every level is what makes it impossible to escape: a `pinChildrenMean*` sees only the nearest
-  free descendants, so a motion it pins can reappear one level down. The OB half-barrel "scissor" did
-  exactly that under the stave-level pin, through module TX + RY; `globalShift` per half barrel removes
-  the net translation whichever level carries it.
+  free descendants, so a motion it pins can reappear one level down (e.g. through module TX + RY under a
+  stave-level pin); `globalShift` per half barrel removes the net translation whichever level carries it.
 - **Relative to the free motion of the group volumes** (`AlignParams.groupModesRelToRoots`, default
   `true`, needs `modeSensorProjection`). Before the projection, the mode is replaced, for each volume of
   the group, by its residual after a least-squares fit, over the sample points of that volume's sensors,
   of the rigid motions of the volume's own *free* DOFs (`Volume::removeFreeRigidMotion`). The free DOFs
   of the group volumes then drop out of the equation exactly, and it constrains only the deformation of
-  their content. For the per-layer stave bow of `ITS_RB_v17` (staves free in TX, TY, TZ, RY) the field
+  their content. For a per-layer stave bow with the staves free in TX, TY, TZ, RY the field
   z²·r̂ acts as (z² − ⟨z²⟩)·r̂ per stave: the radial offset of each stave, which the data measure,
   stays free, while the module TY coefficients sum to ≈ 0 per half stave. Without it, the projected
-  bow would load the stave TY with Σ z² of its sensors and pin the stave radii together with the bow;
-  the origin evaluation escaped this only because a stave origin sits at z = 0, and was centred at module
-  level only through the equal-weight child-mean constraints. A group volume without free DOFs (the
+  bow would load the stave TY with Σ z² of its sensors and pin the stave radii together with the bow. A group volume without free DOFs (the
   fixed OB half barrels of the `globalShift` groups) is left unchanged. A mode which is entirely a free
   rigid motion of the group volumes (e.g. `globalShift` on free half barrels) leaves nothing to
   constrain and is skipped with a warning; fix the DOF or set the switch to `false` to constrain it.
@@ -452,8 +441,7 @@ group instead:
   the same normalisation and pede grouping anchor.
 - **Rank.** Group equations must not tile a global one: if the groups of a mode together cover exactly
   the volumes of a `globalModes` set requesting the same mode, the global equation is the sum of the
-  group ones, an exact rank defect. Drop the mode from the global list (`ITS_RB_v17` removes `bowing`
-  there). Likewise `globalShift` on a volume is almost the transported `pinChildrenMean` of its TX/TY
+  group ones, an exact rank defect. Drop the mode from the global list. Likewise `globalShift` on a volume is almost the transported `pinChildrenMean` of its TX/TY
   at the first level, so use one or the other. Per-group members of the `rayModes` span (`zScaling`, the
   p = 1 polar members) inherit the degeneracy warning of the global ones.
 - **Measured directions.** A group equation on a direction the data do measure costs χ². Keep the
@@ -495,14 +483,13 @@ it follows the fit's rotation convention by construction.
 | `rSpanMin` | 1.0 cm | minimal radial span of a cell's sensors |
 | `rEdges` | [] | optional radial boundaries; each range gets its own cells (this forbids, e.g., a relative IB/OB ray motion, which tracks do measure) |
 | `rMin`, `rMax` | 0, ∞ cm | only sensors within this radial range are binned |
+| `components` | all | any of `rdphi`, `dz`, `dr` |
+| `combineRanges` | false | needs `rEdges`: one equation per (φ, t) cell over all radial ranges, each range with equal weight (see below) |
 
 The cells use the nominal t = z/r, i.e. a vertex at z = 0. A track from z_v crosses the layer at
 radius r at t + z_v/r. With σ(z_v) ≈ 5 cm this shifts t by about ±2 at the ITS IB but only by
 ±0.13-0.25 in the OB. So at the IB a cell is not a set of rays, and its equation is not a pure
-null direction. Use `rMin` (e.g. 10 cm for the ITS) to bin only the OB; see
-AlignmentWeakModes_handover.md section 6 for the measured effect.
-| `components` | all | any of `rdphi`, `dz`, `dr` |
-| `combineRanges` | false | needs `rEdges`: one equation per (φ, t) cell over all radial ranges, each range with equal weight (see below) |
+null direction. Use `rMin` (e.g. 10 cm for the ITS) to bin only the OB.
 
 `true` takes the defaults and `false` removes the flag. A flagged ancestor takes precedence over a
 flagged descendant.
@@ -538,7 +525,7 @@ combined equations they pin the IB and the OB separately, which is the relative-
 `combineRanges` is meant to avoid. The same applies to any other rotation mode restricted to one
 range.
 
-Example: the OB-only `dz`, `dr` cells of ITS_RB_v19, plus `rdphi` cells over IB + OB in which the IB
+Example: the OB-only `dz`, `dr` cells, plus `rdphi` cells over IB + OB in which the IB
 and the OB weigh equally:
 
 ```json

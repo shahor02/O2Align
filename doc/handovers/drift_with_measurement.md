@@ -1,5 +1,7 @@
 # Handover: ITS envelope drifts despite a `Measurement` on its TX/TY/TZ
 
+Date: 2026-10-20.
+
 ## Problem
 
 Config `doc/ITS_RB_from_staves.json`: the ITS envelope is free and carries `Measurement 0 0.01` on

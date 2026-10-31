@@ -467,7 +467,8 @@ class Volume
   static bool writeModeEquation(std::ostream& os, const std::string& name, const std::vector<std::pair<uint32_t, double>>& terms, int nFlagged, uint32_t anchorLabel);
   /// smallest Millepede label of a free rigid-body DOF in this subtree, UINT32_MAX if there is none
   uint32_t minFreeRigidBodyLabel() const;
-  /// workaround for the constraint grouping of pede, see writeGlobalModeConstraints
+  /// add a negligible anchor term (lowest free label) to a long constraint, so that pede's constraint grouping
+  /// processes it first, see writeGlobalModeConstraints
   static void addPedeGroupingAnchor(Constraint& con, uint32_t anchorLabel);
   /// apply the "rayModes" clause of a rule: true (defaults), false, an object overriding the fields of
   /// RayModesConfig ("nPhi", "phi0", "nT", "tMax", "rSpanMin", "rEdges", "rMin", "rMax", "components",

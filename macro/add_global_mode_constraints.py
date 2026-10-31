@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
 """Append global ITS deformation-mode constraints to an mp2con.txt written by MilleSteer.
 
-SUPERSEDED by the "globalModes" clause of the DOF config (Volume::writeGlobalModeConstraints),
-which derives the coefficients from each volume's own getL2G() and also covers the rotation DOFs.
-Prefer that. This script remains useful for one thing only: trying a mode on an mp2con.txt that
-already exists, with no new MilleSteer pass. Its two approximations matter -- it uses nominal layer
-radii and infers phi from the stave index, so the azimuthal phase is offset from the real geometry
-and the IB stave tilt (which gives radial modes a projection on the stave TX) is missing.
+Stop-gap equivalent of the "globalModes" clause of the DOF config (Volume::writeGlobalModeConstraints),
+which derives the coefficients from each volume's own getL2G() and also covers the rotation DOFs; prefer
+that. This script is useful for trying a mode on an mp2con.txt that already exists, with no new MilleSteer
+pass. Its two approximations: it uses nominal layer radii and infers phi from the stave index, so the
+azimuthal phase is offset from the real geometry, and the IB stave tilt (which gives radial modes a
+projection on the stave TX) is missing.
 
-The hierarchical "mean of children = parent" constraint that Volume::writeRigidBodyConstraints
-and pinChildrenMean produce is a *rigid-body* constraint: 6 scalar equations per parent, removing
-only the net translation/rotation of that parent's set of free descendants. Deformation modes of
-the barrel as a whole -- uniform radial scaling, elliptical (2-phi) squashing, twist -- carry no
-net rigid component per parent and therefore pass straight through it. They are also (very nearly)
-null modes of a helix fit, so pede takes large amplitudes in them for a negligible chi2 gain.
+The hierarchical "mean of children = parent" constraint (Volume::writeRigidBodyConstraints, pinChildrenMean)
+is a *rigid-body* constraint: 6 scalar equations per parent, removing only the net translation/rotation of
+that parent's set of free descendants. Deformation modes of the barrel as a whole -- uniform radial
+scaling, elliptical (2-phi) squashing, twist -- carry no net rigid component per parent and pass through it.
+They are also (very nearly) null modes of a helix fit, so they need explicit constraints.
 
-This script writes the missing constraint equations directly into the steering file, so the
-hypothesis can be tested without touching the C++ (the proper fix is a constraint writer next to
-writeRigidBodyConstraints that derives the coefficients from each volume's own L2G).
+This script writes these constraint equations directly into the steering file.
 
 Coefficients use the local-frame convention of RigidBodyDOFSet for ITS sensors:
 local X = r-phi (in plane), local Y = sensor normal (~ radial), local Z = beam.
@@ -110,8 +107,7 @@ def build(dofs, modes):
     # The generic azimuthal-harmonic families, amplitude proportional to r, matching
     # Volume::RadialHarmonic / Volume::TangentialHarmonic. The radial component projects on the stave
     # TY (sensor normal), the tangential one on TX (r-phi). These are the modes left over once the
-    # radial scaling, the curl and the radial l=2 are constrained away -- see
-    # doc/AlignmentWeakModes_handover.md for the measured amplitudes.
+    # radial scaling, the curl and the radial l=2 are constrained away.
     for name, dof in (("radialHarmonic", "TY"), ("tangentialHarmonic", "TX")):
         for l in range(1, LMAX + 1):
             if name in modes or f"{name}{l}" in modes:

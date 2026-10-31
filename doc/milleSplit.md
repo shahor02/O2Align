@@ -1,7 +1,6 @@
 # Rigid-body consistency test of the IB chips from the Mille data (`macro/milleSplit*`)
 
 Written for: whoever continues the ITS alignment tuning (knows O2Align, Millepede-II/GBL and checkResid).
-State: 2026-10-23.
 
 ## 1. What the test asks
 
@@ -56,8 +55,7 @@ python3 -I milleSplitModels.py fit sens.txt ms_B0.bin [ms_BPlus.bin ...]       #
 - **Mean vertex:** its calibration globals (X, Y, Z, SlopeX, SlopeY of up to 8 time slots) are accumulated as
   free parameters, after the chip ones, and `fit` frees them in every model. The vertex records measure the
   mean vertex relative to its reference at (0, 0), while the 2025 beam sits at about (+0.3, −1.8) mm. Keeping
-  it fixed pulls every vertex by ~40σ, transversely only, and fakes a large rφ-only chip term. This
-  happened in the first version of this tool (see section 5).
+  it fixed pulls every vertex by ~40σ, transversely only, and fakes a large rφ-only chip term.
 - **Other rows:** OB, TPC, vertex and every other row help determine the local parameters, but carry no
   parameters of their own: these globals stay at their recorded reference values. Check that this is
   acceptable (compare with `millepede_labeled.res`) before trusting a result.
@@ -79,32 +77,16 @@ Every chip is free in all six DOFs, which leaves global weak modes. Parameter va
 with a 50 µm / 5 mrad prior; the gains do not use it. Only y/z differences and chip-to-chip patterns are
 meaningful: the absolute values are not.
 
-## 5. Result on the 2026-10-21 data (`/data/devAlg/mille{B0,BPlus,BMinus}`)
+## 5. Interpreting the result
 
-> **Invalid, kept for the record.** These numbers come from the first version of the tool, which kept the
-> mean vertex fixed at (0, 0). The β term below is that artefact: per stave it is a first harmonic in the
-> stave azimuth, ∝ R·cos α, about twice as large in B0. Rerun with the current version before using any
-> number of this section. See `doc/ib-endchip-rphi-incidence.md` for the status.
-
-| field | used records | split − rigid, Δχ² (2592 extra) | β per sensor, Δχ² (432) | β per layer × chip index, Δχ² (27) | β per layer, Δχ² (3) |
-|---|---|---|---|---|---|
-| B0 | 251k | 88 019 | 79 718 | 2 367 | 2 250 |
-| B+ | 217k | 101 015 | 94 558 | 4 840 | 4 768 |
-| B− | 235k | 95 372 | 88 855 | 4 557 | 4 480 |
-
-- **Rigid freedom is not enough.** Even with all six DOFs per chip free, including RX and RZ, which v10
-  does not free, the data are far from rigid.
-- **One y-only incidence term per chip carries 80–95% of the gap.** The IB y measurements contain an
-  rφ-only term ∝ tan φ_inc with no dz counterpart. It is not a displacement.
-- **It is mostly chip-to-chip / stave-to-stave.** The common pattern (β ≈ +8…+18 µm, smaller at the stave
-  ends, larger in B0 than in B±) explains little of it.
-- **Caveat:** the per-sensor β scatters by 35–115 µm rms, which is probably inflated by its correlation with
-  the chip RZ (free in the rigid model). Removing RZ from the rigid set is the obvious check, and is not
-  done yet.
-
-The checkResid view of the same effect (the Lr0 end-chip dy-vs-Z excess, the |zv| > 12 vertex "vortex", and
-the missing dz partner of the dy ∝ tan φ_inc term) contradicts the premise of `handout_endchip_dy_vs_z.md`:
-a pooled RY-shaped `endChipTilt` cannot represent this term.
+- If the split model gains far more than its number of extra parameters, the data are not described by rigid
+  chip motion. A y-only term β ∝ tan φ_inc (no dz counterpart) that carries most of the gap is not a
+  displacement: it points to the cluster positions (dictionary, centroid) or to a track-frame/incidence effect.
+- Per stave, a β that is a first harmonic in the stave azimuth ∝ R·cos α is the signature of a fixed mean
+  vertex (see the mean-vertex bullet of section 3), not of the chips.
+- The per-sensor β is correlated with the chip RZ (free in the rigid model); check by removing RZ from the
+  rigid set before reading it.
+- A pooled RY-shaped end-chip tilt cannot represent a y-only ∝ tan φ_inc term.
 
 ## 6. Next steps
 

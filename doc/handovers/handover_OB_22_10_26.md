@@ -1,36 +1,18 @@
 # Handover: the OB dy patterns are a chip-row offset inside the OB modules (`solA2v10`)
 
 Written for: the person continuing the ITS alignment tuning (knows O2Align, Millepede-II, and checkResid).
-State: 2026-10-22. Everything below is read from `/data/devAlg/solA2v10` (config `doc/ITS_RB_v10.json`), compared
+Date: 2026-10-24 (last updated; written 2026-10-22). State: 2026-10-22. Everything below is read from `/data/devAlg/solA2v10` (config `doc/ITS_RB_v10.json`), compared
 with `/data/devAlg/solA2v8ns` and with the older `res` trees in `/data/devAlg/tests/ITSBarFix` and
 `/data/devAlg/tests/StavesOnly`. Nothing was re-run except checkResid post-processing and tree reading.
 Sections 6–8 were added on 2026-10-23: the `solA2v11` result, the OB half-barrel weak mode, and the v12 config.
 Sections 9–10 were added on 2026-10-24: why v12 failed (`/data/devAlg/solA2v12`), and the v14 config that replaces it.
 Section 12 was added later on 2026-10-24: the v14 and v11re results, and how the scissor escapes the v14 pin.
 
-## 1. What v10 tried, and why it did nothing
+## 1. What v10 tried (dead end)
 
-v10 = v8ns + (a) `RZ` freed on the OB staves, with `RZ` added to the OB half-barrel `pinChildrenMeanNoCross`;
-(b) per-layer `globalModes` blocks (`twist`, `bowing`, `zScaling`, the polar families) for `ITSULayer3..6`.
-The aim was the large OB dy vs φ residuals and the dy vs Z structures at the OB layer edges.
-
-Result: no change. Stat-weighted RMS of the per-bin medians (`macro/checkResidMedians.C`), OO / pp:
-
-| histogram | v8ns | v10 |
-|---|---|---|
-| dy_Lr3 vs φ | 10.7 / 9.4 µm | 10.2 / 9.1 µm |
-| dy_Lr4 vs φ | 10.9 / 9.0 | 10.5 / 8.9 |
-| dy_Lr5 vs φ | 21.1 / 21.7 | 20.0 / 20.7 |
-| dy_Lr6 vs φ | 4.6 / 6.0 | 4.4 / 6.0 |
-| dy_Lr3..6 vs Z | 2.9 – 5.6 | identical to 0.05 µm |
-
-- Pede did fit the new DOFs: the OB stave RZ come out at ~1.9 mrad RMS against errors of ~0.08 mrad, with no visible
-  effect on dy. The fit used RZ to fake something else; it is not a real stave rotation.
-- (b) was a configuration error: `zScaling` and the p = 1 polar modes lie in the span of `rayModes`, which bins the OB
-  (`rMin` = 10 cm). `DOFConfig_rules.md` says not to combine them (near-degenerate constraint set).
-- v10 and v8ns were **not** fitted on the same Mille data: v10 used `milleB{0,Minus,Plus}/mp2data_0.bin` (as v7), v8ns
-  the 45-file `MilleV8/*` set. Their χ² (v10: 29.4 M / 31.9 M ndf = 0.92; v8ns: 26.0 M / 32.2 M = 0.81) are therefore not
-  comparable, and the small differences in the table above mix config and data.
+v10 = v8ns + OB stave `RZ` free + per-layer `globalModes` (`twist`, `bowing`, `zScaling`, polar families) on `ITSULayer3..6`. No change in
+the OB dy vs φ / vs Z residuals. The freed stave RZ (~1.9 mrad RMS) only faked something else, and the `globalModes` lay in the span of
+`rayModes` (`DOFConfig_rules.md` says not to combine them). v10 and v8ns also used different Mille data, so their χ² are not comparable.
 
 ## 2. The OB dy vs φ pattern is not a stave pattern
 
@@ -84,7 +66,7 @@ end modules are not. Examples:
 | Lr5 m6 | — | — | chip 0 −9.2, chip 11 −15.4 |
 
 The Lr6 spikes at z ≈ ±63 in the checkResid dy vs Z page are these chips. They are even in z (same sign at both
-ends), consistent with the even-in-tgλ OB dy noted in `handover_patterns_afterFixX.md` (p.7). Whether they are
+ends), consistent with the even-in-tgλ OB dy noted in `handover_patterns_afterFixX.md` (same folder) (p.7). Whether they are
 geometry or an incidence-angle effect (tgλ ≈ ±1.6 at these z) cannot be decided from the residuals; a fit with
 chip-level DOFs is the test.
 
@@ -201,126 +183,25 @@ Y "scissor":
   the user's plots show. The IB's own 1–3 µm rφ changes between versions are amplified about 10× at Lr6. The user's
   test probably includes the vertex or weights the points; get its definition before comparing quantitatively.
 
-## 8. Next step: `doc/ITS_RB_v12.json`
+## 8. `ITS_RB_v12.json` (superseded, condensed)
 
-**Superseded.** The first row of the table below was a configuration error, and v12 made things worse. See
-section 9, and section 10 for the replacement.
+v12 = v11 + transported HB pin for TX/TY (replacing, not complementing, the NoCross TX/TY), OB module RY fixed, OB chip TZ free, tighter
+stave-end chip priors. It was worse than v11 (large bowing / radialPolar_r1t2 / radialScaling amplitudes). See section 9 for the causes.
 
-v12 = v11 plus the following changes. No new Mille data is needed; use the same 45 files (`mpSteerV11.txt`).
+## 9. v12 post-mortem (condensed)
 
-| change | rule |
-|---|---|
-| OB half-barrels: transported pin for the translations (section 7) | `"pinChildrenMean": ["TX","TY"]` + `"pinChildrenMeanNoCross": ["TZ","RY"]` |
-| OB module RY fixed (TX-gradient degeneracy) | module `rigidBody: ["TX","TY","TZ"]` |
-| OB chip TZ freed (dz pattern, p.4) | chip `rigidBody: ["TX","TZ"]`, priors TX and TZ 20 µm |
-| stave-end chips: tighter priors | TX and TZ 5 µm on Module0 chips 0/13, Module3 chips 6/7 (Lr3–4), Module6 chips 6/7 (Lr5–6) |
+1. The transported pin **replaced** the NoCross TX/TY pins, losing the rotation-about-z and radial-breathing pins: complement, never replace.
+2. OB modules move along the ray from the vertex: a module shifted radially by δr at z equals δz = δr·z/r for tracks from the vertex. `rayModes`
+   removes only the (φ, t) cell mean, so module TY acquired a z pattern common to all staves of a layer with TZ following TY·z/r
+   (e.g. Lr3 TY −7.6/+7.9/+8.6/−8.9 µm). A likely driver is the dz-vs-tgλ incidence bias (see memory `ob-dz-tgl-incidence`).
+3. Freeing OB chip TZ and fixing module RY gave nothing (23.7 k poorly constrained parameters, uncorrelated with module TY).
+4. The solver difference (MINRES vs MINRES-QLP) was refuted as a cause by the v11re refit (section 12).
 
-- Using the transported pin is safe here. OB stave RZ is fixed and the staves are centred at z = 0. In the generated
-  equations the stave TZ and RY coefficients are about 1e-5 and 5e-4, so no cheap DOF can pay for a half-barrel shift.
-- `DOFConfig_rules.md` warns that putting both pin forms on one volume can make the constraints rank-deficient. Here
-  they cover different DOFs, but check `pede.log` for a reported rank.
-- A later `measurement` rule replaces all earlier priors of a volume, so the end-chip rules repeat TX and TZ.
-- Generated steering, checked:
-  - free parameters 34 146 → 56 142 (+23 688 chip TZ, −1 692 module RY);
-  - RY constraints 488 → 200 (no module RY below the half-staves);
-  - TZ constraints 495 → 2 187 (each module's TZ is now the mean of its chips).
-- Expect pede to need about 25 GB (v11 peaked at 8.25 GB for about 28.6k parameters).
+## 10. `ITS_RB_v14.json` (condensed)
 
-What to check after the run:
-1. The section 7 scissor is gone from the geometry diff vs V10n, and the B=0 IB-extrapolation test is flat again.
-2. Per-chip dz scatter in the OB drops; the small-scale dz vs Z pattern (p.4) disappears.
-3. The stave-end chip TX/TZ stay within a few × 5 µm.
-4. The row gap and the dy vs φ improvements of section 6 survive.
-
-## 9. v12 post-mortem (`/data/devAlg/solA2v12`)
-
-v12 did not improve the checkResid results. Its `weakModes.pdf` has large global-mode amplitudes that v11 does
-not have: bowing −77 µm, radialPolar_r1t2 +70 µm, radialScaling +33 µm, longitudinalPolar_r0t1 +33 µm,
-globalTilt_y −25 µm, zScaling −16 µm. The bowing and r1t2 modes are nearly collinear and cancel each other, so the
-B-fit amplitudes are inflated, but the fraction of displacement power they explain rises from ≈ 0.02 to 0.3–0.45.
-The total χ² is only 0.2 % lower (432.4 M vs 433.4 M). There were four causes.
-
-**1. The OB half-barrel NoCross TX/TY were replaced instead of complemented.**
-- The NoCross TX and TY equations of v11 set the plain mean of the staves' local TX (rφ) and local TY (radial) to
-  zero. Per layer and half-barrel, they pin the rotation about z and the radial breathing.
-- The transported `pinChildrenMean` TX/TY pins the translation instead (section 7). Neither form covers the other.
-  v12 lost the rotation and breathing pins.
-- Mean stave DOF per half-barrel, L3h0 … L6h1 (µm):
-
-  | | v11 | v12 |
-  |---|---|---|
-  | stave TY (radial) | 0.00 in all | −2.3, +0.9, +6.1, +7.9, +2.0, +0.4, −4.2, −5.6 |
-  | stave TX (rφ) | 0.00 in all | +4.8, +1.7, 0.0, +1.0, −2.8, −2.0, 0.0, +0.6 |
-
-**2. The OB modules move along the ray from the vertex.**
-- For a track from the vertex, a module shifted radially by δr at z is equivalent to one shifted by δz = δr·z/r.
-  A sensor moved along its own ray leaves the hit at the same local position, so this holds per sensor, not
-  only per (φ, t) cell.
-- `rayModes` removes only the cell mean, summed over the OB layers. Only the vertex-z spread breaks the rest.
-- In v12 the OB module TY acquire a z pattern common to all staves of a layer, and the module TZ follow TY·z/r:
-  - Lr3, modules at z ≈ −31, −10, +10, +31 cm: mean TY −7.6, +7.9, +8.6, −8.9 µm; TY·z/r = +12, −4, +4.4, −14 µm;
-    fitted TZ +16, −5, +3.6, −15 µm.
-  - Lr6, module 4 (z ≈ +21 cm): TY −18 µm, TY·z/r −9.7 µm, TZ −10.5 µm. Modules 0, 2 and 6 agree as well.
-- v11 shows module TY of ±5 µm with no common z pattern.
-- A likely driver is the incidence-dependent dz bias of section 6 (dz vs tgλ at large |tgλ|), which a radial
-  offset mimics.
-
-**3. Chip TZ and module RY fixed gave nothing.**
-- The chip-TZ gradient inside a module is uncorrelated with the module TY (|r| < 0.2), so the chip TZ do not drive
-  cause 2.
-- They add 23.7 k poorly constrained parameters. Lr3 chip TZ have an RMS of 31 µm against a 20 µm prior.
-
-**4. The two runs used different solvers (not a cause, see section 12).**
-
-| | v11 | v12 |
-|---|---|---|
-| method | MINRES, sparse | MINRES-QLP, full |
-| solver stop | 2000-iteration limit (`istop = 5`) in 4 of 5 iterations | converged (`istop = 4`) in 490–650 iterations |
-| Acond | ≈ 40 | 2.4e4, growing to 9.3e4 |
-| expected dF at the end | 5.5e3 | 1.6e4 |
-
-- **Refuted by the v11 refit (section 12).** v11 refitted with MINRES-QLP (`solA2v11re`) gives the same result as
-  v11, so the solver is not a confound. The v12 weak modes come from causes 1–3 alone.
-- v12 reports Arnorm = ‖A·r‖ ≈ 1e19–1e21. This cannot be right, since Arnorm ≤ Anorm·rnorm ≈ 600. It points to a
-  numerical problem in the preconditioned singular system; not investigated.
-- Neither fit converged in the outer iterations: dF_exp is still 5.5e3 for v11 and 1.6e4 for v12.
-
-## 10. Next step: `doc/ITS_RB_v14.json`
-
-v14 = v11 plus:
-
-| change | rule |
-|---|---|
-| OB half-barrels: transported pin added on top of the v11 NoCross pins | `"pinChildrenMean": ["TX","TY"]` + `"pinChildrenMeanNoCross": ["TX","TY","TZ","RY"]` |
-| stave-end chips (section 6, TX up to 770 µm) | TX prior 5 µm on Module0 chips 0/13, Module3 chips 6/7 (Lr3–4), Module6 chips 6/7 (Lr5–6) |
-
-The other v12 changes are dropped: the OB chip TZ stay fixed and the OB module RY stay free.
-
-Steering checks:
-- The steering is in `/data/devAlg/solA2v14`. It was generated with a 6-slot copy of `MV_B0BPBM.json` (slots 0–5,
-  as in the v11 production steering).
-- `mp2param.txt` and `mp2tree.txt` are byte-identical to those of v11.
-- `mp2con.txt` differs from v11's only by the 16 pinned TX/TY equations and the 1152 end-chip TX priors
-  (4 chips × 288 half-staves).
-- Rank of the constraint matrix, from the eigenvalues of the row-normalised C·Cᵀ:
-  - full rank: 4413 equations;
-  - the six smallest eigenvalues are 1.8e-5, 3.8e-5, 7.7e-5, 2.4e-4, 2.6e-4, 2.8e-4;
-  - v11 has the same three smallest, and 2.5e-4, 3.2e-4, 3.2e-4 for the next three;
-  - the softest direction in both is the OB half-barrel NoCross RY.
-  - So combining both pin forms on TX/TY creates no near-degeneracy here. The staves have only TX, TY, TZ, RY free,
-    and the two forms weight them by const and by cos φ / sin φ.
-
-Run and comparison:
-- Use the same 45 Mille files (`mpSteerV11.txt`).
-- Use the same `method` as v12, MINRES-QLP, so that pede converges. Judge v14 on its own weak-mode PDF and checkResid.
-
-What to check after the run:
-1. The radialScaling / bowing / longitudinalPolar amplitudes stay at the v11 level, and the mean stave TX/TY per
-   half-barrel stay at 0.
-2. The section 7 scissor shrinks in the geometry diff vs V10n.
-3. The stave-end chip TX stay within a few × 5 µm.
-4. The module TY/TZ do not develop the section 9 along-ray pattern. If they do with a converged solver, the module TY
-   prior (30 µm) is the next lever.
+v14 = v11 + transported HB pin (`pinChildrenMean` TX,TY) **on top of** the v11 NoCross pins + 5 µm TX priors on the stave-end chips (Module0 chips 0/13,
+Module3 chips 6/7 for Lr3–4, Module6 chips 6/7 for Lr5–6). OB chip TZ stay fixed, module RY free. Constraint matrix has full rank; combining both
+pin forms creates no near-degeneracy. Fit with MINRES-QLP (same as v12) on the same 45 Mille files. Result in section 12.
 
 ## 11. Tools
 

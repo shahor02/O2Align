@@ -479,9 +479,8 @@ bool Volume::globalModeField(int mode, int phase, const double* pos, double* u, 
       //   RadialHarmonic:     u_r   = r*C(phi),  u_phi = 0
       //   TangentialHarmonic: u_phi = r*C(phi),  u_r   = 0
       // with C = cos(l*phi) or sin(l*phi), l = globalHarmonicL(phase) and the cos/sin selected by
-      // globalHarmonicIsSin(phase). Both are the measured shape of the ITS weak modes: the fitted
-      // amplitude/r is coherent across the IB and the OB (see AlignmentWeakModes_handover.md), which
-      // is why the field is written r*C and not C.
+      // globalHarmonicIsSin(phase). The amplitude is proportional to r (the field is r*C, not C),
+      // the shape in which these modes are coherent across detector layers.
       //
       // Only curl_z survives, curl_z = (1/r)[d(r*u_phi)/dr - d(u_r)/dphi], hence
       //   RadialHarmonic:     om_z = -C'(phi)/2   (C' = dC/dphi)
@@ -514,8 +513,7 @@ bool Volume::globalModeField(int mode, int phase, const double* pos, double* u, 
       // about Z, and they are needed as explicit constraints because no mean-of-children pin can
       // remove them: a tilt about Y shows up as a stave TZ pattern ~ -r*cos(phi) (and a stave RX
       // pattern ~ cos(phi)), whose mean vanishes over a half-shell *and* over the full circle, so
-      // the cross-term pin that would see it is instead paid off between the two (measured in
-      // doc/AlignmentWeakModes_handover.md: 155 urad about Y, identical on all 14 ITS half-barrels).
+      // the cross-term pin that would see it is instead paid off between the two.
       const double e[3] = {phase == 0 ? 1. : 0., phase == 0 ? 0. : 1., 0.};
       u[0] = e[1] * z - e[2] * y;
       u[1] = e[2] * x - e[0] * z;
@@ -999,8 +997,7 @@ std::array<DOFDisp, RigidBodyDOFSet::NDOF> rigidBodyDisplacements(const TGeoHMat
 // sensor it crosses (e = phiHat: its phi changes by F; e = zHat: its tgLambda by F; e = rHat: its
 // points slide along it, i.e. dz = -t*dr = -r*t*F absorbed by tgLambda, and with B != 0 the curvature)
 // costs no chi2 whatever F is. The global modes constrain a few smooth members of this family; with
-// DOFs distributed in z the fit finds the others (measured in ITS_RB_v3: 87 % of the per-cell dz/r
-// variance common to all seven layers). Discretised: per cell of (phi, t) and component,
+// DOFs distributed in z the fit finds the others. Discretised: per cell of (phi, t) and component,
 //   sum over the sensors s of the cell of (e_s . d_s) / r_s = 0,
 // d_s = sum over the free rigid-body DOFs p on the path from s to the root of (dd_s/dp) * p, the
 // linearised displacement of the sensor centre, i.e. the mean angular displacement of the cell seen
@@ -1043,7 +1040,7 @@ void Volume::writeRayModeConstraints(std::ostream& os) const
 //   sum over the ranges k of (1/n_k) * sum over the sensors s of range k of (e_s . d_s) / r_s = 0,
 // i.e. the mean angular displacement of the cell is averaged over the ranges with equal weights, so
 // a range with many sensors (the OB) does not pin the ray motion alone: only the common ray motion of
-// all ranges is removed, their relative motion (e.g. an IB/OB kink, measured by the tracks) is left
+// all ranges is removed, their relative motion (e.g. an IB/OB kink, which the tracks measure) is left
 // to the data. A cell populated in one range only reduces to the equation of that range (counted in
 // the log as "incomplete").
 int Volume::writeRayModeSet(std::ostream& os, const Volume* top, const RayModesConfig& cfg, uint32_t anchorLabel,
@@ -1183,16 +1180,10 @@ int Volume::writeRayModeSet(std::ostream& os, const Volume* top, const RayModesC
 
 void Volume::writeGlobalModeConstraints(std::ostream& os, const ModeEquationOptions& opt) const
 {
-  // Workaround for the constraint grouping of pede (grpcon, Millepede-II 4fd638f67f): constraints are
-  // processed in the order of their lowest parameter index, and a constraint joining several groups
-  // formed before it relabels its direct neighbours only, which can leave an earlier group empty;
-  // pede then indexes globalParCons(0) and corrupts the heap ("free(): invalid next size"). A mode
-  // equation spans most of the free DOFs, so it is exactly such a joining constraint unless it is
-  // processed first: give every mode equation the lowest label of any free rigid-body DOF of the tree
-  // (all hierarchical constraints are built over those) as an anchor term. It is then the first
-  // constraint pede sees, its group absorbs every constraint sharing a DOF with it, and nothing is
-  // merged afterwards. The coefficient cannot be 0, which pede's reader (addItem) silently drops, see
-  // addPedeGroupingAnchor. Any other long constraint written later (ray modes) needs the same anchor.
+  // Every mode equation gets the lowest label of any free rigid-body DOF of the tree as an anchor term
+  // (coefficient 1e-12, not 0, which pede's reader drops), so that pede's constraint grouping (which
+  // processes constraints by their lowest parameter index) meets it first and forms one group; see
+  // addPedeGroupingAnchor. Any other long constraint (ray modes) needs the same anchor.
   const uint32_t firstLabel = minFreeRigidBodyLabel();
   std::vector<std::pair<uint32_t, double>> terms;
   for (int eq = 0; eq < NGlobalEq; ++eq) {

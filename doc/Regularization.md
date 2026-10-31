@@ -139,7 +139,7 @@ achievable: take ω as the median of the children's rotations, then T as the med
 displacements after removing the lever arm ω × r<sub>i</sub>. It goes wrong, however, when the
 children share a rotation **about their own axes** that no rigid motion of the parent produces.
 
-In the solA2IBv3 alignment, all Layer-3 HB0 staves have RZ ≈ −22 mrad, a "turbine" pattern.
+Example: all the staves of one half-barrel may carry RZ ≈ −22 mrad (a "turbine" pattern).
 Transferring it to the half-barrel as a rotation about the beam axis forces lever-arm compensations
 of ω·r ≈ 22 mrad × 19.6 cm onto the staves. They end up with ±4.7 mm translations instead of ±1.8 mm.
 The sensors are still in place, but the children's corrections get larger, not smaller.
@@ -160,7 +160,7 @@ Each child carries the same 8 points, whatever its size, so it counts once.
   10<sup>−11</sup> in a rotation-matrix element. A typical value is 2·10<sup>−10</sup> cm.
 - **Summary (info).** The log gives the number of parents processed, the largest transferred shift
   and rotation, and the mean corner displacement of the children relative to their parents before
-  and after. On solA2IBv3, with all levels selected, that displacement went from 179 µm to 68 µm.
+  and after.
 - **Per parent (debug).** For each parent the log gives the transferred T and ω and the mean child
   displacement before and after.
 

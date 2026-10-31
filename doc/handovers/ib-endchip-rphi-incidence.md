@@ -1,7 +1,7 @@
 # IB end chips and chip bowing: dy-vs-Z and dz-vs-Z patterns
 
 Written for: whoever continues the ITS alignment tuning (knows O2Align, Millepede-II and checkResid).
-State: 2026-10-25. Supersedes the versions of 2026-10-22/23 ("rphi-only, non-rigid term", which was an
+Date: 2026-10-25 (last updated). State: 2026-10-25. Supersedes the versions of 2026-10-22/23 ("rphi-only, non-rigid term", which was an
 artefact, section 5) and of 2026-10-24 ("the end-chip priors block the fit", which was wrong, section 6).
 Sections 9–10 (restart test from IBv0, IBv1–IBv3, v16, other checkResid features) added on 2026-10-25.
 
@@ -39,7 +39,7 @@ Sections 9–10 (restart test from IBv0, IBv1–IBv3, v16, other checkResid feat
   - chip-to-chip spread 2–6 µm.
 
   No rigid DOF can absorb it; it needs a new per-chip deformation DOF (section 8).
-- **The handout.** The pooled RY "endChipTilt" of `handout_endchip_dy_vs_z.md` rotates about the wrong
+- **The handout.** The pooled RY "endChipTilt" of the (since deleted) end-chip handout of 2026-10-22 rotates about the wrong
   axis: in the local frame RY is the in-plane rotation.
 
 ## 2. checkResid with cluster size and snp (v8ns trees)

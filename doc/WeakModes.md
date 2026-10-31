@@ -54,9 +54,9 @@ the sensors of all layers). It is a constraint only, not a column of the diagnos
 
 - **Mode constraints** are written over the free rigid-body DOFs of the volumes *flagged* by the
   `globalModes` clause. Flagging nested levels is legitimate: the equation constrains the total amplitude,
-  whichever level carries it. In the ITS configurations (`doc/ITS_RB_v2.json` and later) the flag sits on
-  the **stave level and below** (`"match": "ITS/.+"` in v3/v4), i.e. over one whole detector branch, so
-  that the equation spans the inner and the outer barrel together. The root has no DOFs, so each
+  whichever level carries it. In the ITS the flag typically sits on the **stave level and below**
+  (`"match": "ITS/.+"`), i.e. over one whole detector branch, so that the equation spans the inner and
+  the outer barrel together. The root has no DOFs, so each
   detector branch (ITS, TRD, TOF, TPC, …) is a separate, independent set.
 - **Modes with a z-dependent coefficient** (`zScaling`, `bowing`, the polar families) project on a
   volume's local Z with a coefficient ∝ its z; they are meaningful only once DOFs *distributed in z*
