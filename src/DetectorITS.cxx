@@ -138,14 +138,15 @@ bool DetectorITS::isOverlapPair(const FrameInfoExt& a, const FrameInfoExt& b) co
 
 void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
 {
-  const auto clusITS = recoData->getITSClusters();
-  const auto clusITSROF = recoData->getITSClustersROFRecords();
-  const auto patterns = recoData->getITSClustersPatterns();
-  auto pattIt = patterns.begin();
+  const int nLayers = recoData->getITSPerLayer() ? o2::globaltracking::MaxITSLayers : 1;
   const auto& params = Params::Instance();
-
+  mITSLayerOffsets.fill(0);
   mITSPointsInfo.clear();
-  mITSPointsInfo.reserve(clusITS.size());
+  size_t nClusters = 0;
+  for (int lr = 0; lr < nLayers; ++lr) {
+    nClusters += recoData->getITSClusters(lr).size();
+  }
+  mITSPointsInfo.reserve(nClusters);
   // The overlap search relies on the ITS2 chip mapping and topology dictionary. With ITS3 the IDs of
   // the outer barrel chips are shifted by the number of the IB tiles, hence it is not supported.
   const bool findOverlaps = params.ITSOverlapMargin > 0 && !mIsITS3;
@@ -160,9 +161,9 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
     mOverlaps = o2::itsmft::ChipMappingITS{}.getOverlapsInfo();
   }
   if (findOverlaps) {
-    mITSOvlClusRef.assign(clusITS.size(), -1);
+    mITSOvlClusRef.assign(nClusters, -1);
     mITSOvlCandidateID.clear();
-    mITSOvlCandidateID.reserve(clusITS.size());
+    mITSOvlCandidateID.reserve(nClusters);
   } else {
     mITSOvlClusRef.clear();
     mITSOvlCandidateID.clear();
@@ -176,52 +177,60 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
   };
   std::array<ROFChipEntry, o2::itsmft::ChipMappingITS::getNChips()> chipROFStart{};
 
-  for (const auto& rof : clusITSROF) {
-    const int maxic = rof.getFirstEntry() + rof.getNEntries();
-    edgeClusters.clear();
-    for (int ic = rof.getFirstEntry(); ic < maxic; ++ic) {
-      const auto& cls = clusITS[ic];
-      auto& pointInfo = mITSPointsInfo.emplace_back(makeClusterPoint(cls, pattIt, findOverlaps));
-      const auto sensID = pointInfo.cluster.getSensorID();
-      if (findOverlaps && pointInfo.cluster.getBits() && !pointInfo.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
-        if (chipROFStart[sensID].rofCount != rofCount) {
-          chipROFStart[sensID].rofCount = rofCount;
-          chipROFStart[sensID].chipFirstEntry = edgeClusters.size();
+  for (int lr = 0; lr < nLayers; ++lr) {
+    const int offset = mITSPointsInfo.size();
+    mITSLayerOffsets[lr] = offset;
+    const auto clusITS = recoData->getITSClusters(lr);
+    const auto clusITSROF = recoData->getITSClustersROFRecords(lr);
+    const auto patterns = recoData->getITSClustersPatterns(lr);
+    auto pattIt = patterns.begin();
+    for (const auto& rof : clusITSROF) {
+      const int maxic = rof.getFirstEntry() + rof.getNEntries();
+      edgeClusters.clear();
+      for (int ic = rof.getFirstEntry(); ic < maxic; ++ic) {
+        const auto& cls = clusITS[ic];
+        auto& pointInfo = mITSPointsInfo.emplace_back(makeClusterPoint(cls, pattIt, findOverlaps));
+        const auto sensID = pointInfo.cluster.getSensorID();
+        if (findOverlaps && pointInfo.cluster.getBits() && !pointInfo.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
+          if (chipROFStart[sensID].rofCount != rofCount) {
+            chipROFStart[sensID].rofCount = rofCount;
+            chipROFStart[sensID].chipFirstEntry = edgeClusters.size();
+          }
+          edgeClusters.push_back(offset + ic);
         }
-        edgeClusters.push_back(ic);
       }
-    }
-    for (auto ic : edgeClusters) {
-      auto& cl = mITSPointsInfo[ic].cluster;
-      const int sensID = cl.getSensorID();
-      const auto ovl = mOverlaps[sensID];
-      int ovlCount = 0;
-      for (int ir = 0; ir < DetectorITS::OVL::NSides; ++ir) {
-        if (ovl.rowSide[ir] == DetectorITS::OVL::NONE) {
-          continue;
-        }
-        const int chipOvl = ovl.rowSide[ir];
-        if (chipROFStart[chipOvl].rofCount == rofCount) {
-          auto oClusID = edgeClusters[chipROFStart[chipOvl].chipFirstEntry];
-          while (oClusID < static_cast<int>(mITSPointsInfo.size())) {
-            const auto oClus = mITSPointsInfo[oClusID].cluster;
-            if (oClus.getSensorID() != chipOvl) {
-              break;
-            }
-            if (isOverlapCandidate(cl, oClus, ir)) {
-              if (!ovlCount) {
-                mITSOvlClusRef[ic] = mITSOvlCandidateID.size();
+      for (auto ic : edgeClusters) {
+        auto& cl = mITSPointsInfo[ic].cluster;
+        const int sensID = cl.getSensorID();
+        const auto ovl = mOverlaps[sensID];
+        int ovlCount = 0;
+        for (int ir = 0; ir < DetectorITS::OVL::NSides; ++ir) {
+          if (ovl.rowSide[ir] == DetectorITS::OVL::NONE) {
+            continue;
+          }
+          const int chipOvl = ovl.rowSide[ir];
+          if (chipROFStart[chipOvl].rofCount == rofCount) {
+            auto oClusID = edgeClusters[chipROFStart[chipOvl].chipFirstEntry];
+            while (oClusID < static_cast<int>(mITSPointsInfo.size())) {
+              const auto oClus = mITSPointsInfo[oClusID].cluster;
+              if (oClus.getSensorID() != chipOvl) {
+                break;
               }
-              mITSOvlCandidateID.push_back(oClusID);
-              ++ovlCount;
+              if (isOverlapCandidate(cl, oClus, ir)) {
+                if (!ovlCount) {
+                  mITSOvlClusRef[ic] = mITSOvlCandidateID.size();
+                }
+                mITSOvlCandidateID.push_back(oClusID);
+                ++ovlCount;
+              }
+              ++oClusID;
             }
-            ++oClusID;
           }
         }
+        cl.setCount(std::min(127, ovlCount));
       }
-      cl.setCount(std::min(127, ovlCount));
+      ++rofCount;
     }
-    ++rofCount;
   }
 }
 
@@ -240,7 +249,7 @@ bool DetectorITS::refitITSTrack(o2::globaltracking::RecoContainer* recoData, GTr
   o2::track::TrackPar refLin{track};
   const int nCl = trkITS.getNClusters();
   for (int iCl = 0; iCl < nCl; iCl++) { // clusters are stored from outer to inner layers
-    const auto& frame = mITSPointsInfo[itsClRefs[trkITS.getClusterEntry(iCl)]];
+    const auto& frame = mITSPointsInfo[flatClusterIndex(itsClRefs[trkITS.getClusterEntry(iCl)])];
     const auto& cls = frame.cluster;
     if (!(params.useStableRef ? track.rotate(frame.alpha, refLin, bz) : track.rotate(frame.alpha)) ||
         !prop->propagateTo(track, params.useStableRef ? &refLin : nullptr, cls.getX(), true)) {
@@ -306,7 +315,8 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   };
 
   int nPoints = 0;
-  auto registerCluster = [&](int clusID) {
+  auto registerCluster = [&](int composedID) {
+    const int clusID = flatClusterIndex(composedID);
     auto& curInfo = mITSPointsInfo[clusID];
     if (curInfo.cluster.getBits() && curInfo.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
       return;

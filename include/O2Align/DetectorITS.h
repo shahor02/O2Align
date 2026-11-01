@@ -13,6 +13,8 @@
 #define O2_ALIGN_DETECTORITS_H
 
 #include <vector>
+#include <array>
+#include "DataFormatsITSMFT/ClusterID.h"
 
 #include "DataFormatsITSMFT/CompCluster.h"
 #include "ITSMFTReconstruction/ChipMappingITS.h"
@@ -77,13 +79,14 @@ class DetectorITS : public Detector
   FrameInfoExt makeClusterPoint(const o2::itsmft::CompClusterExt& cls, PattIt& pattIt, bool findOverlaps) const;
   bool isOverlapCandidate(const o2::BaseCluster<float>& cl, const o2::BaseCluster<float>& oClus, int side) const;
   bool isOverlapPair(const FrameInfoExt& a, const FrameInfoExt& b) const;
-
+  int flatClusterIndex(int id) const { return mITSLayerOffsets[o2::itsmft::clusID2Layer(id)] + o2::itsmft::clusID2Index(id); }
   bool mIsITS3{false};
   const o2::itsmft::TopologyDictionary* mITSDict{nullptr};
   const o2::its3::TopologyDictionary* mIT3Dict{nullptr};
   std::vector<o2::itsmft::ChipMappingITS::Overlaps> mOverlaps;
   std::vector<int> mITSOvlCandidateID;
   std::vector<int> mITSOvlClusRef;
+  std::array<int, o2::itsmft::MaxClusLayers> mITSLayerOffsets{};
   std::vector<FrameInfoExt> mITSPointsInfo;
 };
 

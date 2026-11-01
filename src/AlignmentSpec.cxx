@@ -2292,9 +2292,10 @@ void AlignmentSpec::finaliseCCDB(ConcreteDataMatcher& matcher, void* obj)
   }
 }
 
-DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t detectors, const std::vector<DetID::mask_t>& detCombinations, bool cosmicsExt, bool useMC, bool withITS3, bool requestCTPLumi, o2::alignrs::OutputEnum out)
+DataProcessorSpec getAlignmentSpec(GTrackID::mask_t srcTracks, GTrackID::mask_t detectors, const std::vector<DetID::mask_t>& detCombinations, bool cosmicsExt, bool useMC, bool withITS3, bool requestCTPLumi, o2::alignrs::OutputEnum out, bool itsStag)
 {
   auto dataRequest = std::make_shared<DataRequest>();
+  dataRequest->setITSPerLayer(itsStag);
   std::shared_ptr<o2::base::GRPGeomRequest> ggRequest{nullptr};
   auto detMask = GTrackID::getSourcesDetectorsMask(detectors);
 

@@ -111,7 +111,7 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfg)
     specs.emplace_back(o2::globaltracking::getNoInpDummyOutSpec(0));
   }
   
-  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, dets, detCombinations, isCosmicExt, useMC, withITS3, requestCTPLumi, output));
+  specs.emplace_back(o2::alignrs::getAlignmentSpec(srcTrc, dets, detCombinations, isCosmicExt, useMC, withITS3, requestCTPLumi, output, o2::itsmft::DPLAlpideParamInitializer::isITSStaggeringEnabled(cfg)));
 
   o2::raw::HBFUtilsInitializer hbfIni(cfg, specs);
   return std::move(specs);
