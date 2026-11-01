@@ -3,7 +3,7 @@
 Written for: whoever continues the ITS alignment (a person or Claude), familiar with O2Align, Millepede-II and checkResid.
 Date: 2026-10-31. State: v19 (`/data/devAlg/solA2v19`, config `doc/ITS_RB_v19.json`) and its cure `cure012`
 (`/data/devAlg/solA2v19cure/cure012`), with checkResid on pp B0 (LHC25ab 562862) and OO B+ (LHC25ae) for both.
-The pede evaluation of the cure (section 6) was running when this was written.
+Section 6 (pede evaluation of the cure) was added on 2026-11-01.
 
 ## 1. What the kink is
 
@@ -147,23 +147,46 @@ TX labels are touched; everything else in `millepede.res` is copied unchanged. V
 - Hence the pp − OO dPar2 difference is not geometric: either a field-dependent effect (curvature, field map, material)
   in the B ≠ 0 data, or a real difference of the detector between the two periods.
 
-## 6. Open: does the Mille fit reject the cure? (pede evaluation)
+## 6. Does the Mille fit reject the cure? (pede evaluation)
 
-Running at the time of writing, in `/scratch/rs/algDev/solA2v19cure/pedeEval` (copy of `/data/devAlg/solA2v19cure/pedeEval`):
-pede on the v19 Mille data with **all parameters fixed**, once at the v19 values (test 2, `runTest2.sh`) and once at the
-cure012 values (test 1, `runTest1.sh`), each on B0, B+, B− separately (`run_<sol>_fixed_<set>/`).
+pede on the v19 Mille data with the ITS labels fixed, once at the v19 values (test 2, `runTest2.sh`) and once at the
+cure012 values (test 1, `runTest1.sh`), each on B0, B+, B− separately. Inputs and outputs are in
+`/data/devAlg/solA2v19cure/pedeEval` (`run_<sol>_fixedMVfree_<set>/`).
 
 - Parameter files `param_{v19,cure012}_fixed.txt`: every label `label value -1`; they differ only in the 23 688 OB chip TX.
   Mean-vertex slot 6 (no data in v19, absent from `millepede.res`) is fixed at 0. pede refuses these
   (`STOP ... no variable global parameters`), so the runs use `param_*_fixedMVfree.txt` (`./runTestN.sh fixedMVfree`),
   where the 35 mean-vertex labels are free and refitted in both tests.
 - Steering `steer_<param>_<set>.txt`: the v19 options (`fullMINRES-QLP 4 0.10`, `chisqcut 20 5`, `outlierdownweighting 4`,
-  `dwfractioncut 0.15`, `entries 55`, `skipemptycons`) and v19's `mp2con.txt`. The 4 iterations do not move anything; they
-  reproduce v19's outlier treatment, so test 2 should give v19's χ² (4.8037E+08 for the mix) minus the prior terms.
-- Reading: compare `Sum(Chi^2)` and the rejected records between the two tests per field set (the three sets add up to the
-  mix). Δχ² ≲ 10⁵: the Mille data barely constrain this mode, and the choice between v19 and cure012 must come from the
-  pp/OO argument. Δχ² of 10⁶–10⁷: the Mille data reject the cure. B0 alone accepting it while B± reject it points to a
-  field-related origin of the kink.
+  `dwfractioncut 0.15`, `entries 55`, `skipemptycons`) and v19's `mp2con.txt`. The iterations move only the mean vertex;
+  they reproduce v19's outlier treatment. The value to compare is the last `Sum(Chi^2)/Sum(Ndf)` line of `millepede.log`,
+  which is the χ² sum.
+
+Result (2026-11-01):
+
+| set | records | χ² v19 | χ² cure012 | Δχ² | Δχ²/record | rejects v19 → cure |
+|---|---|---|---|---|---|---|
+| B0 | 4 058 920 | 99 885 863 | 100 089 713 | +203 850 (+0.20 %) | 0.050 | 88 148 → 88 185 |
+| B+ | 4 873 246 | 185 250 781 | 185 513 432 | +262 651 (+0.14 %) | 0.054 | 137 978 → 138 079 |
+| B− | 5 073 458 | 195 322 229 | 195 585 543 | +263 313 (+0.13 %) | 0.052 | 148 447 → 148 659 |
+| sum | 14 005 624 | 480 458 873 | 481 188 688 | +729 815 (+0.15 %) | 0.052 | |
+
+- The v19 sum is within 0.02 % of the χ² of the v19 fit (4.8036E+08), as expected.
+- The Mille data disfavour the cure, but by 0.05 per record, 70 times less than the v18 → v19 χ² gap (+51 M). The value is an
+  upper bound: all other labels stay at v19, none is allowed to readjust to the cure.
+- The cost per record is the same in B0, B+ and B−, so the Mille preference for v19 is not field-related. Hence pp B0
+  data prefer cure012 in checkResid and v19 in the Mille fit: the two estimators disagree on this mode, as they did for
+  v18 vs v19.
+
+## 6a. Next: is the checkResid kink set by the vertex?
+
+The checkResid IB sub-track contains the refitted PV as a point (`checkresid.addPVAsCluster = true`, the default). With
+σ(PV) of a few µm and the IB at 2.2–3.9 cm, the PV dominates the IB sub-track direction: a 5 µm PV–IB transverse offset
+alone gives ~150 µrad in dPar2, the size of the kink. In the Mille data the vertex enters only through the composed
+free-vertex fit of PVs with ≤ 15 tracks (`useMultiTrackPVConstraint = 2`), so it cannot impose such a direction.
+Test: rerun checkResid on pp B0 562862 for v19 (and cure012) with `checkresid.addPVAsCluster=false`, so the IB sub-track
+is Lr0..Lr2 only, and compare with `kinkMap.C`. If the v19 kink disappears, it is a PV/IB effect and the OB cure
+compensates it in the wrong place; if it stays, the IB/OB disagreement is in the tracks themselves.
 
 Other cheap tests not yet done: checkResid on the second B0 run 562837; a pair of runs of the same period with B = 0 and
 B ≠ 0.
