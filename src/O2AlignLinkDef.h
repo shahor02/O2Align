@@ -24,9 +24,9 @@
 #pragma link C++ class o2::alignrs::Constraint + ;
 
 #pragma link C++ class o2::alignrs::Label + ;
-#pragma link C++ class std::map<int, unsigned int> + ;
-#pragma link C++ class std::map<int, std::string> + ;
-#pragma link C++ class std::map<std::string, int> + ;
+#pragma link C++ class std::map < int, unsigned int> + ;
+#pragma link C++ class std::map < int, std::string> + ;
+#pragma link C++ class std::map < std::string, int> + ;
 
 #pragma link C++ class o2::alignrs::Measurement + ;
 #pragma link C++ class o2::alignrs::FrameInfoExt + ;
@@ -34,11 +34,11 @@
 #pragma link C++ class o2::alignrs::Track + ;
 #pragma link C++ class o2::alignrs::TrackSlopes + ;
 #pragma link C++ class o2::alignrs::DbgPoint + ;
-#pragma link C++ class std::vector<o2::alignrs::DbgPoint> + ;
+#pragma link C++ class std::vector < o2::alignrs::DbgPoint> + ;
 #pragma link C++ class o2::alignrs::DbgTrack + ;
 
 #pragma link C++ class o2::alignrs::TimeSlot + ;
-#pragma link C++ class std::vector<o2::alignrs::TimeSlot > + ;
+#pragma link C++ class std::vector < o2::alignrs::TimeSlot> + ;
 #pragma link C++ class o2::alignrs::TimeSlotsSet + ;
 #pragma link C++ class o2::alignrs::ProcessingStats + ;
 

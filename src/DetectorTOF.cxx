@@ -15,13 +15,13 @@
 #include <TGeoManager.h>
 
 #include "DataFormatsGlobalTracking/RecoContainer.h"
+#include "DataFormatsGlobalTracking/TrackCosmicsExtended.h"
 #include "DataFormatsTOF/Cluster.h"
+#include "DetectorsBase/Propagator.h"
 #include "Framework/Logger.h"
 #include "MathUtils/Utils.h"
 #include "O2Align/DetectorTOF.h"
 #include "O2Align/Params.h"
-#include "DataFormatsGlobalTracking/TrackCosmicsExtended.h"
-#include "DetectorsBase/Propagator.h"
 #include "O2Align/SensorTOF.h"
 #include "TOFBase/Geo.h"
 
@@ -34,7 +34,8 @@ Volume::Ptr DetectorTOF::buildHierarchy(Volume::SensorMapping& sensorMap)
   const uint32_t det = mDetIdx;
   // the TOF envelope has no alignable entry in the geometry
   auto root = std::make_unique<Volume>("TOF_envelope", gLbl++, det, false, true);
-  // w/o a geometry counterpart the envelope cannot be shifted, but it may own calibration DOFs
+  // w/o a geometry counterpart the envelope cannot be shifted, but it may own
+  // calibration DOFs
   root->setRigidBodyAllowed(false);
   mSensors.assign(o2::tof::Geo::NSECTORS * o2::tof::Geo::NSTRIPXSECTOR, nullptr);
 
@@ -64,22 +65,28 @@ Volume::Ptr DetectorTOF::buildHierarchy(Volume::SensorMapping& sensorMap)
   return root;
 }
 
-// Point of a TOF cluster with the given main contributing channel and errors, in the tracking frame of its strip;
-// invalid if the strip is not in the hierarchy. The position is fully defined by the channel.
-FrameInfoExt DetectorTOF::makeClusterPoint(int channel, float sigY2, float sigZ2, float sigYZ) const
-{
-  const auto& params = Params::Instance();
+// Point of a TOF cluster with the given main contributing channel and errors,
+// in the tracking frame of its strip; invalid if the strip is not in the
+// hierarchy. The position is fully defined by the channel.
+FrameInfoExt DetectorTOF::makeClusterPoint(int channel, float sigY2,
+                                           float sigZ2, float sigYZ) const {
+  const auto &params = Params::Instance();
   FrameInfoExt pnt;
   int detInd[5] = {};
   o2::tof::Geo::getVolumeIndices(channel, detInd);
   const int sector = channel / o2::tof::Geo::NPADSXSECTOR;
-  const int sid = o2::tof::Geo::getStripNumberPerSM(detInd[1], detInd[2]) + sector * o2::tof::Geo::NSTRIPXSECTOR;
+  const int sid = o2::tof::Geo::getStripNumberPerSM(detInd[1], detInd[2]) +
+                  sector * o2::tof::Geo::NSTRIPXSECTOR;
   if (sid < 0 || sid >= static_cast<int>(mSensors.size()) || !mSensors[sid]) {
-    LOGP(debug, "TOF channel {} refers to strip {} which has no alignable volume", channel, sid);
+    LOGP(debug,
+         "TOF channel {} refers to strip {} which has no alignable volume",
+         channel, sid);
     return pnt;
   }
-  const auto* sensor = mSensors[sid];
-  const double loc[3] = {(detInd[4] + 0.5) * o2::tof::Geo::XPAD - o2::tof::Geo::XHALFSTRIP, 0., (detInd[3] - 0.5) * o2::tof::Geo::ZPAD};
+  const auto *sensor = mSensors[sid];
+  const double loc[3] = {(detInd[4] + 0.5) * o2::tof::Geo::XPAD -
+                             o2::tof::Geo::XHALFSTRIP,
+                         0., (detInd[3] - 0.5) * o2::tof::Geo::ZPAD};
   double tra[3]{};
   sensor->getT2L().MasterToLocal(loc, tra); // LOC -> TRK
 
@@ -87,22 +94,31 @@ FrameInfoExt DetectorTOF::makeClusterPoint(int channel, float sigY2, float sigZ2
   pnt.detIdx = mDetIdx;
   pnt.label = Label(mDetIdx, sid, true);
   pnt.x = static_cast<float>(tra[0]);
-  pnt.alpha = static_cast<float>(o2::math_utils::detail::sector2Angle<double>(sector));
-  pnt.cluster = o2::BaseCluster<float>(static_cast<int16_t>(sid), static_cast<float>(tra[0]), static_cast<float>(tra[1]), static_cast<float>(tra[2]),
-                                       sigY2 + params.extraClsErrYTOF * params.extraClsErrYTOF, sigZ2 + params.extraClsErrZTOF * params.extraClsErrZTOF, sigYZ);
+  pnt.alpha =
+      static_cast<float>(o2::math_utils::detail::sector2Angle<double>(sector));
+  pnt.cluster = o2::BaseCluster<float>(
+      static_cast<int16_t>(sid), static_cast<float>(tra[0]),
+      static_cast<float>(tra[1]), static_cast<float>(tra[2]),
+      sigY2 + params.extraClsErrYTOF * params.extraClsErrYTOF,
+      sigZ2 + params.extraClsErrZTOF * params.extraClsErrZTOF, sigYZ);
   return pnt;
 }
 
 void DetectorTOF::prepareData(o2::globaltracking::RecoContainer* recoData)
 {
-  // The TOF cluster position is fully defined by its main contributing channel, hence the
-  // conversion to the tracking frame does not depend on the track and is done once per TF.
+  // The TOF cluster position is fully defined by its main contributing channel,
+  // hence the conversion to the tracking frame does not depend on the track and
+  // is done once per TF.
   const auto clusters = recoData->getTOFClusters();
   mTOFPointsInfo.clear();
-  mTOFPointsInfo.resize(clusters.size()); // unusable clusters are left with the default lr = Invalid
+  mTOFPointsInfo.resize(
+      clusters
+          .size()); // unusable clusters are left with the default lr = Invalid
   for (size_t ic = 0; ic < clusters.size(); ++ic) {
     const auto& clus = clusters[ic];
-    mTOFPointsInfo[ic] = makeClusterPoint(clus.getMainContributingChannel(), clus.getSigmaY2(), clus.getSigmaZ2(), clus.getSigmaYZ());
+    mTOFPointsInfo[ic] =
+        makeClusterPoint(clus.getMainContributingChannel(), clus.getSigmaY2(),
+                         clus.getSigmaZ2(), clus.getSigmaYZ());
   }
 }
 
@@ -118,26 +134,30 @@ bool DetectorTOF::prepareTrack(o2::globaltracking::RecoContainer* /*recoData*/, 
     return false;
   }
   const auto& pnt = mTOFPointsInfo[idx];
-  if (pnt.lr == FrameInfoExt::Invalid) { // the strip of this cluster is not in the hierarchy
+  if (pnt.lr == FrameInfoExt::Invalid) { // the strip of this cluster is not in
+                                         // the hierarchy
     return false;
   }
   const size_t nPointsIni = resTrack.info.size();
   resTrack.info.push_back(pnt);
-  // continue the fit of the seed prepared by the inner detectors outward, w/o resetting its cov.matrix
+  // continue the fit of the seed prepared by the inner detectors outward, w/o
+  // resetting its cov.matrix
   return resTrack.continueFitOutward(static_cast<int>(nPointsIni));
 }
 
-// The raw TOF clusters of the cosmic do not carry the errors: those of a pad are used. Among the clusters of the leg (the one matched to
-// its track and those found on the road) the one closest to the reference track is taken.
-int DetectorTOF::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames)
-{
-  const auto& params = Params::Instance();
+// The raw TOF clusters of the cosmic do not carry the errors: those of a pad
+// are used. Among the clusters of the leg (the one matched to its track and
+// those found on the road) the one closest to the reference track is taken.
+int DetectorTOF::prepareCosmicLeg(
+    const o2::dataformats::TrackCosmicsExtended &cosm, int leg,
+    const o2::track::TrackParCovD &ref, std::vector<FrameInfoExt> &frames) {
+  const auto &params = Params::Instance();
   constexpr float SigY2 = o2::tof::Geo::XPAD * o2::tof::Geo::XPAD / 12.f;
   constexpr float SigZ2 = o2::tof::Geo::ZPAD * o2::tof::Geo::ZPAD / 12.f;
   FrameInfoExt bestPnt;
   bool found = false;
   double bestChi2 = params.cosmMaxChi2Cl;
-  for (const auto& cl : cosm.clTOF) {
+  for (const auto &cl : cosm.clTOF) {
     if (cl.leg != leg) {
       continue;
     }

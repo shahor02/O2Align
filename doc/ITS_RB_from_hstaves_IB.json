@@ -26,9 +26,18 @@
   {
     "match": "ITS",
     "measurement": {
-      "TX": [0.0, 0.01], 
-      "TY": {"value": 0.0, "sigma": 0.01},
-      "TZ": {"value": 0.0, "sigma": 0.01}
+      "TX": [
+        0.0,
+        0.01
+      ],
+      "TY": {
+        "value": 0.0,
+        "sigma": 0.01
+      },
+      "TZ": {
+        "value": 0.0,
+        "sigma": 0.01
+      }
     }
   }
 ]

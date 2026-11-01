@@ -32,7 +32,8 @@ void SensorTRD::defineMatrixL2G()
 
 void SensorTRD::defineMatrixT2L()
 {
-  setT2LFromAlpha(o2::math_utils::detail::sector2Angle<double>(o2::trd::Geometry::getSector(getSensorId())));
+  setT2LFromAlpha(o2::math_utils::detail::sector2Angle<double>(
+      o2::trd::Geometry::getSector(getSensorId())));
 }
 
 } // namespace o2::alignrs

@@ -9,40 +9,42 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#include <cmath>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <memory>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
 
-#include "Framework/Logger.h"
 #include "DataFormatsGlobalTracking/RecoContainer.h"
-#include "ITS3Reconstruction/IOUtils.h"
-#include "ITS3Reconstruction/TopologyDictionary.h"
+#include "DataFormatsGlobalTracking/TrackCosmicsExtended.h"
 #include "DataFormatsITSMFT/TopologyDictionary.h"
 #include "DataFormatsITSMFT/TrkClusRef.h"
+#include "DetectorsBase/Propagator.h"
+#include "Framework/Logger.h"
+#include "ITS3Reconstruction/IOUtils.h"
+#include "ITS3Reconstruction/TopologyDictionary.h"
+#include "ITSBase/GeometryTGeo.h"
 #include "ITSMFTBase/SegmentationAlpide.h"
 #include "ITStracking/IOUtils.h"
 #include "MathUtils/Utils.h"
 #include "O2Align/DetectorITS.h"
 #include "O2Align/Params.h"
-#include "DataFormatsGlobalTracking/TrackCosmicsExtended.h"
 #include "O2Align/SensorITS.h"
 #include "O2Align/TrackFit.h"
-#include "ITSBase/GeometryTGeo.h"
-#include "DetectorsBase/Propagator.h"
 
 namespace o2::alignrs
 {
 
-// Convert a compact cluster to the point in the tracking frame of its sensor, with the extra errors and,
-// if requested, the flags of the proximity to the chip edge. pattIt must be at the pattern of this cluster in
-// the pattern stream (if the cluster has one there) and is advanced past it.
+// Convert a compact cluster to the point in the tracking frame of its sensor,
+// with the extra errors and, if requested, the flags of the proximity to the
+// chip edge. pattIt must be at the pattern of this cluster in the pattern
+// stream (if the cluster has one there) and is advanced past it.
 template <typename PattIt>
-FrameInfoExt DetectorITS::makeClusterPoint(const o2::itsmft::CompClusterExt& cls, PattIt& pattIt, bool findOverlaps) const
-{
+FrameInfoExt
+DetectorITS::makeClusterPoint(const o2::itsmft::CompClusterExt &cls,
+                              PattIt &pattIt, bool findOverlaps) const {
   const auto& params = Params::Instance();
   auto geom = o2::its::GeometryTGeo::Instance();
   const auto sensID = cls.getSensorID();
@@ -51,9 +53,11 @@ FrameInfoExt DetectorITS::makeClusterPoint(const o2::itsmft::CompClusterExt& cls
   math_utils::Point3D<float> locXYZ;
   auto pattItCopy = pattIt;
   if (mIsITS3) {
-    locXYZ = o2::its3::ioutils::extractClusterData(cls, pattIt, mIT3Dict, sigmaY2, sigmaZ2);
+    locXYZ = o2::its3::ioutils::extractClusterData(cls, pattIt, mIT3Dict,
+                                                   sigmaY2, sigmaZ2);
   } else {
-    locXYZ = o2::its::ioutils::extractClusterData(cls, pattIt, mITSDict, sigmaY2, sigmaZ2);
+    locXYZ = o2::its::ioutils::extractClusterData(cls, pattIt, mITSDict,
+                                                  sigmaY2, sigmaZ2);
   }
   sigmaY2 += params.extraClsErrYITS[lay] * params.extraClsErrYITS[lay];
   sigmaZ2 += params.extraClsErrZITS[lay] * params.extraClsErrZITS[lay];
@@ -74,30 +78,42 @@ FrameInfoExt DetectorITS::makeClusterPoint(const o2::itsmft::CompClusterExt& cls
   pointInfo.label = Label(mDetIdx, sensID, true);
   pointInfo.x = x;
   pointInfo.alpha = alpha;
-  pointInfo.cluster = o2::BaseCluster<float>(sensID, trkXYZ, sigmaY2, sigmaZ2, 0.f);
+  pointInfo.cluster =
+      o2::BaseCluster<float>(sensID, trkXYZ, sigmaY2, sigmaZ2, 0.f);
   if (findOverlaps) {
     int row = 0, col = 0;
-    o2::itsmft::SegmentationAlpide::localToDetectorUnchecked(locXYZ.X(), locXYZ.Z(), row, col);
-    int drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? row : o2::itsmft::SegmentationAlpide::NRows - row - 1;
-    if (drow * o2::itsmft::SegmentationAlpide::PitchRow < params.ITSOverlapMargin) {
-      pointInfo.cluster.setBit(row < o2::itsmft::SegmentationAlpide::NRows / 2 ? DetectorITS::EdgeFlags::LowRow : DetectorITS::EdgeFlags::HighRow);
+    o2::itsmft::SegmentationAlpide::localToDetectorUnchecked(
+        locXYZ.X(), locXYZ.Z(), row, col);
+    int drow = row < o2::itsmft::SegmentationAlpide::NRows / 2
+                   ? row
+                   : o2::itsmft::SegmentationAlpide::NRows - row - 1;
+    if (drow * o2::itsmft::SegmentationAlpide::PitchRow <
+        params.ITSOverlapMargin) {
+      pointInfo.cluster.setBit(row < o2::itsmft::SegmentationAlpide::NRows / 2
+                                   ? DetectorITS::EdgeFlags::LowRow
+                                   : DetectorITS::EdgeFlags::HighRow);
       if (params.ITSOverlapEdgeRows > 0) {
         auto pattID = cls.getPatternID();
         drow = cls.getRow();
         if (pattID != itsmft::CompCluster::InvalidPatternID) {
           if (!mITSDict->isGroup(pattID)) {
-            const auto& patt = mITSDict->getPattern(pattID);
+            const auto &patt = mITSDict->getPattern(pattID);
             if (row > o2::itsmft::SegmentationAlpide::NRows / 2) {
-              drow = o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() - 1);
+              drow = o2::itsmft::SegmentationAlpide::NRows - 1 -
+                     (drow + patt.getRowSpan() - 1);
             }
           } else {
             o2::itsmft::ClusterPattern patt(pattItCopy);
-            drow = row < o2::itsmft::SegmentationAlpide::NRows / 2 ? drow - patt.getRowSpan() / 2 : o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() / 2 - 1);
+            drow = row < o2::itsmft::SegmentationAlpide::NRows / 2
+                       ? drow - patt.getRowSpan() / 2
+                       : o2::itsmft::SegmentationAlpide::NRows - 1 -
+                             (drow + patt.getRowSpan() / 2 - 1);
           }
         } else {
           o2::itsmft::ClusterPattern patt(pattItCopy);
           if (row > o2::itsmft::SegmentationAlpide::NRows / 2) {
-            drow = o2::itsmft::SegmentationAlpide::NRows - 1 - (drow + patt.getRowSpan() - 1);
+            drow = o2::itsmft::SegmentationAlpide::NRows - 1 -
+                   (drow + patt.getRowSpan() - 1);
           }
         }
         if (drow < params.ITSOverlapEdgeRows) {
@@ -109,24 +125,33 @@ FrameInfoExt DetectorITS::makeClusterPoint(const o2::itsmft::CompClusterExt& cls
   return pointInfo;
 }
 
-// oClus, an edge cluster of the chip on the given side of the chip of cl, may be a double hit with cl
-bool DetectorITS::isOverlapCandidate(const o2::BaseCluster<float>& cl, const o2::BaseCluster<float>& oClus, int side) const
-{
-  const auto& ovl = mOverlaps[cl.getSensorID()];
-  return oClus.isBitSet(ovl.rowSideOverlap[side]) && !oClus.isBitSet(DetectorITS::EdgeFlags::Biased) && std::abs(oClus.getZ() - cl.getZ()) < Params::Instance().ITSOverlapMaxDZ;
+// oClus, an edge cluster of the chip on the given side of the chip of cl, may
+// be a double hit with cl
+bool DetectorITS::isOverlapCandidate(const o2::BaseCluster<float> &cl,
+                                     const o2::BaseCluster<float> &oClus,
+                                     int side) const {
+  const auto &ovl = mOverlaps[cl.getSensorID()];
+  return oClus.isBitSet(ovl.rowSideOverlap[side]) &&
+         !oClus.isBitSet(DetectorITS::EdgeFlags::Biased) &&
+         std::abs(oClus.getZ() - cl.getZ()) <
+             Params::Instance().ITSOverlapMaxDZ;
 }
 
-// the clusters a and b, both unbiased edge clusters, look like the two hits of the same particle in the overlap of neighbouring chips
-bool DetectorITS::isOverlapPair(const FrameInfoExt& a, const FrameInfoExt& b) const
-{
-  const auto& ca = a.cluster;
-  const auto& cb = b.cluster;
-  if (mOverlaps.empty() || !ca.getBits() || !cb.getBits() || ca.isBitSet(DetectorITS::EdgeFlags::Biased) || cb.isBitSet(DetectorITS::EdgeFlags::Biased)) {
+// the clusters a and b, both unbiased edge clusters, look like the two hits of
+// the same particle in the overlap of neighbouring chips
+bool DetectorITS::isOverlapPair(const FrameInfoExt &a,
+                                const FrameInfoExt &b) const {
+  const auto &ca = a.cluster;
+  const auto &cb = b.cluster;
+  if (mOverlaps.empty() || !ca.getBits() || !cb.getBits() ||
+      ca.isBitSet(DetectorITS::EdgeFlags::Biased) ||
+      cb.isBitSet(DetectorITS::EdgeFlags::Biased)) {
     return false;
   }
-  const auto& ovl = mOverlaps[ca.getSensorID()];
+  const auto &ovl = mOverlaps[ca.getSensorID()];
   for (int ir = 0; ir < DetectorITS::OVL::NSides; ++ir) {
-    if (ovl.rowSide[ir] == DetectorITS::OVL::NONE || ovl.rowSide[ir] != cb.getSensorID()) {
+    if (ovl.rowSide[ir] == DetectorITS::OVL::NONE ||
+        ovl.rowSide[ir] != cb.getSensorID()) {
       continue;
     }
     if (isOverlapCandidate(ca, cb, ir)) {
@@ -136,10 +161,10 @@ bool DetectorITS::isOverlapPair(const FrameInfoExt& a, const FrameInfoExt& b) co
   return false;
 }
 
-void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
-{
-  const int nLayers = recoData->getITSPerLayer() ? o2::globaltracking::MaxITSLayers : 1;
-  const auto& params = Params::Instance();
+void DetectorITS::prepareData(o2::globaltracking::RecoContainer *recoData) {
+  const int nLayers =
+      recoData->getITSPerLayer() ? o2::globaltracking::MaxITSLayers : 1;
+  const auto &params = Params::Instance();
   mITSLayerOffsets.fill(0);
   mITSPointsInfo.clear();
   size_t nClusters = 0;
@@ -147,14 +172,18 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
     nClusters += recoData->getITSClusters(lr).size();
   }
   mITSPointsInfo.reserve(nClusters);
-  // The overlap search relies on the ITS2 chip mapping and topology dictionary. With ITS3 the IDs of
-  // the outer barrel chips are shifted by the number of the IB tiles, hence it is not supported.
+  // The overlap search relies on the ITS2 chip mapping and topology dictionary.
+  // With ITS3 the IDs of the outer barrel chips are shifted by the number of
+  // the IB tiles, hence it is not supported.
   const bool findOverlaps = params.ITSOverlapMargin > 0 && !mIsITS3;
   if (params.ITSOverlapMargin > 0 && mIsITS3) {
     static bool warned = false;
     if (!warned) {
       warned = true;
-      LOGP(warn, "The search of the ITS overlaps is not supported with ITS3, ignoring ITSOverlapMargin={}", params.ITSOverlapMargin);
+      LOGP(warn,
+           "The search of the ITS overlaps is not supported with ITS3, "
+           "ignoring ITSOverlapMargin={}",
+           params.ITSOverlapMargin);
     }
   }
   if (findOverlaps && mOverlaps.empty()) { // static, compute once
@@ -184,14 +213,16 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
     const auto clusITSROF = recoData->getITSClustersROFRecords(lr);
     const auto patterns = recoData->getITSClustersPatterns(lr);
     auto pattIt = patterns.begin();
-    for (const auto& rof : clusITSROF) {
+    for (const auto &rof : clusITSROF) {
       const int maxic = rof.getFirstEntry() + rof.getNEntries();
       edgeClusters.clear();
       for (int ic = rof.getFirstEntry(); ic < maxic; ++ic) {
-        const auto& cls = clusITS[ic];
-        auto& pointInfo = mITSPointsInfo.emplace_back(makeClusterPoint(cls, pattIt, findOverlaps));
+        const auto &cls = clusITS[ic];
+        auto &pointInfo = mITSPointsInfo.emplace_back(
+            makeClusterPoint(cls, pattIt, findOverlaps));
         const auto sensID = pointInfo.cluster.getSensorID();
-        if (findOverlaps && pointInfo.cluster.getBits() && !pointInfo.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
+        if (findOverlaps && pointInfo.cluster.getBits() &&
+            !pointInfo.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
           if (chipROFStart[sensID].rofCount != rofCount) {
             chipROFStart[sensID].rofCount = rofCount;
             chipROFStart[sensID].chipFirstEntry = edgeClusters.size();
@@ -200,7 +231,7 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
         }
       }
       for (auto ic : edgeClusters) {
-        auto& cl = mITSPointsInfo[ic].cluster;
+        auto &cl = mITSPointsInfo[ic].cluster;
         const int sensID = cl.getSensorID();
         const auto ovl = mOverlaps[sensID];
         int ovlCount = 0;
@@ -234,11 +265,12 @@ void DetectorITS::prepareData(o2::globaltracking::RecoContainer* recoData)
   }
 }
 
-bool DetectorITS::refitITSTrack(o2::globaltracking::RecoContainer* recoData, GTrackID gidITS, o2::track::TrackParCov& track) const
-{
-  const auto& trkITS = recoData->getITSTrack(gidITS);
+bool DetectorITS::refitITSTrack(o2::globaltracking::RecoContainer *recoData,
+                                GTrackID gidITS,
+                                o2::track::TrackParCov &track) const {
+  const auto &trkITS = recoData->getITSTrack(gidITS);
   const auto itsClRefs = recoData->getITSTracksClusterRefs();
-  const auto& params = Params::Instance();
+  const auto &params = Params::Instance();
   const auto pid = track.getPID();
   track = trkITS.getParamOut();
   track.resetCovariance();
@@ -248,18 +280,27 @@ bool DetectorITS::refitITSTrack(o2::globaltracking::RecoContainer* recoData, GTr
   const float bz = prop->getNominalBz();
   o2::track::TrackPar refLin{track};
   const int nCl = trkITS.getNClusters();
-  for (int iCl = 0; iCl < nCl; iCl++) { // clusters are stored from outer to inner layers
-    const auto& frame = mITSPointsInfo[flatClusterIndex(itsClRefs[trkITS.getClusterEntry(iCl)])];
-    const auto& cls = frame.cluster;
-    if (!(params.useStableRef ? track.rotate(frame.alpha, refLin, bz) : track.rotate(frame.alpha)) ||
-        !prop->propagateTo(track, params.useStableRef ? &refLin : nullptr, cls.getX(), true)) {
-      LOGP(debug, "ITS track refit failed on propagation to cl#{}, alpha={}, x={} | {}", iCl, frame.alpha, cls.getX(), track.asString());
+  for (int iCl = 0; iCl < nCl;
+       iCl++) { // clusters are stored from outer to inner layers
+    const auto &frame = mITSPointsInfo[flatClusterIndex(
+        itsClRefs[trkITS.getClusterEntry(iCl)])];
+    const auto &cls = frame.cluster;
+    if (!(params.useStableRef ? track.rotate(frame.alpha, refLin, bz)
+                              : track.rotate(frame.alpha)) ||
+        !prop->propagateTo(track, params.useStableRef ? &refLin : nullptr,
+                           cls.getX(), true)) {
+      LOGP(
+          debug,
+          "ITS track refit failed on propagation to cl#{}, alpha={}, x={} | {}",
+          iCl, frame.alpha, cls.getX(), track.asString());
       return false;
     }
     const std::array<float, 2> p{cls.getY(), cls.getZ()};
-    const std::array<float, 3> cov{cls.getSigmaY2(), cls.getSigmaYZ(), cls.getSigmaZ2()};
+    const std::array<float, 3> cov{cls.getSigmaY2(), cls.getSigmaYZ(),
+                                   cls.getSigmaZ2()};
     if (!track.update(p, cov)) {
-      LOGP(debug, "ITS track refit failed on update with cl#{} | {}", iCl, track.asString());
+      LOGP(debug, "ITS track refit failed on update with cl#{} | {}", iCl,
+           track.asString());
       return false;
     }
   }
@@ -278,8 +319,8 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     return false;
   }
   auto prop = o2::base::PropagatorD::Instance();
-  std::array<FrameInfoExt*, 7> frameArr{};
-  std::array<FrameInfoExt*, 7> overlapArr{};
+  std::array<FrameInfoExt *, 7> frameArr{};
+  std::array<FrameInfoExt *, 7> overlapArr{};
   std::array<int, 7> clusIDArr{};
   clusIDArr.fill(-1);
   std::array<TrackD, 7> trkOutAt{};
@@ -325,7 +366,7 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
     clusIDArr[curInfo.lr] = clusID;
     ++nPoints;
   };
-  const auto* itsTrack = useITS ? &recoData->getITSTrack(gidITS) : nullptr;
+  const auto *itsTrack = useITS ? &recoData->getITSTrack(gidITS) : nullptr;
   if (useITS) {
     const auto itsClRefs = recoData->getITSTracksClusterRefs();
     const int nCl = itsTrack->getNClusters();
@@ -347,7 +388,9 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
 
   if (allowOverlaps) {
     auto trFitOut = resTrack.track;
-    auto trFitInw = itsTrack ? convertTrack<double>(itsTrack->getParamOut()) : convertTrack<double>(recoData->getTrackParam(resTrack.gid));
+    auto trFitInw =
+        itsTrack ? convertTrack<double>(itsTrack->getParamOut())
+                 : convertTrack<double>(recoData->getTrackParam(resTrack.gid));
     trFitInw.setQ2Pt(trFitOut.getQ2Pt());
     resetTrackCovariance(trFitOut);
     resetTrackCovariance(trFitInw);
@@ -402,7 +445,8 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       }
     }
   }
-  const size_t nFramesIni = resTrack.info.size(); // N frames before adding new ITS frames
+  const size_t nFramesIni =
+      resTrack.info.size(); // N frames before adding new ITS frames
   for (int i = 0; i < 7; ++i) {
     if (!frameArr[i]) {
       continue;
@@ -413,27 +457,26 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       resTrack.info.back().setITSOverlap();
     }
   }
-  // the overlap frames are interleaved with their host layer frames, order them along the track
-  std::stable_sort(resTrack.info.begin() + nFramesIni, resTrack.info.end(), [](const auto& a, const auto& b) {
-    return a.x < b.x;
-  });
-  // continue the fit of the seed prepared in advance outward, w/o resetting its cov.matrix
+  // the overlap frames are interleaved with their host layer frames, order them
+  // along the track
+  std::stable_sort(resTrack.info.begin() + nFramesIni, resTrack.info.end(),
+                   [](const auto &a, const auto &b) { return a.x < b.x; });
+  // continue the fit of the seed prepared in advance outward, w/o resetting its
+  // cov.matrix
   return resTrack.continueFitOutward(static_cast<int>(nFramesIni));
 }
 
-
-// ITS2 hierarchy: ITS -> half-barrels -> staves -> half-staves -> modules -> chips. With ITS3 the
-// half-barrels of the 3 inner layers are the sensors themselves, with the tiles as pseudo children
-// carrying the measurements.
-Volume::Ptr DetectorITS::buildHierarchy(Volume::SensorMapping& sensorMap)
-{
+// ITS2 hierarchy: ITS -> half-barrels -> staves -> half-staves -> modules ->
+// chips. With ITS3 the half-barrels of the 3 inner layers are the sensors
+// themselves, with the tiles as pseudo children carrying the measurements.
+Volume::Ptr DetectorITS::buildHierarchy(Volume::SensorMapping &sensorMap) {
   uint32_t gLbl{0};
   const uint32_t det = mDetIdx;
   auto geom = o2::its::GeometryTGeo::Instance();
   auto isLayITS3 = [this](int lr) { return mIsITS3 && lr < 3; };
   std::unordered_map<std::string, Volume*> sym2vol;
-  auto addVolume = [&](Volume* parent, const char* symName) {
-    auto* vol = parent->addChild(symName, gLbl++, det, false);
+  auto addVolume = [&](Volume *parent, const char *symName) {
+    auto *vol = parent->addChild(symName, gLbl++, det, false);
     sym2vol[vol->getSymName()] = vol;
     return vol;
   };
@@ -441,17 +484,21 @@ Volume::Ptr DetectorITS::buildHierarchy(Volume::SensorMapping& sensorMap)
   sym2vol[root->getSymName()] = root.get();
   for (int ilr = 0; ilr < geom->getNumberOfLayers(); ilr++) {
     for (int ihb = 0; ihb < geom->getNumberOfHalfBarrels(); ihb++) {
-      auto* volHB = addVolume(root.get(), geom->composeSymNameHalfBarrel(ilr, ihb, isLayITS3(ilr)));
+      auto *volHB = addVolume(
+          root.get(), geom->composeSymNameHalfBarrel(ilr, ihb, isLayITS3(ilr)));
       if (isLayITS3(ilr)) {
         volHB->setSensorId((2 * ilr) + ihb);
         continue;
       }
       for (int ist = 0; ist < geom->getNumberOfStaves(ilr) / 2; ist++) {
-        auto* volSt = addVolume(volHB, geom->composeSymNameStave(ilr, ihb, ist));
+        auto *volSt =
+            addVolume(volHB, geom->composeSymNameStave(ilr, ihb, ist));
         for (int ihst = 0; ihst < geom->getNumberOfHalfStaves(ilr); ihst++) {
-          auto* volHSt = addVolume(volSt, geom->composeSymNameHalfStave(ilr, ihb, ist, ihst));
+          auto *volHSt = addVolume(
+              volSt, geom->composeSymNameHalfStave(ilr, ihb, ist, ihst));
           for (int imd = 0; imd < geom->getNumberOfModules(ilr); imd++) {
-            addVolume(volHSt, geom->composeSymNameModule(ilr, ihb, ist, ihst, imd));
+            addVolume(volHSt,
+                      geom->composeSymNameModule(ilr, ihb, ist, ihst, imd));
           }
         }
       }
@@ -461,18 +508,26 @@ Volume::Ptr DetectorITS::buildHierarchy(Volume::SensorMapping& sensorMap)
   for (int ich = 0; ich < geom->getNumberOfChips(); ich++) {
     geom->getChipId(ich, lay, hba, sta, ssta, modd, chip);
     const Label lbl(det, ich, true);
-    const std::string parSym = isLayITS3(lay) ? geom->composeSymNameHalfBarrel(lay, hba, true) : (modd < 0 ? geom->composeSymNameStave(lay, hba, sta) : geom->composeSymNameModule(lay, hba, sta, ssta, modd));
+    const std::string parSym =
+        isLayITS3(lay)
+            ? geom->composeSymNameHalfBarrel(lay, hba, true)
+            : (modd < 0
+                   ? geom->composeSymNameStave(lay, hba, sta)
+                   : geom->composeSymNameModule(lay, hba, sta, ssta, modd));
     const auto parIt = sym2vol.find(parSym);
     if (parIt == sym2vol.end()) {
       LOGP(fatal, "did not find parent {} for chip {}", parSym, ich);
     }
-    Volume* sensor{nullptr};
+    Volume *sensor{nullptr};
     if (isLayITS3(lay)) {
-      sensor = parIt->second->addChild<SensorIT3>(geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip, true), lbl);
+      sensor = parIt->second->addChild<SensorIT3>(
+          geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip, true), lbl);
       sensor->setPseudo(true);
     } else {
-      const int nch = modd < 0 ? geom->getNumberOfChipsPerStave(lay) : geom->getNumberOfChipsPerModule(lay);
-      sensor = parIt->second->addChild<SensorITS>(geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip % nch), lbl);
+      const int nch = modd < 0 ? geom->getNumberOfChipsPerStave(lay)
+                               : geom->getNumberOfChipsPerModule(lay);
+      sensor = parIt->second->addChild<SensorITS>(
+          geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip % nch), lbl);
     }
     sensor->setSensorId(ich);
     sensorMap[lbl] = sensor;
@@ -480,13 +535,12 @@ Volume::Ptr DetectorITS::buildHierarchy(Volume::SensorMapping& sensorMap)
   return root;
 }
 
-namespace
-{
-/// free-RB / free-calib / total counts of one hierarchy kind (half-barrel, stave, ...) at a layer
+namespace {
+/// free-RB / free-calib / total counts of one hierarchy kind (half-barrel,
+/// stave, ...) at a layer
 struct DOFCounts {
   int nRB{0}, nCal{0}, nTot{0};
-  void add(const Volume* v)
-  {
+  void add(const Volume *v) {
     if (v == nullptr) {
       return;
     }
@@ -496,16 +550,15 @@ struct DOFCounts {
   }
 };
 
-std::ostream& operator<<(std::ostream& os, const DOFCounts& c)
-{
+std::ostream &operator<<(std::ostream &os, const DOFCounts &c) {
   return os << c.nRB << '/' << c.nCal << '/' << c.nTot;
 }
 
-/// comma-separated names of the free DOFs of a single volume, "none" if it has none
-std::string freeDOFNames(const Volume* v)
-{
+/// comma-separated names of the free DOFs of a single volume, "none" if it has
+/// none
+std::string freeDOFNames(const Volume *v) {
   std::string s;
-  auto append = [&s](const char* tag, const DOFSet* d) {
+  auto append = [&s](const char *tag, const DOFSet *d) {
     if (d == nullptr) {
       return;
     }
@@ -526,16 +579,15 @@ std::string freeDOFNames(const Volume* v)
 
 } // namespace
 
-std::string DetectorITS::reportDOFSummary() const
-{
+std::string DetectorITS::reportDOFSummary() const {
   if (mTopVolume == nullptr) {
     return {};
   }
   auto geom = o2::its::GeometryTGeo::Instance();
   auto isLayITS3 = [this](int lr) { return mIsITS3 && lr < 3; };
   std::unordered_map<std::string, Volume*> sym2vol;
-  mTopVolume->traverse([&sym2vol](Volume* v) { sym2vol[v->getSymName()] = v; });
-  auto find = [&sym2vol](const std::string& symName) -> Volume* {
+  mTopVolume->traverse([&sym2vol](Volume *v) { sym2vol[v->getSymName()] = v; });
+  auto find = [&sym2vol](const std::string &symName) -> Volume * {
     const auto it = sym2vol.find(symName);
     return it == sym2vol.end() ? nullptr : it->second;
   };
@@ -550,14 +602,17 @@ std::string DetectorITS::reportDOFSummary() const
     for (int ihb = 0; ihb < geom->getNumberOfHalfBarrels(); ihb++) {
       halfBarrels.add(find(geom->composeSymNameHalfBarrel(ilr, ihb, isIB3)));
       if (isIB3) {
-        continue; // the half-barrel IS the sensor; its tiles are counted below as "sensors"
+        continue; // the half-barrel IS the sensor; its tiles are counted below
+                  // as "sensors"
       }
       for (int ist = 0; ist < geom->getNumberOfStaves(ilr) / 2; ist++) {
         staves.add(find(geom->composeSymNameStave(ilr, ihb, ist)));
         for (int ihst = 0; ihst < geom->getNumberOfHalfStaves(ilr); ihst++) {
-          halfStaves.add(find(geom->composeSymNameHalfStave(ilr, ihb, ist, ihst)));
+          halfStaves.add(
+              find(geom->composeSymNameHalfStave(ilr, ihb, ist, ihst)));
           for (int imd = 0; imd < geom->getNumberOfModules(ilr); imd++) {
-            modules.add(find(geom->composeSymNameModule(ilr, ihb, ist, ihst, imd)));
+            modules.add(
+                find(geom->composeSymNameModule(ilr, ihb, ist, ihst, imd)));
           }
         }
       }
@@ -567,26 +622,36 @@ std::string DetectorITS::reportDOFSummary() const
       if (lay != ilr) {
         continue;
       }
-      const int nch = isIB3 ? -1 : (modd < 0 ? geom->getNumberOfChipsPerStave(lay) : geom->getNumberOfChipsPerModule(lay));
-      const std::string symChip = isIB3 ? geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip, true) : geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip % nch);
+      const int nch = isIB3 ? -1
+                            : (modd < 0 ? geom->getNumberOfChipsPerStave(lay)
+                                        : geom->getNumberOfChipsPerModule(lay));
+      const std::string symChip =
+          isIB3
+              ? geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip, true)
+              : geom->composeSymNameChip(lay, hba, sta, ssta, modd, chip % nch);
       sensors.add(find(symChip));
     }
     oss << "Layer " << ilr << ": halfbarrels: " << halfBarrels;
     if (!isIB3) {
-      oss << ", staves: " << staves << ", halfstaves: " << halfStaves << ", modules: " << modules;
+      oss << ", staves: " << staves << ", halfstaves: " << halfStaves
+          << ", modules: " << modules;
     }
     oss << ", sensors: " << sensors << '\n';
   }
   return oss.str();
 }
 
-// ITS clusters of the leg (the ones of the matched ITS track and those found on the road, with pattern bytes stored in the cosmic)
-// are grouped by layer. In every layer the cluster closest to the reference track is taken, if its chi2 is acceptable, and the best
-// one among the other candidates which look like the second hit of the overlap with it is added, as for the collision tracks.
-// The clusters biased by the vicinity of the chip edge are discarded, as for the collision tracks.
-int DetectorITS::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames)
-{
-  const auto& params = Params::Instance();
+// ITS clusters of the leg (the ones of the matched ITS track and those found on
+// the road, with pattern bytes stored in the cosmic) are grouped by layer. In
+// every layer the cluster closest to the reference track is taken, if its chi2
+// is acceptable, and the best one among the other candidates which look like
+// the second hit of the overlap with it is added, as for the collision tracks.
+// The clusters biased by the vicinity of the chip edge are discarded, as for
+// the collision tracks.
+int DetectorITS::prepareCosmicLeg(
+    const o2::dataformats::TrackCosmicsExtended &cosm, int leg,
+    const o2::track::TrackParCovD &ref, std::vector<FrameInfoExt> &frames) {
+  const auto &params = Params::Instance();
   if (mIsITS3) {
     LOGP(fatal, "ITS3 is not supported for cosmics");
   }
@@ -602,18 +667,23 @@ int DetectorITS::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
     double chi2{0.};
   };
   std::array<std::vector<Candidate>, 7> perLayer;
-  for (const auto& cl : cosm.clITS) {
+  for (const auto &cl : cosm.clITS) {
     if (cl.leg != leg) {
       continue;
     }
     const o2::itsmft::CompClusterExt comp(cl.row, cl.col, cl.pattID, cl.chipID);
-    const bool needsPattern = cl.pattID == o2::itsmft::CompCluster::InvalidPatternID || mITSDict->isGroup(cl.pattID);
-    if (needsPattern && cl.pattEntry < 0) { // the pattern was not stored (no dictionary at the collection)
+    const bool needsPattern =
+        cl.pattID == o2::itsmft::CompCluster::InvalidPatternID ||
+        mITSDict->isGroup(cl.pattID);
+    if (needsPattern &&
+        cl.pattEntry <
+            0) { // the pattern was not stored (no dictionary at the collection)
       continue;
     }
     auto pattIt = cosm.itsPatterns.begin() + (needsPattern ? cl.pattEntry : 0);
     auto frame = makeClusterPoint(comp, pattIt, findOverlaps);
-    if (frame.cluster.getBits() && frame.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
+    if (frame.cluster.getBits() &&
+        frame.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
       continue;
     }
     o2::track::TrackParCovD trk;
@@ -626,19 +696,23 @@ int DetectorITS::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
     }
   }
   int nLayers = 0;
-  for (auto& cands : perLayer) {
+  for (auto &cands : perLayer) {
     if (cands.empty()) {
       continue;
     }
-    const auto best = std::min_element(cands.begin(), cands.end(), [](const auto& a, const auto& b) { return a.chi2 < b.chi2; });
+    const auto best = std::min_element(
+        cands.begin(), cands.end(),
+        [](const auto &a, const auto &b) { return a.chi2 < b.chi2; });
     frames.push_back(best->frame);
     ++nLayers;
     if (params.ITSOverlapMaxChi2 <= 0.f) {
       continue;
     }
-    const Candidate* bestOvl = nullptr;
-    for (const auto& cand : cands) {
-      if (&cand != &*best && cand.chi2 < params.ITSOverlapMaxChi2 && isOverlapPair(best->frame, cand.frame) && (!bestOvl || cand.chi2 < bestOvl->chi2)) {
+    const Candidate *bestOvl = nullptr;
+    for (const auto &cand : cands) {
+      if (&cand != &*best && cand.chi2 < params.ITSOverlapMaxChi2 &&
+          isOverlapPair(best->frame, cand.frame) &&
+          (!bestOvl || cand.chi2 < bestOvl->chi2)) {
         bestOvl = &cand;
       }
     }
@@ -650,8 +724,7 @@ int DetectorITS::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
   return nLayers;
 }
 
-int DetectorITS::getMinCosmicMeasurements() const
-{
+int DetectorITS::getMinCosmicMeasurements() const {
   return Params::Instance().minITSClsTrack;
 }
 

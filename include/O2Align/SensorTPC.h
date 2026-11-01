@@ -29,15 +29,16 @@ class SensorTPC final : public Volume
   void defineMatrixT2L() final;
 };
 
-/// Fictitious envelope of the TPC, the parent of all the sector volumes. It has no counterpart in
-/// the geometry and cannot be shifted, but it owns the drift calibration DOFs (TPCVDriftDOFSet),
-/// which are fitted independently in every time slot of the drift calibration.
-class EnvelopeTPC final : public Volume
-{
- public:
+/// Fictitious envelope of the TPC, the parent of all the sector volumes. It has
+/// no counterpart in the geometry and cannot be shifted, but it owns the drift
+/// calibration DOFs (TPCVDriftDOFSet), which are fitted independently in every
+/// time slot of the drift calibration.
+class EnvelopeTPC final : public Volume {
+public:
   using Volume::Volume;
 
-  bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const final;
+  bool MP2JSON_Calib(const std::map<uint32_t, double> &labelToValue,
+                     nlohmann::json &entry) const final;
 };
 
 } // namespace o2::alignrs

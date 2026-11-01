@@ -101,13 +101,13 @@
 
 using AlgParams = std::vector<o2::detectors::AlignParam>;
 
-void loadGeom(std::string const& name) {
+void loadGeom(std::string const &name) {
   TFile f(name.c_str());
   f.Get("ccdb_object");
 }
 
-void matrixToAngles(const double* rot, double& psi, double& theta,
-                    double& phi) {
+void matrixToAngles(const double *rot, double &psi, double &theta,
+                    double &phi) {
   if (std::abs(rot[0]) < 1e-7 || std::abs(rot[8]) < 1e-7) {
     std::cerr << "Failed to extract roll-pitch-yall angles!";
     exit(41);
@@ -117,7 +117,7 @@ void matrixToAngles(const double* rot, double& psi, double& theta,
   phi = std::atan2(-rot[1], rot[0]);
 }
 
-void anglesToMatrix(double psi, double theta, double phi, double* rot) {
+void anglesToMatrix(double psi, double theta, double phi, double *rot) {
   double sinpsi = std::sin(psi);
   double cospsi = std::cos(psi);
   double sinthe = std::sin(theta);
@@ -137,8 +137,8 @@ void anglesToMatrix(double psi, double theta, double phi, double* rot) {
 }
 
 void convertZXZEulerToXYZCardano(double rotA, double rotB, double rotC,
-                                 double& roll, double& pitch, double& yaw) {
-  static TRotation aRot;  // this how Alex minimizes his parameter
+                                 double &roll, double &pitch, double &yaw) {
+  static TRotation aRot; // this how Alex minimizes his parameter
   aRot.SetXEulerAngles(rotA, rotB, rotC);
   static double rota[9];
   for (int i{0}; i < 3; ++i) {
@@ -158,9 +158,9 @@ double rectify(double v, double zero = 1e-12) {
 
 using DeltaTree = boost::property_tree::ptree;
 using Delta = std::array<double, 6>;
-void store(DeltaTree& node, const std::string& path, const Delta& par) {
+void store(DeltaTree &node, const std::string &path, const Delta &par) {
   DeltaTree anode;
-  for (const auto& v : par) {
+  for (const auto &v : par) {
     DeltaTree item{};
     item.put("", rectify(v));
     anode.push_back(std::make_pair("", item));
@@ -168,11 +168,11 @@ void store(DeltaTree& node, const std::string& path, const Delta& par) {
   node.put_child(path, anode);
 }
 
-Delta load(const DeltaTree& node, const std::string& path) {
+Delta load(const DeltaTree &node, const std::string &path) {
   Delta a;
-  const auto& array_node = node.get_child(path);
+  const auto &array_node = node.get_child(path);
   size_t i = 0;
-  for (const auto& item : array_node) {
+  for (const auto &item : array_node) {
     a[i++] = rectify(item.second.get_value<double>());
     if (i > 5) {
       break;
@@ -181,7 +181,7 @@ Delta load(const DeltaTree& node, const std::string& path) {
   return a;
 }
 
-Delta toArray(const TGeoHMatrix& m) {
+Delta toArray(const TGeoHMatrix &m) {
   Delta del;
   const Double_t *tra, *rot;
   tra = m.GetTranslation();
@@ -191,7 +191,7 @@ Delta toArray(const TGeoHMatrix& m) {
   return del;
 }
 
-TGeoHMatrix toMatrix(const Delta& del) {
+TGeoHMatrix toMatrix(const Delta &del) {
   TGeoHMatrix m;
   Double_t rot[9];
   anglesToMatrix(del[3], del[4], del[5], rot);
@@ -201,13 +201,13 @@ TGeoHMatrix toMatrix(const Delta& del) {
 }
 
 static std::unordered_map<std::string, std::string> cacheSym2Path;
-void cacheBuildSym2Path(const char* geom) {
+void cacheBuildSym2Path(const char *geom) {
   LOGP(info, "Building sym <-> path cache!");
   loadGeom(geom);
-  auto gman = o2::its::GeometryTGeo::Instance();  // just for navigation!
+  auto gman = o2::its::GeometryTGeo::Instance(); // just for navigation!
 
-  auto add = [&](const char* sym) {
-    TGeoPNEntry* pne = gGeoManager->GetAlignableEntry(sym);
+  auto add = [&](const char *sym) {
+    TGeoPNEntry *pne = gGeoManager->GetAlignableEntry(sym);
     cacheSym2Path[sym] = pne->GetPath();
     LOGP(debug, "From '{}' to '{}'", sym, pne->GetPath());
   };
@@ -234,9 +234,9 @@ void cacheBuildSym2Path(const char* geom) {
 }
 
 static std::unordered_map<std::string, TGeoHMatrix> cacheLocalIdeal;
-void cacheBuildLocalIdeal(const char* geom) {
+void cacheBuildLocalIdeal(const char *geom) {
   LOGP(info, "Building local ideal matrix cache!");
-  if (gSystem->AccessPathName(geom)) {  // if needed, create geometry
+  if (gSystem->AccessPathName(geom)) { // if needed, create geometry
     std::cout << geom << " does not exist. Will create it on the fly\n";
     std::stringstream str;
     // constructing an **unaligned** geom (Geant3 used since faster
@@ -245,9 +245,9 @@ void cacheBuildLocalIdeal(const char* geom) {
     gSystem->Exec(str.str().c_str());
   }
   loadGeom(geom);
-  auto gman = o2::its::GeometryTGeo::Instance();  // just for navigation!
+  auto gman = o2::its::GeometryTGeo::Instance(); // just for navigation!
 
-  auto add = [&](const char* sym) {
+  auto add = [&](const char *sym) {
     if (!gGeoManager->cd(cacheSym2Path[sym].c_str())) {
       LOGP(warn, "From '{}' to '{}' is not valid!", sym, cacheSym2Path[sym]);
     }
@@ -281,20 +281,20 @@ static std::unordered_map<std::string, Delta> gLocalDeltaDelta;
 
 // Extracts local deltas of ITS geometry.
 // Returns n-ary tree of local deltas
-DeltaTree getLocalDeltas(const std::string& geom) {
+DeltaTree getLocalDeltas(const std::string &geom) {
   LOGP(info, "Getting local deltas '{}'", geom);
   loadGeom(geom);
   DeltaTree deltas;
-  std::unordered_map<std::string, TGeoHMatrix> cache;  // local delta cache
-  auto gman = o2::its::GeometryTGeo::Instance();       // just for navigation!
+  std::unordered_map<std::string, TGeoHMatrix> cache; // local delta cache
+  auto gman = o2::its::GeometryTGeo::Instance();      // just for navigation!
 
-  auto addDelta = [&](const char* sym) {
+  auto addDelta = [&](const char *sym) {
     TGeoHMatrix orig, *cur, delta, z;
     if (!(cur = o2::base::GeometryManager::getMatrix(sym))) {
-      LOGP(fatal, "cannot get aligned matrix");  // this should not happen
+      LOGP(fatal, "cannot get aligned matrix"); // this should not happen
     }
     if (!o2::base::GeometryManager::getOriginalMatrix(sym, orig)) {
-      LOGP(fatal, "cannot get original matrix");  // this should not happen
+      LOGP(fatal, "cannot get original matrix"); // this should not happen
     }
     // local delta is Del_loc,j = G^-1_orig,j * G_cur,j (including parent
     // cont.!)
@@ -371,13 +371,13 @@ DeltaTree getLocalDeltas(const std::string& geom) {
 
 // build updated local delta tree
 DeltaTree getLocalDeltas(
-    const DeltaTree& locDeltas,
-    const std::unordered_map<std::string, TGeoHMatrix>& updatedLocDeltas = {}) {
+    const DeltaTree &locDeltas,
+    const std::unordered_map<std::string, TGeoHMatrix> &updatedLocDeltas = {}) {
   DeltaTree deltas;
-  std::unordered_map<std::string, TGeoHMatrix> cache;  // global delta cache
-  auto gman = o2::its::GeometryTGeo::Instance();       // just for navigation
+  std::unordered_map<std::string, TGeoHMatrix> cache; // global delta cache
+  auto gman = o2::its::GeometryTGeo::Instance();      // just for navigation
 
-  auto getLocalDelta = [&](const char* path) {
+  auto getLocalDelta = [&](const char *path) {
     std::string spath{path}, dpath{path};
     if (auto it = updatedLocDeltas.find(spath); it != updatedLocDeltas.end()) {
       return it->second;
@@ -389,7 +389,7 @@ DeltaTree getLocalDeltas(
     }
   };
 
-  auto addDelta = [&](const char* p) {
+  auto addDelta = [&](const char *p) {
     auto delta = getLocalDelta(p);
     std::string path{p};
     std::replace(path.begin(), path.end(), '/', '.');
@@ -423,13 +423,13 @@ DeltaTree getLocalDeltas(
 
 // Build global deltas from local delta tree
 DeltaTree getGlobalDeltas(
-    const DeltaTree& locDeltas,
-    const std::unordered_map<std::string, TGeoHMatrix>& updatedLocDeltas = {}) {
+    const DeltaTree &locDeltas,
+    const std::unordered_map<std::string, TGeoHMatrix> &updatedLocDeltas = {}) {
   DeltaTree deltas;
-  std::unordered_map<std::string, TGeoHMatrix> cache;  // global delta cache
-  auto gman = o2::its::GeometryTGeo::Instance();       // just for navigation
+  std::unordered_map<std::string, TGeoHMatrix> cache; // global delta cache
+  auto gman = o2::its::GeometryTGeo::Instance();      // just for navigation
 
-  auto getLocalDelta = [&](const char* path) {
+  auto getLocalDelta = [&](const char *path) {
     std::string spath{path}, dpath{path};
     if (auto it = updatedLocDeltas.find(spath); it != updatedLocDeltas.end()) {
       return it->second;
@@ -441,7 +441,7 @@ DeltaTree getGlobalDeltas(
     }
   };
 
-  auto getGlobalDelta = [&](const char* path) {
+  auto getGlobalDelta = [&](const char *path) {
     std::string spath{path}, dpath{path};
     auto delta = getLocalDelta(path);
 
@@ -461,17 +461,17 @@ DeltaTree getGlobalDeltas(
     }
     const auto zi = z.Inverse();
     if (!o2::base::GeometryManager::getOriginalMatrix(path, orig)) {
-      LOGP(fatal, "cannot get original matrix");  // this should not happen
+      LOGP(fatal, "cannot get original matrix"); // this should not happen
     }
-    orig.MultiplyLeft(z);  // Z = parent_Z · G_j_ideal
+    orig.MultiplyLeft(z); // Z = parent_Z · G_j_ideal
     const TGeoHMatrix origi = orig.Inverse();
-    delta.MultiplyLeft(orig);  // Z · Δ_local
-    delta.Multiply(origi);     // Z · Δ_local · Z⁻¹
+    delta.MultiplyLeft(orig); // Z · Δ_local
+    delta.Multiply(origi);    // Z · Δ_local · Z⁻¹
     cache[path] = delta;
     return delta;
   };
 
-  auto addDelta = [&](const char* p) {
+  auto addDelta = [&](const char *p) {
     auto delta = getGlobalDelta(p);
     std::string path{p};
     std::replace(path.begin(), path.end(), '/', '.');
@@ -508,10 +508,10 @@ DeltaTree getGlobalDeltas(
 static std::unordered_map<std::string, TGeoHMatrix> alexParamGlobalDelta;
 static std::unordered_map<std::string, TGeoHMatrix> alexParamLocalDelta;
 static DeltaTree alexLocalDeltas;
-void alexParamsRead(const char* file, const char* geom) {
+void alexParamsRead(const char *file, const char *geom) {
   Info("", "Reading params from %s with geom %s", file, geom);
   auto localDeltas = getLocalDeltas(geom);
-  auto gman = o2::its::GeometryTGeo::Instance();  // just for navigation
+  auto gman = o2::its::GeometryTGeo::Instance(); // just for navigation
 
   // Prints out all alignable objects
   // const TObjArray *arr = gGeoManager->GetListOfPhysicalNodes();
@@ -536,7 +536,7 @@ void alexParamsRead(const char* file, const char* geom) {
   alexParams->SetBranchAddress("ITSARotB", &fDRotB);
   alexParams->SetBranchAddress("ITSARotC", &fDRotC);
   double psi, theta, phi;
-  TGeoHMatrix* cur;
+  TGeoHMatrix *cur;
   for (int iEntry{0}; alexParams->LoadTree(iEntry) >= 0; ++iEntry) {
     if (alexParams->GetEntry(iEntry) < 0) {
       continue;
@@ -558,7 +558,7 @@ void alexParamsRead(const char* file, const char* geom) {
     }
 
     // global delta
-    auto& g = alexParamGlobalDelta[name] = TGeoHMatrix();
+    auto &g = alexParamGlobalDelta[name] = TGeoHMatrix();
     double rot[9] = {};
     double tr[3] = {fDx, fDy, fDz};
     g.SetTranslation(tr);
@@ -566,9 +566,9 @@ void alexParamsRead(const char* file, const char* geom) {
     g.SetRotation(rot);
 
     // local delta
-    auto& l = alexParamLocalDelta[name] = g;
+    auto &l = alexParamLocalDelta[name] = g;
     if (!(cur = o2::base::GeometryManager::getMatrix(name.c_str()))) {
-      LOGP(fatal, "cannot get aligned matrix");  // this should not happen
+      LOGP(fatal, "cannot get aligned matrix"); // this should not happen
     }
     l.Multiply(cur);
     l.MultiplyLeft(cur->Inverse());
@@ -589,7 +589,7 @@ void alexParamsRead(const char* file, const char* geom) {
   // deltas they need to be combined del_loc_comb = del_loc_ref * del_loc_new
   // then we build the global deltas and save them as AlignParam vector
   std::unordered_map<std::string, TGeoHMatrix> updatedLocDeltas;
-  for (const auto& [sym, dloc_new] : alexParamLocalDelta) {
+  for (const auto &[sym, dloc_new] : alexParamLocalDelta) {
     std::string dpath{sym};
     std::replace(dpath.begin(), dpath.end(), '/', '.');
     const auto dlocp = load(localDeltas, dpath);
@@ -601,11 +601,11 @@ void alexParamsRead(const char* file, const char* geom) {
 
   AlgParams algNewParams;
   auto locDeltas = getLocalDeltas(localDeltas, updatedLocDeltas);
-  auto addPar = [&](const char* p, int id = -1, bool print = false) {
+  auto addPar = [&](const char *p, int id = -1, bool print = false) {
     std::string path{p};
     std::replace(path.begin(), path.end(), '/', '.');
     auto t = load(locDeltas, path);
-    auto& par = algNewParams.emplace_back(p, id, t[0], t[1], t[2], t[3], t[4],
+    auto &par = algNewParams.emplace_back(p, id, t[0], t[1], t[2], t[3], t[4],
                                           t[5], false, false);
     if (print) {
       par.print();
@@ -649,11 +649,11 @@ void alexParamsRead(const char* file, const char* geom) {
 }
 
 void createDummy() {
-  auto gman = o2::its::GeometryTGeo::Instance();  // just for navigation
+  auto gman = o2::its::GeometryTGeo::Instance(); // just for navigation
   AlgParams algNewParams;
   using Pars = std::array<float, 6>;
-  auto addPar = [&](const char* c, Pars p, int id = -1, bool print = false) {
-    auto& par = algNewParams.emplace_back(c, id, p[0], p[1], p[2], p[3], p[4],
+  auto addPar = [&](const char *c, Pars p, int id = -1, bool print = false) {
+    auto &par = algNewParams.emplace_back(c, id, p[0], p[1], p[2], p[3], p[4],
                                           p[5], false, false);
     if (print) {
       par.print();
@@ -698,10 +698,10 @@ void closureLocalTest() {
   if (!algCCDBFile) {
     Error("", "did not open file");
   }
-  AlgParams* ccdbPars;
+  AlgParams *ccdbPars;
   algCCDBFile->GetObject("ccdb_object", ccdbPars);
   AlgParams algNewParams;
-  for (const auto& p : *ccdbPars) {
+  for (const auto &p : *ccdbPars) {
     TGeoHMatrix loc;
     if (!p.createLocalMatrix(loc)) {
       Error("", "!!!");
@@ -725,13 +725,13 @@ void closureLocalTest() {
 }
 
 void applyAlignmentRed(
-    const char* alexRefGeom = nullptr,     // reference geometry upon which
-                                           // Alex’s changes are based
-    const char* alexParamsFile = nullptr,  // Alex’s file containing corrections
-    const char* refGeom =
-        "o2sim_geometry-aligned_CCDB.root",  // just use to built correct matrix
-                                             // paths!
-    const char* idealGeom = "o2sim_geometry.root", bool dummy = false,
+    const char *alexRefGeom = nullptr,    // reference geometry upon which
+                                          // Alex’s changes are based
+    const char *alexParamsFile = nullptr, // Alex’s file containing corrections
+    const char *refGeom =
+        "o2sim_geometry-aligned_CCDB.root", // just use to built correct matrix
+                                            // paths!
+    const char *idealGeom = "o2sim_geometry.root", bool dummy = false,
     bool closure = false) {
   if (alexRefGeom) {
     cacheBuildSym2Path(alexRefGeom);

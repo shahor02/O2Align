@@ -28,15 +28,18 @@ class DetectorTOF final : public Detector
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
-  int prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames) final;
+  int prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended &cosm,
+                       int leg, const o2::track::TrackParCovD &ref,
+                       std::vector<FrameInfoExt> &frames) final;
 
   const std::vector<FrameInfoExt>& getPointsInfo() const { return mTOFPointsInfo; }
 
- protected:
-  Volume::Ptr buildHierarchy(Volume::SensorMapping& sensorMap) final;
+protected:
+  Volume::Ptr buildHierarchy(Volume::SensorMapping &sensorMap) final;
 
- private:
-  FrameInfoExt makeClusterPoint(int channel, float sigY2, float sigZ2, float sigYZ) const;
+private:
+  FrameInfoExt makeClusterPoint(int channel, float sigY2, float sigZ2,
+                                float sigYZ) const;
 
   std::vector<FrameInfoExt> mTOFPointsInfo; // point per TOF cluster of the TF, lr<0 if unusable
   std::vector<Volume*> mSensors;            // strip volumes, indexed by continuous strip number

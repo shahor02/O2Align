@@ -8,9 +8,8 @@
 #include <vector>
 
 // Group by detector prefix, including legacy O2 FT0/FV0/MFT names.
-void printAlignableVolumes(const char* file = "o2sim_geometry.root")
-{
-  auto* geom = TGeoManager::Import(file);
+void printAlignableVolumes(const char *file = "o2sim_geometry.root") {
+  auto *geom = TGeoManager::Import(file);
   if (!geom) {
     std::cerr << "Cannot load geometry: " << file << '\n';
     return;
@@ -18,12 +17,13 @@ void printAlignableVolumes(const char* file = "o2sim_geometry.root")
 
   std::map<std::string, std::vector<std::string>> groups;
   for (int i = 0; i < geom->GetNAlignable(); ++i) {
-    const auto* entry = geom->GetAlignableEntry(i);
-    if (!entry) continue;
+    const auto *entry = geom->GetAlignableEntry(i);
+    if (!entry)
+      continue;
     const std::string name = entry->GetName();
     const auto first = name.find_first_not_of('/');
     const std::string trimmed =
-      first == std::string::npos ? "" : name.substr(first);
+        first == std::string::npos ? "" : name.substr(first);
     std::string detector = trimmed.substr(0, trimmed.find('/'));
     if (detector == "FT0A" || detector == "FT0C" ||
         detector.compare(0, 5, "0MOD_") == 0) {
@@ -41,11 +41,10 @@ void printAlignableVolumes(const char* file = "o2sim_geometry.root")
   if (groups.empty()) {
     std::cout << "No alignable entries stored in this geometry.\n";
   }
-  for (auto& group : groups) {
+  for (auto &group : groups) {
     std::sort(group.second.begin(), group.second.end());
-    std::cout << "\n" << group.first
-              << " (" << group.second.size() << ")\n";
-    for (const auto& name : group.second) {
+    std::cout << "\n" << group.first << " (" << group.second.size() << ")\n";
+    for (const auto &name : group.second) {
       std::cout << "  " << name << '\n';
     }
   }

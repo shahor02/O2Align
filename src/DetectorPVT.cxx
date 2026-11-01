@@ -1,6 +1,6 @@
 // Copyright 2019-2026 CERN and copyright holders of ALICE O2.
-// See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
-// All rights not expressly granted are reserved.
+// See https://alice-o2.web.cern.ch/copyright for details of the copyright
+// holders. All rights not expressly granted are reserved.
 //
 // This software is distributed under the terms of the GNU General Public
 // License v3 (GPL Version 3), copied verbatim in the file "COPYING".
@@ -15,27 +15,29 @@
 #include "O2Align/DetectorPVT.h"
 #include "O2Align/Params.h"
 
-namespace o2::alignrs
-{
+namespace o2::alignrs {
 
- DetectorPVT::DetectorPVT() : Detector(DetPVT) 
- {
-  // attach dummy default vertex prior, to be replaced by the CCDB object if real MV priors are requested by passing the time-intervals
-  mMeanVtxSlot = o2::dataformats::MeanVertexObject(0.f, 0.f, 0.f, 0.5f, 0.5f, 7.f, 0.f, 0.f);
- }
+DetectorPVT::DetectorPVT() : Detector(DetPVT) {
+  // attach dummy default vertex prior, to be replaced by the CCDB object if
+  // real MV priors are requested by passing the time-intervals
+  mMeanVtxSlot = o2::dataformats::MeanVertexObject(0.f, 0.f, 0.f, 0.5f, 0.5f,
+                                                   7.f, 0.f, 0.f);
+}
 
-Volume::Ptr DetectorPVT::buildHierarchy(Volume::SensorMapping& sensorMap)
-{
+Volume::Ptr DetectorPVT::buildHierarchy(Volume::SensorMapping &sensorMap) {
   const auto lbl = getVertexLabel();
-  // The mean vertex is the only volume of this detector, hence it is directly the top volume of its
-  // branch of the hierarchy, with no envelope above it. It has no alignable entry in the geometry
-  // and carries no geometry of its own: the frame in which the vertex is measured is defined by each
-  // track separately and the prior position is used directly by the fit, not via a matrix.
+  // The mean vertex is the only volume of this detector, hence it is directly
+  // the top volume of its branch of the hierarchy, with no envelope above it.
+  // It has no alignable entry in the geometry and carries no geometry of its
+  // own: the frame in which the vertex is measured is defined by each track
+  // separately and the prior position is used directly by the fit, not via a
+  // matrix.
   auto vtx = std::make_unique<Volume>("PVT/meanVertex", lbl, true);
-  // being a point w/o orientation, only its position is alignable. It changes with time and is
-  // therefore a calibration (there are no time-sliced rigid-body DOFs): the position of every slot
-  // is an independent set of global parameters. A calib rule of the DOF configuration may replace
-  // this default, all-free set, e.g. to fix the position.
+  // being a point w/o orientation, only its position is alignable. It changes
+  // with time and is therefore a calibration (there are no time-sliced
+  // rigid-body DOFs): the position of every slot is an independent set of
+  // global parameters. A calib rule of the DOF configuration may replace this
+  // default, all-free set, e.g. to fix the position.
   vtx->setRigidBodyAllowed(false);
   vtx->setCalib(std::make_unique<MeanVertexDOFSet>());
   if (mTimeSlots) {
@@ -47,20 +49,23 @@ Volume::Ptr DetectorPVT::buildHierarchy(Volume::SensorMapping& sensorMap)
   return vtx;
 }
 
-void DetectorPVT::updateFreeDOFs()
-{
+void DetectorPVT::updateFreeDOFs() {
   mFreeDOFLabels.clear();
   mFreeDOFIndices.clear();
-  const auto* dofs = mVertexVolume ? mVertexVolume->getCalib() : nullptr;
+  const auto *dofs = mVertexVolume ? mVertexVolume->getCalib() : nullptr;
   if (!dofs) {
     return;
   }
   if (dofs->type() != DOFSet::Type::MeanVertex) {
-    LOGP(fatal, "The calibration DOFs of {} must be of the meanvertex type, check the DOF configuration", mVertexVolume->getSymName());
+    LOGP(fatal,
+         "The calibration DOFs of {} must be of the meanvertex type, check the "
+         "DOF configuration",
+         mVertexVolume->getSymName());
   }
-  // the labels of the calibration slot of the processed TF; each of the 5 DOFs is independently
-  // free or fixed, a fixed one imposing its prior value w/o being adjusted by the fit
-  const auto& lbl = mVertexVolume->getActiveCalibLabel();
+  // the labels of the calibration slot of the processed TF; each of the 5 DOFs
+  // is independently free or fixed, a fixed one imposing its prior value w/o
+  // being adjusted by the fit
+  const auto &lbl = mVertexVolume->getActiveCalibLabel();
   for (int dof = 0; dof < MeanVertexDOFSet::NDOF; ++dof) {
     if (dofs->isFree(dof)) {
       mFreeDOFLabels.push_back(lbl.rawGBL(dof));
@@ -69,34 +74,36 @@ void DetectorPVT::updateFreeDOFs()
   }
 }
 
-const std::string& DetectorPVT::getTimeSlotsJson() const
-{
+const std::string &DetectorPVT::getTimeSlotsJson() const {
   return Params::Instance().MVTimeSlotsJson;
 }
 
-void DetectorPVT::setMeanVertexCCDB(const o2::dataformats::MeanVertexObject& mv)
-{
+void DetectorPVT::setMeanVertexCCDB(
+    const o2::dataformats::MeanVertexObject &mv) {
   mMeanVtxCCDB = mv;
   mMeanVtxCCDBUpdated = true;
   LOGP(info, "New CCDB MeanVertex: {}", mMeanVtxCCDB.asString());
 }
 
-void DetectorPVT::onSlotChange(int slotID)
-{
-  // the slot is the unit of the mean vertex calibration: its prior is the CCDB object valid at the
-  // start of the slot, an eventual later CCDB update within the same slot is ignored
+void DetectorPVT::onSlotChange(int slotID) {
+  // the slot is the unit of the mean vertex calibration: its prior is the CCDB
+  // object valid at the start of the slot, an eventual later CCDB update within
+  // the same slot is ignored
   mMeanVtxSlot = mMeanVtxCCDB;
   mMeanVtxCCDBUpdated = false;
-  if (mVertexVolume) { // the vertex of every slot is aligned via its own global parameters
+  if (mVertexVolume) { // the vertex of every slot is aligned via its own global
+                       // parameters
     mVertexVolume->setActiveCalibSlot(slotID);
     updateFreeDOFs();
   }
-  LOGP(info, "Mean vertex prior for time slot {}: {}", slotID, mMeanVtxSlot.asString());
+  LOGP(info, "Mean vertex prior for time slot {}: {}", slotID,
+       mMeanVtxSlot.asString());
 }
 
-bool DetectorPVT::setTimeStamp(long tsMS, bool ignoreMismatch)
-{
-  if (Detector::setTimeStamp(tsMS, ignoreMismatch)) { // onSlotChange has refreshed the prior and the labels
+bool DetectorPVT::setTimeStamp(long tsMS, bool ignoreMismatch) {
+  if (Detector::setTimeStamp(tsMS,
+                             ignoreMismatch)) { // onSlotChange has refreshed
+                                                // the prior and the labels
     return true;
   }
   if (!mMeanVtxCCDBUpdated) {
@@ -104,11 +111,15 @@ bool DetectorPVT::setTimeStamp(long tsMS, bool ignoreMismatch)
   }
   mMeanVtxCCDBUpdated = false;
   if (mTimeSlots) { // the prior of the ongoing slot is kept
-    LOGP(info, "Ignoring the new CCDB MeanVertex within the time slot {}, its prior stays {}", getSlotID(), mMeanVtxSlot.asString());
+    LOGP(info,
+         "Ignoring the new CCDB MeanVertex within the time slot {}, its prior "
+         "stays {}",
+         getSlotID(), mMeanVtxSlot.asString());
     return false;
   }
-  //  mMeanVtxSlot = mMeanVtxCCDB; // w/o calibration slots the prior follows the CCDB object
-  //  LOGP(info, "Mean vertex prior at timestamp {}: {}", tsMS, mMeanVtxSlot.asString());
+  //  mMeanVtxSlot = mMeanVtxCCDB; // w/o calibration slots the prior follows
+  //  the CCDB object LOGP(info, "Mean vertex prior at timestamp {}: {}", tsMS,
+  //  mMeanVtxSlot.asString());
   return true;
 }
 

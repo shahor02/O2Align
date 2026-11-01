@@ -37,12 +37,14 @@ void SensorTPC::defineMatrixT2L()
   mT2L = TGeoHMatrix(); // the tracking and local frames of a TPC sector coincide
 }
 
-// One record per calibration time slot, with the validity of the slot: the drift parameters are
-// fitted independently in each of them.
-bool EnvelopeTPC::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const
-{
-  if (!dynamic_cast<const TPCVDriftDOFSet*>(getCalib())) {
-    LOGP(warn, "Calibration DOFs of {} are not the TPC drift ones, no result written", getSymName());
+// One record per calibration time slot, with the validity of the slot: the
+// drift parameters are fitted independently in each of them.
+bool EnvelopeTPC::MP2JSON_Calib(const std::map<uint32_t, double> &labelToValue,
+                                nlohmann::json &entry) const {
+  if (!dynamic_cast<const TPCVDriftDOFSet *>(getCalib())) {
+    LOGP(warn,
+         "Calibration DOFs of {} are not the TPC drift ones, no result written",
+         getSymName());
     return false;
   }
   auto slotArr = calibSlotsToJSON(labelToValue);
