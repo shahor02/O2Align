@@ -3,7 +3,7 @@
 Written for: whoever continues the ITS alignment (a person or Claude), familiar with O2Align, Millepede-II and checkResid.
 Date: 2026-10-31. State: v19 (`/data/devAlg/solA2v19`, config `doc/ITS_RB_v19.json`) and its cure `cure012`
 (`/data/devAlg/solA2v19cure/cure012`), with checkResid on pp B0 (LHC25ab 562862) and OO B+ (LHC25ae) for both.
-Section 6 (pede evaluation of the cure) was added on 2026-11-01.
+Sections 6 (pede evaluation of the cure) and 6a (PV test) were added on 2026-11-01.
 
 ## 1. What the kink is
 
@@ -178,15 +178,16 @@ Result (2026-11-01):
   data prefer cure012 in checkResid and v19 in the Mille fit: the two estimators disagree on this mode, as they did for
   v18 vs v19.
 
-## 6a. Next: is the checkResid kink set by the vertex?
+## 6a. Is the checkResid kink set by the vertex? No
 
-The checkResid IB sub-track contains the refitted PV as a point (`checkresid.addPVAsCluster = true`, the default). With
-σ(PV) of a few µm and the IB at 2.2–3.9 cm, the PV dominates the IB sub-track direction: a 5 µm PV–IB transverse offset
-alone gives ~150 µrad in dPar2, the size of the kink. In the Mille data the vertex enters only through the composed
-free-vertex fit of PVs with ≤ 15 tracks (`useMultiTrackPVConstraint = 2`), so it cannot impose such a direction.
-Test: rerun checkResid on pp B0 562862 for v19 (and cure012) with `checkresid.addPVAsCluster=false`, so the IB sub-track
-is Lr0..Lr2 only, and compare with `kinkMap.C`. If the v19 kink disappears, it is a PV/IB effect and the OB cure
-compensates it in the wrong place; if it stays, the IB/OB disagreement is in the tracks themselves.
+The checkResid IB sub-track contains the refitted PV as a point (`checkresid.addPVAsCluster = true`, the default), which
+could set the IB sub-track direction. In the Mille data the vertex enters only through the composed free-vertex fit of PVs
+with ≤ 15 tracks (`useMultiTrackPVConstraint = 2`). Test (2026-11-01): checkResid on pp B0 562862 with and without the PV
+point (`_PV1` / `_PV0` files in `/data/devAlg/v10n`, `solA2v19`, `solA2v19cure/cure012`). `kinkMap.C` gives the same
+dPar0 and dPar2 for PV0 and PV1 in every tgl bin, within 0.5 µm and 3 µrad, for all three alignments, e.g. v19
+[+1.2,+2.0]: dPar2 n2 (−134, 186) with the PV, (−135, 184) without; cure012 stays at ≤ 33 µrad. The refitted PV is
+made of the same tracks, so on average it lies on their IB extrapolation and does not bias the IB direction. The kink
+is therefore in the cluster positions, and the checkResid/Mille disagreement of section 6 is not caused by the vertex.
 
 Other cheap tests not yet done: checkResid on the second B0 run 562837; a pair of runs of the same period with B = 0 and
 B ≠ 0.
@@ -196,6 +197,10 @@ B ≠ 0.
 - Run ROOT through `bash -ic 'o2d >/dev/null 2>&1; root -l -b -q ...' < /dev/null`. `o2d` is an interactive alias; the
   "O2PDPSuite/latest was not found" message it prints is harmless. Without `< /dev/null` backgrounded DPL workflows hang.
 - Compile the macros (`.C+`) from a copy in the scratchpad, not in `macro/`.
+- After the 2026-11 OS upgrade, ACLiC of the old (`sw_old`, ubuntu2404) ROOT fails on the system pthread headers
+  (`__GTHREAD_COND_INIT`), and cling crashes on the O2/TGeo headers of `kinkUtils.h`. Until the new stack is built,
+  `kinkMap.C` runs interpreted (no `+`) from a scratch copy whose `kinkUtils.h` drops `Frame`/`loadFrames` and the
+  O2/TGeo includes; the geometry-reading macros need the new stack.
 - The O2 Python breaks `python3`; use `env -u PYTHONHOME -u PYTHONPATH /usr/bin/python3 -I`.
 - `TTree::Draw` with vector leaves needs `SetEstimate(nTracks*9+1)` or it overflows (done in `kink::cellHitShifts`).
 - The `makeCDB.sh` scripts found in `/data/devAlg/*` query the CCDB at the current time and fail; `resToCCDB.sh` passes the

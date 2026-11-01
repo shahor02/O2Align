@@ -300,4 +300,6 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   ≤ 34 µrad but worsens OO B+ by the same amount, so the pp/OO kink difference is not geometric. Tools:
   `macro/kinkMap.C`, `macro/kinkResponse.C`, `macro/makeKinkCure.C`, `doc/resToCCDB.sh`
   (see `doc/handovers/kink_cure.md`). pede with the labels fixed at the cure costs Δχ² = +0.73 M (0.05 per record, equal
-  in B0, B+, B−): the Mille data mildly prefer v19 independently of the field, the opposite of the pp checkResid.
+  in B0, B+, B−): the Mille data mildly prefer v19 independently of the field, the opposite of the pp checkResid. Removing the PV point
+  from the checkResid IB sub-track (`checkresid.addPVAsCluster=false`, 11-01) changes the kink by ≤ 3 µrad for V10n,
+  v19 and cure012: the kink is in the clusters, not set by the vertex.
