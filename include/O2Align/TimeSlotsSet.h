@@ -1,6 +1,6 @@
 // Copyright 2019-2026 CERN and copyright holders of ALICE O2.
-// See https://alice-o2.web.cern.ch/copyright for details of the copyright
-// holders. All rights not expressly granted are reserved.
+// See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
+// All rights not expressly granted are reserved.
 //
 // This software is distributed under the terms of the GNU General Public
 // License v3 (GPL Version 3), copied verbatim in the file "COPYING".
@@ -17,7 +17,8 @@
 
 #include <Rtypes.h>
 
-namespace o2::alignrs {
+namespace o2::alignrs
+{
 
 struct TimeSlot {
   int runNumber{-1};
@@ -28,25 +29,22 @@ struct TimeSlot {
 };
 
 struct TimeSlotsSet {
-  std::vector<TimeSlot>
-      slots; // slots ordered by timeStampS, with non-overlapping [timeStampS,
-             // timeStampE) ranges
+  std::vector<TimeSlot> slots; // slots ordered by timeStampS, with non-overlapping [timeStampS, timeStampE) ranges
 
-  /// Fill `slots` from a json file with an array of {"run", "ID", "tsS", "tsE"}
-  /// records. Returns the number of slots read.
-  int readSlotsFromFile(const std::string &fileName);
+  /// Fill `slots` from a json file with an array of {"run", "ID", "tsS", "tsE"} records.
+  /// Returns the number of slots read.
+  int readSlotsFromFile(const std::string& fileName);
 
   /// Return the slot with timeStampS <= timestamp < timeStampE,
   /// an empty slot if no slots are defined or no matching slot is found
-  const TimeSlot &getSlot(long timestamp) const;
+  const TimeSlot& getSlot(long timestamp) const;
 
-  /// Return the intervalID of the slot with timeStampS <= timestamp <
-  /// timeStampE, 0 if no slots are defined, -1 if the timestamp is not covered
-  /// by any slot.
+  /// Return the intervalID of the slot with timeStampS <= timestamp < timeStampE,
+  /// 0 if no slots are defined, -1 if the timestamp is not covered by any slot.
   int getSlotID(long timestamp) const;
 
   /// Return the slot with the given intervalID, an empty slot if there is none
-  const TimeSlot &getSlotByID(int intervalID) const;
+  const TimeSlot& getSlotByID(int intervalID) const;
 
   /// intervalIDs of all the slots, in their order of definition
   std::vector<int> getSlotIDs() const;

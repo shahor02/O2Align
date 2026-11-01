@@ -1,4 +1,4 @@
-// Copyright 2019-2020 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2026 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -12,21 +12,21 @@
 #ifndef O2_ALIGN_DOFSET_H
 #define O2_ALIGN_DOFSET_H
 
-#include <Eigen/Dense>
-#include <Rtypes.h>
 #include <algorithm>
 #include <array>
+#include <utility>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
+#include <Eigen/Dense>
+#include <Rtypes.h>
 
 namespace o2::alignrs
 {
 
 struct DerivativeContext {
-  int detID{-1}; // Detector::DetIdx of the measurement
-  int volID{-1}; // ID of the measured volume within its detector (TPC: sector)
+  int detID{-1};    // Detector::DetIdx of the measurement
+  int volID{-1};    // ID of the measured volume within its detector (TPC: sector)
   int sensorID{-1}; // ITS3 sensor ID, -1 for any other detector
   int layerID{-1};  // ITS3 layer ID, -1 for any other detector
   double measX{0.};
@@ -38,69 +38,63 @@ struct DerivativeContext {
   double tgl{0.};
   double dydx{0.};
   double dzdx{0.};
-  
-  ClassDefNV(DerivativeContext,1);
+
+  ClassDefNV(DerivativeContext, 1);
 };
 
 // Generic set of DOF
 class DOFSet
 {
  public:
-   enum class Type : uint8_t {
-     RigidBody,
-     Legendre,
-     Inextensional,
-     TPCVDrift,
-     MeanVertex
-   };
+  enum class Type : uint8_t {
+    RigidBody,
+    Legendre,
+    Inextensional,
+    TPCVDrift,
+    MeanVertex
+  };
 
-   virtual ~DOFSet() = default;
-   virtual Type type() const = 0;
-   virtual std::string dofName(int idx) const = 0;
-   virtual void fillDerivatives(const DerivativeContext &ctx,
-                                Eigen::Ref<Eigen::MatrixXd> out) const = 0;
+  virtual ~DOFSet() = default;
+  virtual Type type() const = 0;
+  virtual std::string dofName(int idx) const = 0;
+  virtual void fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<Eigen::MatrixXd> out) const = 0;
 
-   int nDOFs() const { return static_cast<int>(mFree.size()); }
-   bool isFree(int idx) const { return mFree[idx]; }
-   void setFree(int idx, bool f) { mFree[idx] = f; }
-   void setAllFree(bool f) { std::fill(mFree.begin(), mFree.end(), f); }
-   int nFreeDOFs() const {
-     int n = 0;
-     for (bool f : mFree) {
-       n += f;
-     }
-     return n;
-   }
+  int nDOFs() const { return static_cast<int>(mFree.size()); }
+  bool isFree(int idx) const { return mFree[idx]; }
+  void setFree(int idx, bool f) { mFree[idx] = f; }
+  void setAllFree(bool f) { std::fill(mFree.begin(), mFree.end(), f); }
+  int nFreeDOFs() const
+  {
+    int n = 0;
+    for (bool f : mFree) {
+      n += f;
+    }
+    return n;
+  }
 
-   /// external measurement (e.g. survey) of a DOF, in its own units (cm or
-   /// rad); sigma <= 0: none. Set by the "measurement" clause of the DOF
-   /// configuration (Volume::applyMeasurementConfig), written as a Millepede
-   /// soft constraint for every free DOF having one.
-   struct DOFMeasurement {
-     double value{0.};
-     double sigma{-1.};
-   };
-   const DOFMeasurement &getMeasurement(int idx) const {
-     return mMeasurement[idx];
-   }
-   void setMeasurement(int idx, double value, double sigma) {
-     mMeasurement[idx] = {value, sigma};
-   }
-   void clearMeasurements() {
-     std::fill(mMeasurement.begin(), mMeasurement.end(), DOFMeasurement{});
-   }
-   /// index of a DOF by its name, as given by dofName(); -1 if none of this
-   /// set's DOFs is named so
-   int dofIndex(const std::string &name) const {
-     for (int i = 0; i < nDOFs(); ++i) {
-       if (dofName(i) == name) {
-         return i;
-       }
-     }
-     return -1;
-   }
+  /// external measurement (e.g. survey) of a DOF, in its own units (cm or rad); sigma <= 0: none.
+  /// Set by the "measurement" clause of the DOF configuration (Volume::applyMeasurementConfig),
+  /// written as a Millepede soft constraint for every free DOF having one.
+  struct DOFMeasurement {
+    double value{0.};
+    double sigma{-1.};
+  };
+  const DOFMeasurement& getMeasurement(int idx) const { return mMeasurement[idx]; }
+  void setMeasurement(int idx, double value, double sigma) { mMeasurement[idx] = {value, sigma}; }
+  void clearMeasurements() { std::fill(mMeasurement.begin(), mMeasurement.end(), DOFMeasurement{}); }
+  /// index of a DOF by its name, as given by dofName(); -1 if none of this set's DOFs is named so
+  int dofIndex(const std::string& name) const
+  {
+    for (int i = 0; i < nDOFs(); ++i) {
+      if (dofName(i) == name) {
+        return i;
+      }
+    }
+    return -1;
+  }
 
-  void setGlobalsPointers(double* pars, double* errs) {
+  void setGlobalsPointers(double* pars, double* errs)
+  {
     gParVals = pars;
     gParErrs = errs;
   }
@@ -114,7 +108,7 @@ class DOFSet
   void setParVal(int par, double v = 0) { getParVals()[par] = v; }
   void setParErr(int par, double e = 0) { getParErrs()[par] = e; }
 
-protected:
+ protected:
   DOFSet(int n) : mFree(n, true), mMeasurement(n) {}
   double* getParVals() { return gParVals + mFirstEntry; }
   double* getParErrs() { return gParErrs + mFirstEntry; }
@@ -122,26 +116,31 @@ protected:
   double* getParErrs() const { return gParErrs + mFirstEntry; }
   void validateDerivativeOutput(Eigen::Ref<Eigen::MatrixXd> out) const;
 
-  std::vector<bool> mFree;         // status of each DOF
-  std::vector<DOFMeasurement>
-      mMeasurement;                // external measurement of each DOF, if any
-  int mFirstEntry = -1;            // ID of the 1st parameter in the global results array
+  std::vector<bool> mFree;                  // status of each DOF
+  std::vector<DOFMeasurement> mMeasurement; // external measurement of each DOF, if any
+  int mFirstEntry = -1;                     // ID of the 1st parameter in the global results array
 
   static double* gParVals; // start of global parameters array
   static double* gParErrs; // start of global parameters errors array
-  
-  ClassDef(DOFSet,1);
+
+  ClassDef(DOFSet, 1);
 };
 
 // Rigid body set (rotations and offset)
 class RigidBodyDOFSet final : public DOFSet
 {
  public:
-  enum RigidBodyDOF : uint8_t { TX = 0, TY, TZ, RX, RY, RZ, NDOF };   // indices for rigid body parameters in LOC frame
+  enum RigidBodyDOF : uint8_t { TX = 0,
+                                TY,
+                                TZ,
+                                RX,
+                                RY,
+                                RZ,
+                                NDOF }; // indices for rigid body parameters in LOC frame
   static constexpr const char* RigidBodyDOFNames[RigidBodyDOF::NDOF] = {"TX", "TY", "TZ", "RX", "RY", "RZ"};
 
   RigidBodyDOFSet() : DOFSet(NDOF) {}
-  
+
   // mask: bitmask of free DOFs (bit i = DOF i is free)
   explicit RigidBodyDOFSet(uint8_t mask) : DOFSet(NDOF)
   {
@@ -153,7 +152,8 @@ class RigidBodyDOFSet final : public DOFSet
   std::string dofName(int idx) const override { return RigidBodyDOFNames[idx]; }
   void fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<Eigen::MatrixXd> out) const override;
   /// index of a DOF by its name (TX,TY,TZ,RX,RY,RZ), -1 if not one of them
-  static int dofIndex(const std::string &name) {
+  static int dofIndex(const std::string& name)
+  {
     for (int i = 0; i < NDOF; ++i) {
       if (name == RigidBodyDOFNames[i]) {
         return i;
@@ -169,7 +169,7 @@ class RigidBodyDOFSet final : public DOFSet
     }
     return m;
   }
-  ClassDefOverride(RigidBodyDOFSet,1);
+  ClassDefOverride(RigidBodyDOFSet, 1);
 };
 
 // Legendre DOFs
@@ -181,28 +181,20 @@ class LegendreDOFSet final : public DOFSet
   Type type() const override { return Type::Legendre; }
   int order() const { return mOrder; }
   std::string dofName(int idx) const override;
-  
+
   void fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<Eigen::MatrixXd> out) const override;
 
   static double getSensorPhiWidth(int sensorID, double radius);
   static std::pair<double, double> computeUV(double gloX, double gloY, double gloZ, int sensorID, double radius);
-  /// phi range [phi1, phi2] (in [0, 2pi)) of the ITS3 half-barrel sensor,
-  /// excluding the equatorial gap
-  static std::pair<double, double> getSensorPhiBorders(int sensorID,
-                                                       double radius);
+  /// phi range [phi1, phi2] (in [0, 2pi)) of the ITS3 half-barrel sensor, excluding the equatorial gap
+  static std::pair<double, double> getSensorPhiBorders(int sensorID, double radius);
 
-  /// 8-point Gauss-Legendre quadrature on [-1, 1] (Numerical Recipes 4.6), used
-  /// to integrate the radial deformation along the arc
-  static constexpr std::array<double, 8> GaussNodes = {
-      -0.9602898564975363, -0.7966664774136267, -0.5255324099163290,
-      -0.1834346424956498, 0.1834346424956498,  0.5255324099163290,
-      0.7966664774136267,  0.9602898564975363};
-  static constexpr std::array<double, 8> GaussWeights = {
-      0.1012285362903763, 0.2223810344533745, 0.3137066458778873,
-      0.3626837833783620, 0.3626837833783620, 0.3137066458778873,
-      0.2223810344533745, 0.1012285362903763};
+  /// 8-point Gauss-Legendre quadrature on [-1, 1] (Numerical Recipes 4.6), used to integrate the
+  /// radial deformation along the arc
+  static constexpr std::array<double, 8> GaussNodes = {-0.9602898564975363, -0.7966664774136267, -0.5255324099163290, -0.1834346424956498, 0.1834346424956498, 0.5255324099163290, 0.7966664774136267, 0.9602898564975363};
+  static constexpr std::array<double, 8> GaussWeights = {0.1012285362903763, 0.2223810344533745, 0.3137066458778873, 0.3626837833783620, 0.3626837833783620, 0.3137066458778873, 0.2223810344533745, 0.1012285362903763};
 
-private:
+ private:
   int mOrder;
   ClassDefOverride(LegendreDOFSet, 1);
 };
@@ -240,68 +232,63 @@ class InextensionalDOFSet final : public DOFSet
 
  private:
   int mMaxOrder;
-  ClassDefOverride(InextensionalDOFSet,1);
+  ClassDefOverride(InextensionalDOFSet, 1);
 };
 
-/// Calibration of the TPC drift, owned by the TPC envelope volume. The cluster
-/// Z is reconstructed from the drift time as z = s * (Lz - l), l = (t - T0 -
-/// tOffset) * vDrift being the drift length and s = +1 (-1) on the A (C) side,
-/// hence a relative correction d of vDrift and an offset o of the drift length
-/// displace the measurement along the local (= tracking frame) Z by
+/// Calibration of the TPC drift, owned by the TPC envelope volume. The cluster Z is reconstructed
+/// from the drift time as z = s * (Lz - l), l = (t - T0 - tOffset) * vDrift being the drift length
+/// and s = +1 (-1) on the A (C) side, hence a relative correction d of vDrift and an offset o of
+/// the drift length displace the measurement along the local (= tracking frame) Z by
 ///     dz = -s * l * d - s * o,      l = Lz - s * z
-/// The two are separated by the lever arm in l. Being a pure Z shift of the
-/// measurement, the derivatives need no transformation to the local frame and
-/// are scaled with the same convention as the TZ column of RigidBodyDOFSet.
-class TPCVDriftDOFSet final : public DOFSet {
-public:
-  enum VDriftDOF : uint8_t {
-    VDRIFT = 0,
-    DRIFTOFF,
-    NDOF
-  }; // relative vDrift correction, drift length offset [cm]
-  static constexpr const char *VDriftDOFNames[VDriftDOF::NDOF] = {"VDRIFT",
-                                                                  "DRIFTOFF"};
+/// The two are separated by the lever arm in l. Being a pure Z shift of the measurement, the
+/// derivatives need no transformation to the local frame and are scaled with the same convention
+/// as the TZ column of RigidBodyDOFSet.
+class TPCVDriftDOFSet final : public DOFSet
+{
+ public:
+  enum VDriftDOF : uint8_t { VDRIFT = 0,
+                             DRIFTOFF,
+                             NDOF }; // relative vDrift correction, drift length offset [cm]
+  static constexpr const char* VDriftDOFNames[VDriftDOF::NDOF] = {"VDRIFT", "DRIFTOFF"};
 
   TPCVDriftDOFSet() : DOFSet(NDOF) {}
   Type type() const override { return Type::TPCVDrift; }
   std::string dofName(int idx) const override { return VDriftDOFNames[idx]; }
-  void fillDerivatives(const DerivativeContext &ctx,
-                       Eigen::Ref<Eigen::MatrixXd> out) const override;
+  void fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<Eigen::MatrixXd> out) const override;
 
-  /// length of the TPC drift volume, TPCFastTransformGeo::getTPCzLength().
-  /// Known only once the correction maps are delivered, i.e. after the DOF set
-  /// is created by the DOF configuration.
+  /// length of the TPC drift volume, TPCFastTransformGeo::getTPCzLength(). Known only once the
+  /// correction maps are delivered, i.e. after the DOF set is created by the DOF configuration.
   void setZLength(double zLength) { mZLength = zLength; }
   double getZLength() const { return mZLength; }
 
-private:
+ private:
   double mZLength{-1.}; // negative until set from the correction maps
   ClassDefOverride(TPCVDriftDOFSet, 1);
 };
 
-/// Position and beam-line slope of the mean interaction vertex, owned by the
-/// single volume of DetectorPVT and fitted independently in every time slot of
-/// the mean vertex calibration. The DOFs are the corrections to the X, Y, Z
-/// position and to the dX/dZ, dY/dZ slopes of the MeanVertexObject in the
-/// global frame (its getXAtZ/getYAtZ dependence). Being the position of the
-/// measurement (the mean-vertex prior) rather than of a sensor, its derivatives
-/// are not produced by the generic chain but directly by the vertex constraint
-/// (AlignmentSpec::addMeanVertexPrior). The 5 DOFs are independent of one
-/// another: each may be free or fixed, and measured, on its own.
-class MeanVertexDOFSet final : public DOFSet {
-public:
-  enum MeanVertexDOF : uint8_t { X = 0, Y, Z, SlopeX, SlopeY, NDOF };
-  static constexpr const char *MeanVertexDOFNames[MeanVertexDOF::NDOF] = {
-      "X", "Y", "Z", "SlopeX", "SlopeY"};
+/// Position and beam-line slope of the mean interaction vertex, owned by the single volume of
+/// DetectorPVT and fitted independently in every time slot of the mean vertex calibration. The DOFs
+/// are the corrections to the X, Y, Z position and to the dX/dZ, dY/dZ slopes of the
+/// MeanVertexObject in the global frame (its getXAtZ/getYAtZ dependence). Being the position of the
+/// measurement (the mean-vertex prior) rather than of a sensor, its derivatives are not produced by
+/// the generic chain but directly by the vertex constraint (AlignmentSpec::addMeanVertexPrior). The
+/// 5 DOFs are independent of one another: each may be free or fixed, and measured, on its own.
+class MeanVertexDOFSet final : public DOFSet
+{
+ public:
+  enum MeanVertexDOF : uint8_t { X = 0,
+                                 Y,
+                                 Z,
+                                 SlopeX,
+                                 SlopeY,
+                                 NDOF };
+  static constexpr const char* MeanVertexDOFNames[MeanVertexDOF::NDOF] = {"X", "Y", "Z", "SlopeX", "SlopeY"};
 
   MeanVertexDOFSet() : DOFSet(NDOF) {}
   Type type() const override { return Type::MeanVertex; }
-  std::string dofName(int idx) const override {
-    return MeanVertexDOFNames[idx];
-  }
+  std::string dofName(int idx) const override { return MeanVertexDOFNames[idx]; }
   /// not applicable: throws, see the class description
-  void fillDerivatives(const DerivativeContext &ctx,
-                       Eigen::Ref<Eigen::MatrixXd> out) const override;
+  void fillDerivatives(const DerivativeContext& ctx, Eigen::Ref<Eigen::MatrixXd> out) const override;
 
   ClassDefOverride(MeanVertexDOFSet, 1);
 };

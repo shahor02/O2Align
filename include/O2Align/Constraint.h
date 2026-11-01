@@ -12,27 +12,26 @@
 #ifndef O2_ALIGN_CONSTRAINT_H
 #define O2_ALIGN_CONSTRAINT_H
 
-#include <Rtypes.h>
 #include <cstdint>
 #include <ostream>
 #include <string>
 #include <vector>
+#include <Rtypes.h>
 
 namespace o2::alignrs
 {
 
-/// linear equality constraint sum_i c_i * p_i = value of the Millepede steering
-/// file or, if a sigma > 0 is given, the "Measurement" sum_i c_i * p_i = value
-/// +- sigma, i.e. a soft constraint
+/// linear equality constraint sum_i c_i * p_i = value of the Millepede steering file or, if a
+/// sigma > 0 is given, the "Measurement" sum_i c_i * p_i = value +- sigma, i.e. a soft constraint
 class Constraint
 {
  public:
-   Constraint(const std::string &name, double value, double sigma = -1.)
-       : mName(name), mValue(value), mSigma(sigma) {}
-   void add(uint32_t lab, double coeff) {
-     mLabels.push_back(lab);
-     mCoeffs.push_back(coeff);
-   }
+  Constraint(const std::string& name, double value, double sigma = -1.) : mName(name), mValue(value), mSigma(sigma) {}
+  void add(uint32_t lab, double coeff)
+  {
+    mLabels.push_back(lab);
+    mCoeffs.push_back(coeff);
+  }
   auto& getName() const { return mName; }
   auto& getLabels() const { return mLabels; }
   auto& getCoeffs() const { return mCoeffs; }
@@ -41,11 +40,10 @@ class Constraint
   auto getSize() const noexcept { return mLabels.size(); }
   bool isMeasurement() const noexcept { return mSigma > 0.; }
 
-private:
+ private:
   std::string mName;             // name of the constraint
   double mValue{0.};             // constraint value
-  double mSigma{-1.}; // its uncertainty if it is a measurement, otherwise <= 0
-                      // (exact constraint)
+  double mSigma{-1.};            // its uncertainty if it is a measurement, otherwise <= 0 (exact constraint)
   std::vector<uint32_t> mLabels; // parameter labels
   std::vector<double> mCoeffs;   // their coefficients
 

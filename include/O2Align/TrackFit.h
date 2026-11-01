@@ -102,9 +102,9 @@ o2::track::TrackParametrizationWithError<T> interpolateTrackParCov(
   return res;
 }
 
-/// Reset the covariance of a seed before a refit: the default diagonal errors,
-/// with a 100% error on q/pt
-inline void resetTrackCovariance(TrackD &trk) {
+/// Reset the covariance of a seed before a refit: the default diagonal errors, with a 100% error on q/pt
+inline void resetTrackCovariance(TrackD& trk)
+{
   trk.resetCovariance();
   trk.setCov(trk.getQ2Pt() * trk.getQ2Pt() * trk.getCov()[14], 14);
 }

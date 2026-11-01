@@ -1,4 +1,4 @@
-// Copyright 2019-2020 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2026 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -12,13 +12,13 @@
 #include <string>
 #include <format>
 
+#include <Eigen/Dense>
 #include "DetectorsBase/Propagator.h"
 #include "MathUtils/Utils.h"
 #include "O2Align/AlignmentTypes.h"
-#include "O2Align/Detector.h"
 #include "O2Align/Params.h"
 #include "O2Align/TrackFit.h"
-#include <Eigen/Dense>
+#include "O2Align/Detector.h"
 
 namespace o2::alignrs
 {
@@ -28,42 +28,38 @@ std::string FrameInfoExt::asString() const
   return std::format("[{}] Sensor={} Layer={} X={} Alpha={} y={} z={}", label.asString(), cluster.getSensorID(), lr, x, alpha, cluster.getY(), cluster.getZ());
 }
 
-bool Track::fitTrack(int frameStart, int frameStop, bool cropOnFailure,
-                     bool reset) {
+bool Track::fitTrack(int frameStart, int frameStop, bool cropOnFailure, bool reset)
+{
   const int nFrames = static_cast<int>(info.size());
-  if (frameStart < 0 || frameStart >= nFrames || frameStop < 0 ||
-      frameStop >= nFrames) {
+  if (frameStart < 0 || frameStart >= nFrames || frameStop < 0 || frameStop >= nFrames) {
     return false;
   }
-  const auto &params = Params::Instance();
+  const auto& params = Params::Instance();
   auto prop = o2::base::PropagatorD::Instance();
   auto trFit = track; // fit a copy: the seed must be preserved if the fit fails
   if (reset) {
     resetTrackCovariance(trFit);
   }
   const int step = frameStart > frameStop ? -1 : 1;
-  const int frameEnd = frameStop + step; // 1st slot past the range
-  const bool crop = cropOnFailure &&
-                    step > 0; // cropping is meaningful for the outward fit only
+  const int frameEnd = frameStop + step;       // 1st slot past the range
+  const bool crop = cropOnFailure && step > 0; // cropping is meaningful for the outward fit only
   o2::track::TrackParD trkRef, *refLin = nullptr;
   if (params.useStableRef) {
     refLin = &(trkRef = trFit);
   }
   float chi2 = 0.f;
   for (int i = frameStart; i != frameEnd; i += step) {
-    const auto &frame = info[i];
+    const auto& frame = info[i];
     if (!frame.isValid()) { // invalid point
       continue;
     }
-    if (!prop->propagateToAlphaX(trFit, refLin, frame.alpha, frame.x, false,
-                                 params.maxSnp, params.maxStep, 1,
-                                 params.corrType)) {
+    if (!prop->propagateToAlphaX(trFit, refLin, frame.alpha, frame.x, false, params.maxSnp, params.maxStep, 1, params.corrType)) {
       if (crop) {
         info.resize(frameStart);
       }
       return false;
     }
-    const auto &cluster = frame.cluster;
+    const auto& cluster = frame.cluster;
     chi2 += static_cast<float>(trFit.getPredictedChi2Quiet(cluster));
     if (!trFit.update(cluster)) {
       if (crop) {
@@ -82,23 +78,22 @@ bool Track::fitTrack(int frameStart, int frameStop, bool cropOnFailure,
   return true;
 }
 
-bool Track::continueFitOutward(int frameStart) {
+bool Track::continueFitOutward(int frameStart)
+{
   if (frameStart >= static_cast<int>(info.size())) {
     return true; // no new frames were appended: nothing to fit
   }
   return fitTrack(frameStart, static_cast<int>(info.size()) - 1, true, false);
 }
 
-bool Track::updateWithVertex(const o2::dataformats::VertexBase &vtx,
-                             double covScale) {
+bool Track::updateWithVertex(const o2::dataformats::VertexBase& vtx, double covScale)
+{
   if (info.empty()) {
     return false;
   }
-  auto &frame = info.front(); // the slot prebooked for the vertex point
-  frame.lr =
-      FrameInfoExt::Invalid; // flagged as valid only by a successful update
-  auto trDCA = track; // find the DCA on a copy, the fit itself starts from the
-                      // innermost measured point
+  auto& frame = info.front();       // the slot prebooked for the vertex point
+  frame.lr = FrameInfoExt::Invalid; // flagged as valid only by a successful update
+  auto trDCA = track;               // find the DCA on a copy, the fit itself starts from the innermost measured point
   auto prop = o2::base::PropagatorD::Instance();
   if (!prop->propagateToDCA(vtx, trDCA, prop->getNominalBz())) {
     return false;
@@ -107,36 +102,25 @@ bool Track::updateWithVertex(const o2::dataformats::VertexBase &vtx,
   frame.alpha = static_cast<float>(trDCA.getAlpha());
   o2::math_utils::bringToPMPi(frame.alpha);
   o2::math_utils::sincosd(frame.alpha, sa, ca);
-  frame.x = static_cast<float>(
-      vtx.getX() * ca +
-      vtx.getY() * sa); // the vertex position in the track frame
-  // covariance of the vertex projected along the track to the plane X = frame.x
-  // of the tracking frame: d(Y,Z)/d(vertex) = [[-sa - y' ca, ca - y' sa, 0],
-  // [-z' ca, -z' sa, 1]], see computeVertexTransformation
-  const auto slopes =
-      TrackSlopes::computeTrackSlopes(trDCA.getSnp(), trDCA.getTgl());
+  frame.x = static_cast<float>(vtx.getX() * ca + vtx.getY() * sa); // the vertex position in the track frame
+  // covariance of the vertex projected along the track to the plane X = frame.x of the tracking frame:
+  // d(Y,Z)/d(vertex) = [[-sa - y' ca, ca - y' sa, 0], [-z' ca, -z' sa, 1]], see computeVertexTransformation
+  const auto slopes = TrackSlopes::computeTrackSlopes(trDCA.getSnp(), trDCA.getTgl());
   Eigen::Matrix<double, 2, 3> trans;
-  trans << -sa - slopes.dydx * ca, ca - slopes.dydx * sa, 0., -slopes.dzdx * ca,
-      -slopes.dzdx * sa, 1.;
+  trans << -sa - slopes.dydx * ca, ca - slopes.dydx * sa, 0., -slopes.dzdx * ca, -slopes.dzdx * sa, 1.;
   Eigen::Matrix3d covGlo;
   covGlo << vtx.getSigmaX2(), vtx.getSigmaXY(), vtx.getSigmaXZ(),
-      vtx.getSigmaXY(), vtx.getSigmaY2(), vtx.getSigmaYZ(), vtx.getSigmaXZ(),
-      vtx.getSigmaYZ(), vtx.getSigmaZ2();
+    vtx.getSigmaXY(), vtx.getSigmaY2(), vtx.getSigmaYZ(),
+    vtx.getSigmaXZ(), vtx.getSigmaYZ(), vtx.getSigmaZ2();
   const Eigen::Matrix2d cov = trans * covGlo * trans.transpose();
-  frame.cluster = o2::BaseCluster<float>(
-      -1, frame.x, static_cast<float>(-vtx.getX() * sa + vtx.getY() * ca),
-      vtx.getZ(), static_cast<float>(cov(0, 0)), static_cast<float>(cov(1, 1)),
-      static_cast<float>(cov(0, 1)));
+  frame.cluster = o2::BaseCluster<float>(-1, frame.x, static_cast<float>(-vtx.getX() * sa + vtx.getY() * ca), vtx.getZ(),
+                                         static_cast<float>(cov(0, 0)), static_cast<float>(cov(1, 1)), static_cast<float>(cov(0, 1)));
   frame.lr = FrameInfoExt::Vertex;
   frame.detIdx = Detector::DetPVT;
   const auto vtxPoint = frame.cluster;
-  if (covScale != 1.) { // update with the rescaled covariance, the true one is
-                        // restored below
-    frame.cluster =
-        o2::BaseCluster<float>(-1, frame.x, vtxPoint.getY(), vtxPoint.getZ(),
-                               static_cast<float>(covScale * cov(0, 0)),
-                               static_cast<float>(covScale * cov(1, 1)),
-                               static_cast<float>(covScale * cov(0, 1)));
+  if (covScale != 1.) { // update with the rescaled covariance, the true one is restored below
+    frame.cluster = o2::BaseCluster<float>(-1, frame.x, vtxPoint.getY(), vtxPoint.getZ(),
+                                           static_cast<float>(covScale * cov(0, 0)), static_cast<float>(covScale * cov(1, 1)), static_cast<float>(covScale * cov(0, 1)));
   }
   const bool ok = fitTrack(0, 0, false, false);
   frame.cluster = vtxPoint;

@@ -12,12 +12,12 @@
 #ifndef O2_ALIGN_LABEL_H
 #define O2_ALIGN_LABEL_H
 
-#include <Rtypes.h>
 #include <cstdint>
-#include <format>
 #include <functional>
-#include <stdexcept>
 #include <string>
+#include <format>
+#include <stdexcept>
+#include <Rtypes.h>
 
 namespace o2::alignrs
 {
@@ -25,17 +25,14 @@ namespace o2::alignrs
 class Label
 {
   // Millepede label is any positive integer [1....)
-  // Layout: DOF(7) | CALIB(1) | ID(19) | SENS(1) | DET(3) = 31 usable bits (MSB
-  // reserved, GBL uses signed int) The ID is stored as id+1, so that no label
-  // is 0 even for the 1st DOF of the volume 0.
-public:
+  // Layout: DOF(7) | CALIB(1) | ID(19) | SENS(1) | DET(3) = 31 usable bits (MSB reserved, GBL uses signed int)
+  // The ID is stored as id+1, so that no label is 0 even for the 1st DOF of the volume 0.
+ public:
   using T = uint32_t;
-  static constexpr int DOF_BITS = 7; // bits 0-6
-  static constexpr int CALIB_BITS =
-      1; // bit 7: 0 = rigid body, 1 = calibration (only allow for one
-         // calibration, could be extended if needed)
-  static constexpr int ID_BITS = 19;  // bits 8-26
-  static constexpr int SENS_BITS = 1; // bit 27, followed by DET in bits 28-30
+  static constexpr int DOF_BITS = 7;   // bits 0-6
+  static constexpr int CALIB_BITS = 1; // bit 7: 0 = rigid body, 1 = calibration (only allow for one calibration, could be extended if needed)
+  static constexpr int ID_BITS = 19;   // bits 8-26
+  static constexpr int SENS_BITS = 1;  // bit 27, followed by DET in bits 28-30
   static constexpr int TOTAL_BITS = sizeof(T) * 8;
   static constexpr int DET_BITS = TOTAL_BITS - (DOF_BITS + CALIB_BITS + ID_BITS + SENS_BITS) - 1; // one less bit since GBL uses int!
   static constexpr T bitMask(int b) noexcept
@@ -57,14 +54,12 @@ public:
   static constexpr int DET_SHIFT = DOF_BITS + CALIB_BITS + ID_BITS + SENS_BITS;
   static constexpr T DET_MAX = (T(1) << DET_BITS) - T(1);
   static constexpr T DET_MASK = DET_MAX << DET_SHIFT;
-  /// detector code reserved for the volumes which belong to no detector: the
-  /// common root of the hierarchy. Such volumes carry no DOFs, hence this code
-  /// never appears in a Millepede label.
+  /// detector code reserved for the volumes which belong to no detector: the common root of the
+  /// hierarchy. Such volumes carry no DOFs, hence this code never appears in a Millepede label.
   static constexpr T DET_GLOBAL = DET_MAX;
 
   Label() = default; // invalid/empty label
-  /// id must be < ID_MAX and det <= DET_MAX: a larger value would silently wrap
-  /// onto another label
+  /// id must be < ID_MAX and det <= DET_MAX: a larger value would silently wrap onto another label
   Label(T det, T id, bool sens, bool calib = false)
     : mID((((id + 1) & ID_MAX) << ID_SHIFT) |
           ((det & DET_MAX) << DET_SHIFT) |
@@ -72,15 +67,12 @@ public:
           ((T(calib) & CALIB_MAX) << CALIB_SHIFT))
   {
     if (id >= ID_MAX || det > DET_MAX) {
-      throw std::out_of_range(
-          std::format("Label: id {} or det {} exceeds the allowed range {}, {}",
-                      id, det, ID_MAX - 1, DET_MAX));
+      throw std::out_of_range(std::format("Label: id {} or det {} exceeds the allowed range {}, {}", id, det, ID_MAX - 1, DET_MAX));
     }
   }
 
-  /// produce the raw Millepede label for a given DOF index (rigid body: calib=0
-  /// in label). dof must be <= DOF_MAX, which Volume::finalise checks for every
-  /// DOF set.
+  /// produce the raw Millepede label for a given DOF index (rigid body: calib=0 in label).
+  /// dof must be <= DOF_MAX, which Volume::finalise checks for every DOF set.
   constexpr T raw(T dof) const noexcept { return (mID & ~DOF_MASK) | ((dof & DOF_MAX) << DOF_SHIFT); }
   constexpr int rawGBL(T dof) const noexcept { return static_cast<int>(raw(dof)); }
 
@@ -107,13 +99,15 @@ public:
  private:
   T mID{0};
 
-  ClassDefNV(Label,1);
+  ClassDefNV(Label, 1);
 };
 
 } // namespace o2::alignrs
 
-template <> struct std::hash<o2::alignrs::Label> {
-  size_t operator()(const o2::alignrs::Label &label) const noexcept {
+template <>
+struct std::hash<o2::alignrs::Label> {
+  size_t operator()(const o2::alignrs::Label& label) const noexcept
+  {
     return std::hash<o2::alignrs::Label::T>{}(label.raw(0));
   }
 };

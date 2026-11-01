@@ -26,8 +26,7 @@ void Constraint::write(std::ostream& os) const
     os << std::format("Constraint {:.12g}\n", mValue);
   }
   for (size_t i{0}; i < mLabels.size(); ++i) {
-    // full precision: the coefficients mix rotations with lever arms of up to a
-    // few metres
+    // full precision: the coefficients mix rotations with lever arms of up to a few metres
     os << std::format("{} {:.12g}\n", mLabels[i], mCoeffs[i]);
   }
   os << '\n';

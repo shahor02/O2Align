@@ -27,8 +27,7 @@ void SensorTOF::defineMatrixL2G()
 
 void SensorTOF::defineMatrixT2L()
 {
-  setT2LFromAlpha(o2::math_utils::detail::sector2Angle<double>(
-      getSensorId() / o2::tof::Geo::NSTRIPXSECTOR));
+  setT2LFromAlpha(o2::math_utils::detail::sector2Angle<double>(getSensorId() / o2::tof::Geo::NSTRIPXSECTOR));
 }
 
 } // namespace o2::alignrs

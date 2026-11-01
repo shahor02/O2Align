@@ -1,16 +1,26 @@
-// Pitch of the chip planes: d(x_tracking)/d(z_local) of every IB chip of an
-// aligned geometry (GeometryAligned snapshot). root -l -b -q
-// 'chipPitch.C("GLO/Config/GeometryAligned/snapshot.root")'   (function name
-// clx2 inside)
+// Copyright 2019-2026 CERN and copyright holders of ALICE O2.
+// See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
+// All rights not expressly granted are reserved.
+//
+// This software is distributed under the terms of the GNU General Public
+// License v3 (GPL Version 3), copied verbatim in the file "COPYING".
+//
+// In applying this license CERN does not waive the privileges and immunities
+// granted to it by virtue of its status as an Intergovernmental Organization
+// or submit itself to any jurisdiction.
+
+// Pitch of the chip planes: d(x_tracking)/d(z_local) of every IB chip of an aligned geometry (GeometryAligned snapshot).
+// root -l -b -q 'chipPitch.C("GLO/Config/GeometryAligned/snapshot.root")'   (function name clx2 inside)
 #include <TFile.h>
 #include <TGeoManager.h>
 #include <TGeoMatrix.h>
 #include <TGeoPhysicalNode.h>
-#include <cmath>
 #include <cstdio>
-void chipPitch(const char *fn) {
+#include <cmath>
+void chipPitch(const char* fn)
+{
   TFile f(fn);
-  auto *g = (TGeoManager *)f.Get("ccdb_object");
+  auto* g = (TGeoManager*)f.Get("ccdb_object");
   if (!g) {
     printf("no geometry\n");
     return;
@@ -22,20 +32,17 @@ void chipPitch(const char *fn) {
     for (int hb = 0; hb < 2; hb++)
       for (int st = 0; st < nSt[lay] / 2; st++)
         for (int ch = 0; ch < 9; ch++) {
-          auto *e = g->GetAlignableEntry(
-              Form("ITS/ITSULayer%d/ITSUHalfBarrel%d/ITSUStave%d/ITSUChip%d",
-                   lay, hb, st, ch));
+          auto* e = g->GetAlignableEntry(Form("ITS/ITSULayer%d/ITSUHalfBarrel%d/ITSUStave%d/ITSUChip%d", lay, hb, st, ch));
           if (!e)
             continue;
-          auto *pn = e->GetPhysicalNode();
+          auto* pn = e->GetPhysicalNode();
           if (!pn)
             continue;
-          const TGeoHMatrix *m = pn->GetMatrix();
+          const TGeoHMatrix* m = pn->GetMatrix();
           double lz[3] = {0, 0, 1}, gz[3], lo[3] = {0, 0, 0}, go[3];
           m->LocalToMasterVect(lz, gz);
           m->LocalToMaster(lo, go);
-          // alpha as getFlatChipAlpha: foot of the normal from the beam axis
-          // along local X
+          // alpha as getFlatChipAlpha: foot of the normal from the beam axis along local X
           double A[3] = {-100, 0, 0}, B[3] = {100, 0, 0}, ga[3], gb[3];
           m->LocalToMaster(A, ga);
           m->LocalToMaster(B, gb);
@@ -49,11 +56,9 @@ void chipPitch(const char *fn) {
           if (fabs(slope) > fabs(mx))
             mx = slope;
           if (n <= 2)
-            printf("   L%d hb%d st%d ch%d  r=%.4f  dxtrk/dzloc=%.3e\n", lay, hb,
-                   st, ch, hypot(go[0], go[1]), slope);
+            printf("   L%d hb%d st%d ch%d  r=%.4f  dxtrk/dzloc=%.3e\n", lay, hb, st, ch, hypot(go[0], go[1]), slope);
         }
     if (n)
-      printf("Layer %d: <dx_trk/dz_loc> = %.3e rms %.3e max %.3e (n=%d)\n", lay,
-             s0 / n, sqrt(fmax(0, s1 / n - s0 * s0 / n / n)), mx, n);
+      printf("Layer %d: <dx_trk/dz_loc> = %.3e rms %.3e max %.3e (n=%d)\n", lay, s0 / n, sqrt(fmax(0, s1 / n - s0 * s0 / n / n)), mx, n);
   }
 }

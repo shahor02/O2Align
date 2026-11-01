@@ -1,4 +1,4 @@
-// Copyright 2019-2020 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2026 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -12,12 +12,12 @@
 #ifndef O2_ALIGN_TYPES_H
 #define O2_ALIGN_TYPES_H
 
-#include "O2Align/Label.h"
+#include <string>
+#include <vector>
 #include "ReconstructionDataFormats/Track.h"
 #include "ReconstructionDataFormats/Vertex.h"
 #include "ReconstructionDataFormats/VtxTrackIndex.h"
-#include <string>
-#include <vector>
+#include "O2Align/Label.h"
 
 namespace o2::alignrs
 {
@@ -41,17 +41,14 @@ struct FrameInfoExt final {
     ITSOverlapBit = 0, // the point is on an ITS overlap
     NUserBits
   };
-  int8_t lr = Invalid; // detector-specific layer-like index, -1 = vtx, -2 =
-                       // invalid point
-  int8_t detIdx =
-      Invalid; // detector index, stored in the DET bits of the Millepede Label
+  int8_t lr = Invalid;            // detector-specific layer-like index, -1 = vtx, -2 = invalid point
+  int8_t detIdx = Invalid;        // detector index, stored in the DET bits of the Millepede Label
   uint8_t userBits{0};            // user flags, detector-specific
   Label label{};                  // label of the sensitive volume this point belongs to
   float x{-999.f};                // X of the measurement in the tracking frame
   float alpha{-999.f};            // rotation angle of the tracking frame
   o2::BaseCluster<float> cluster; // cluster info
-  bool zFromTrack{false}; // the Z is not measured but taken from the track
-                          // (TRD): no Z derivatives wrt the alignment
+  bool zFromTrack{false};         // the Z is not measured but taken from the track (TRD): no Z derivatives wrt the alignment
   std::string asString() const;
   bool isValid() const { return lr > Invalid; }
   bool isVertex() const { return lr == Vertex; }
@@ -70,58 +67,47 @@ struct FitInfo final {
 
 struct Track {
   o2::dataformats::VtxTrackIndex gid; // global track ID
-  o2::track::TrackParCovD track;   // prepared track state
-  FitInfo kfFit;                   // kf fit information
-  FitInfo gblFit;                  // gbl fit information
-  std::vector<Measurement>
-      points; // measurment point, at the moment filled in parallel to GBL
-              // points but not used (might be used in the future for
-              // validation/debug output)
-  std::vector<FrameInfoExt> info;  // frame info, owned by the track (detectors append to it)
-  int invertAt{-1}; // cosmics: slot of `info` from which the track runs in the
-                    // inverted (opposite direction) parametrisation, see
-                    // AlignmentSpec::prepareCosmicTrack; <0: none
+  o2::track::TrackParCovD track;      // prepared track state
+  FitInfo kfFit;                      // kf fit information
+  FitInfo gblFit;                     // gbl fit information
+  std::vector<Measurement> points;    // measurment point, at the moment filled in parallel to GBL points but not used (might be used in the future for validation/debug output)
+  std::vector<FrameInfoExt> info;     // frame info, owned by the track (detectors append to it)
+  int invertAt{-1};                   // cosmics: slot of `info` from which the track runs in the inverted (opposite direction) parametrisation, see AlignmentSpec::prepareCosmicTrack; <0: none
 
-  /// KF refit over the frames in the inclusive [frameStart, frameStop] slot
-  /// range of `info`, starting from the state stored in `track` (which must be
-  /// defined at the frameStart point). The range is traversed inward if
-  /// frameStart > frameStop, invalid frames are skipped. The fit is done on a
-  /// copy, hence `track` and `kfFit` are modified only on success: on success
-  /// `track` becomes the state at the frameStop point and the chi2 of the
-  /// fitted points is added to `kfFit.chi2`. reset: reset the seed covariance
-  /// and zero `kfFit.chi2` before the fit, otherwise the fit
+  /// KF refit over the frames in the inclusive [frameStart, frameStop] slot range of `info`,
+  /// starting from the state stored in `track` (which must be defined at the frameStart point).
+  /// The range is traversed inward if frameStart > frameStop, invalid frames are skipped.
+  /// The fit is done on a copy, hence `track` and `kfFit` are modified only on success:
+  /// on success `track` becomes the state at the frameStop point and the chi2 of the fitted
+  /// points is added to `kfFit.chi2`.
+  /// reset: reset the seed covariance and zero `kfFit.chi2` before the fit, otherwise the fit
   ///        continues from the seed as is.
-  /// cropOnFailure: on a failure of an outward fit drop the frames from the
-  /// frameStart slot on.
-  bool fitTrack(int frameStart, int frameStop, bool cropOnFailure = false,
-                bool reset = false);
+  /// cropOnFailure: on a failure of an outward fit drop the frames from the frameStart slot on.
+  bool fitTrack(int frameStart, int frameStop, bool cropOnFailure = false, bool reset = false);
 
-  /// Continue the KF fit outward, using the frames appended by the caller to
-  /// `info` starting from the slot frameStart. The caller must append them in
-  /// the outward direction. On failure the new frames are dropped and both
-  /// `track` and `kfFit` stay intact.
+  /// Continue the KF fit outward, using the frames appended by the caller to `info` starting
+  /// from the slot frameStart. The caller must append them in the outward direction. On failure
+  /// the new frames are dropped and both `track` and `kfFit` stay intact.
   bool continueFitOutward(int frameStart);
 
-  /// Update the track with the vertex point: the vertex is stored, in the frame
-  /// of the track DCA to it, in the frame prebooked by the caller in the
-  /// info[0] slot, then the track is fitted to it from the innermost measured
-  /// point. On failure the info[0] slot is flagged as Invalid and both `track`
-  /// and `kfFit` stay intact. covScale: scale of the vertex covariance used in
-  /// the KF update only, the vertex point stored in info[0] keeps the true one.
-  /// With covScale << 1 the updated state passes (almost) through the vertex,
-  /// as required for the reference of a composed trajectory with the common
-  /// vertex. The chi2 of the vertex point added to `kfFit.chi2` is then that of
-  /// the scaled covariance.
-  bool updateWithVertex(const o2::dataformats::VertexBase &vtx,
-                        double covScale = 1.);
+  /// Update the track with the vertex point: the vertex is stored, in the frame of the track DCA
+  /// to it, in the frame prebooked by the caller in the info[0] slot, then the track is fitted to
+  /// it from the innermost measured point. On failure the info[0] slot is flagged as Invalid and
+  /// both `track` and `kfFit` stay intact.
+  /// covScale: scale of the vertex covariance used in the KF update only, the vertex point stored
+  /// in info[0] keeps the true one. With covScale << 1 the updated state passes (almost) through
+  /// the vertex, as required for the reference of a composed trajectory with the common vertex.
+  /// The chi2 of the vertex point added to `kfFit.chi2` is then that of the scaled covariance.
+  bool updateWithVertex(const o2::dataformats::VertexBase& vtx, double covScale = 1.);
 
   ClassDefNV(Track, 3)
 };
 
 struct TrackSlopes {
   double dydx{0.};
-  double dzdx{0.};  
-  static TrackSlopes computeTrackSlopes(double snp, double tgl)  {
+  double dzdx{0.};
+  static TrackSlopes computeTrackSlopes(double snp, double tgl)
+  {
     const double csci = 1. / std::sqrt(1. - (snp * snp));
     return {.dydx = snp * csci, .dzdx = tgl * csci};
   }
@@ -130,7 +116,6 @@ struct TrackSlopes {
 
 std::vector<double> legendrePols(int order, double x); // RSTODO temporary here
 
-  
 } // namespace o2::alignrs
 
 #endif

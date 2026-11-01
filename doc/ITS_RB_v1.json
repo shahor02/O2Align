@@ -1,107 +1,21 @@
 [
-  {
-    "match": ".*",
-    "rigidBody": "fixed"
-  },
+  { "match": ".*", "rigidBody": "fixed" },
 
-  {
-    "match": "PVT/meanVertex",
-    "calib": {
-      "type": "meanvertex",
-      "free": [
-        "X",
-        "Y",
-        "Z"
-      ]
-    }
-  },
-  {
-    "match": "PVT/meanVertex",
-    "measurement": {
-      "X": [
-        0.0,
-        0.005
-      ],
-      "Y": [
-        0.0,
-        0.005
-      ],
-      "Z": [
-        0.0,
-        0.1
-      ]
-    }
-  },
+  { "match": "PVT/meanVertex", "calib": { "type": "meanvertex", "free": ["X", "Y", "Z"] } },
+  { "match": "PVT/meanVertex", "measurement": { "X": [0.0, 0.005], "Y": [0.0, 0.005], "Z": [0.0, 0.1] } },
 
-  {
-    "match": "ITS",
-    "rigidBody": "fixed",
-    "pinChildrenMean": [
-      "TX",
-      "TY",
-      "TZ",
-      "RZ"
-    ]
-  },
+  { "match": "ITS", "rigidBody": "fixed", "pinChildrenMean": ["TX", "TY", "TZ", "RZ"] },
 
-  {
-    "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]",
-    "rigidBody": [
-      "TX",
-      "TY",
-      "TZ",
-      "RZ"
-    ]
-  },
-  {
-    "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]",
-    "measurement": {
-      "TX": [
-        0.0,
-        0.003
-      ],
-      "TY": [
-        0.0,
-        0.003
-      ],
-      "TZ": [
-        0.0,
-        0.003
-      ]
-    }
-  },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]", "rigidBody": ["TX", "TY", "TZ", "RZ"] },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.003], "TZ": [0.0, 0.003] } },
 
-  {
-    "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]",
-    "rigidBody": "fixed",
-    "pinChildrenMean": "all"
-  },
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]", "rigidBody": "fixed", "pinChildrenMean": "all" },
 
-  {
-    "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+",
-    "rigidBody": [
-      "TX",
-      "TY",
-      "TZ",
-      "RZ"
-    ]
-  },
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "rigidBody": ["TX", "TY", "TZ", "RZ"] },
 
-  {
-    "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+",
-    "rigidBody": "all"
-  },
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "rigidBody": "all" },
 
-  {
-    "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+",
-    "rigidBody": "all"
-  },
+  { "match": "ITS/ITSULayer[3-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUHalfStave[0-9]+", "rigidBody": "all" },
 
-  {
-    "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUChip[0-9]+",
-    "rigidBody": [
-      "TX",
-      "TZ"
-    ]
-  }
+  { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+/ITSUChip[0-9]+", "rigidBody": ["TX", "TZ"] }
 ]

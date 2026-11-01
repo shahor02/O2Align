@@ -1,26 +1,38 @@
+// Copyright 2019-2026 CERN and copyright holders of ALICE O2.
+// See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
+// All rights not expressly granted are reserved.
+//
+// This software is distributed under the terms of the GNU General Public
+// License v3 (GPL Version 3), copied verbatim in the file "COPYING".
+//
+// In applying this license CERN does not waive the privileges and immunities
+// granted to it by virtue of its status as an Intergovernmental Organization
+// or submit itself to any jurisdiction.
+
 #if !defined(__CINT__) || defined(__MAKECINT__)
-#include "CCDB/BasicCCDBManager.h"
-#include "CommonConstants/LHCConstants.h"
-#include "CommonDataFormat/TFIDInfo.h"
-#include "DataFormatsParameters/AggregatedRunInfo.h"
-#include "Framework/Logger.h"
 #include <TChain.h>
-#include <TFile.h>
-#include <TGrid.h>
-#include <TKey.h>
-#include <TROOT.h>
-#include <TString.h>
 #include <TTree.h>
-#include <algorithm>
+#include <TFile.h>
+#include <TKey.h>
+#include <TString.h>
+#include <TROOT.h>
+#include <TGrid.h>
 #include <fstream>
 #include <vector>
+#include <algorithm>
+#include "CommonDataFormat/TFIDInfo.h"
+#include "Framework/Logger.h"
+#include "CCDB/BasicCCDBManager.h"
+#include "DataFormatsParameters/AggregatedRunInfo.h"
+#include "CommonConstants/LHCConstants.h"
 #endif
 
 using TFIDInfo = o2::dataformats::TFIDInfo;
 
 //_________________________________________________________________
 // make sure the grid connection exists before an alien:// file is accessed
-void checkGridConnection(const char *flName) {
+void checkGridConnection(const char* flName)
+{
   if (!TString(flName).BeginsWith("alien://")) {
     return;
   }
@@ -30,10 +42,10 @@ void checkGridConnection(const char *flName) {
 }
 
 //_________________________________________________________________
-// load a chain of "tfidTree" trees from a single .root file or from a text file
-// with 1 root file per line
-TChain *loadTFIDChain(const char *inpData, const char *chName = "tfidTree") {
-  TChain *chain = new TChain(chName);
+// load a chain of "tfidTree" trees from a single .root file or from a text file with 1 root file per line
+TChain* loadTFIDChain(const char* inpData, const char* chName = "tfidTree")
+{
+  TChain* chain = new TChain(chName);
   if (!inpData) {
     return chain;
   }
@@ -76,33 +88,29 @@ TChain *loadTFIDChain(const char *inpData, const char *chName = "tfidTree") {
 }
 
 //_________________________________________________________________
-void CreateTimeSlots(const char *o2tfinfolist, const char *outName,
-                     int intervalSec, int maxIntervalID = -1) {
+void CreateTimeSlots(const char* o2tfinfolist, const char* outName, int intervalSec, int maxIntervalID = -1)
+{
   const int startID = 0;
   if (intervalSec <= 0) {
     LOGP(error, "intervalSec must be positive, got {}", intervalSec);
     return;
   }
-  TChain *chain = loadTFIDChain(o2tfinfolist);
+  TChain* chain = loadTFIDChain(o2tfinfolist);
   if (!chain) {
     LOGP(error, "Failed to load tfidTree chain from {}", o2tfinfolist);
     return;
   }
-  TFIDInfo *tfid = nullptr;
+  TFIDInfo* tfid = nullptr;
   chain->SetBranchAddress("tfidinfo", &tfid);
   o2::parameters::AggregatedRunInfo curRunInfo;
-  auto &ccdb = o2::ccdb::BasicCCDBManager::instance();
+  auto& ccdb = o2::ccdb::BasicCCDBManager::instance();
 
-  auto setTimeStamp = [&](TFIDInfo &tfid) {
+  auto setTimeStamp = [&](TFIDInfo& tfid) {
     if (int(tfid.runNumber) != curRunInfo.runNumber) {
-      LOGP(info, "Processing run {} (run number changed from {})",
-           tfid.runNumber, curRunInfo.runNumber);
+      LOGP(info, "Processing run {} (run number changed from {})", tfid.runNumber, curRunInfo.runNumber);
       curRunInfo = curRunInfo.buildAggregatedRunInfo(ccdb, tfid.runNumber);
     }
-    tfid.creation = (curRunInfo.orbitReset +
-                     static_cast<int64_t>(tfid.firstTForbit *
-                                          o2::constants::lhc::LHCOrbitMUS)) *
-                    1e-3;
+    tfid.creation = (curRunInfo.orbitReset + static_cast<int64_t>(tfid.firstTForbit * o2::constants::lhc::LHCOrbitMUS)) * 1e-3;
   };
 
   std::vector<TFIDInfo> tfids;
@@ -110,8 +118,7 @@ void CreateTimeSlots(const char *o2tfinfolist, const char *outName,
   tfids.reserve(nent);
   for (long ient = 0; ient < nent; ient++) {
     chain->GetEntry(ient);
-    if (!tfid || tfid->creation == -1UL ||
-        tfid->runNumber == -1U) { // ignore dummy/incomplete records
+    if (!tfid || tfid->creation == -1UL || tfid->runNumber == -1U) { // ignore dummy/incomplete records
       continue;
     }
     tfids.push_back(*tfid);
@@ -123,22 +130,17 @@ void CreateTimeSlots(const char *o2tfinfolist, const char *outName,
     return;
   }
   // input timestamps come in random order
-  std::sort(tfids.begin(), tfids.end(),
-            [](const TFIDInfo &a, const TFIDInfo &b) {
-              return a.creation == b.creation ? a.firstTForbit < b.firstTForbit
-                                              : a.creation < b.creation;
-            });
+  std::sort(tfids.begin(), tfids.end(), [](const TFIDInfo& a, const TFIDInfo& b) {
+    return a.creation == b.creation ? a.firstTForbit < b.firstTForbit : a.creation < b.creation;
+  });
 
   const uint64_t intervalMS = uint64_t(intervalSec) * 1000;
-  std::vector<std::pair<size_t, size_t>>
-      intervals; // 1st / last index in tfids of each interval
+  std::vector<std::pair<size_t, size_t>> intervals; // 1st / last index in tfids of each interval
   size_t iStart = 0;
   for (size_t i = 1; i < tfids.size(); i++) {
 
-    // close the current interval if its duration would exceed intervalSec or if
-    // the run number changes
-    if (tfids[i].creation - tfids[iStart].creation > intervalMS ||
-        tfids[i].runNumber != tfids[iStart].runNumber) {
+    // close the current interval if its duration would exceed intervalSec or if the run number changes
+    if (tfids[i].creation - tfids[iStart].creation > intervalMS || tfids[i].runNumber != tfids[iStart].runNumber) {
       intervals.emplace_back(iStart, i - 1);
       iStart = i;
     }
@@ -147,8 +149,7 @@ void CreateTimeSlots(const char *o2tfinfolist, const char *outName,
 
   int lastID = startID + int(intervals.size()) - 1;
   if (maxIntervalID >= 0 && lastID > maxIntervalID) {
-    LOGP(fatal, "Reached interval ID {} exceeding maxIntervalID={}", lastID,
-         maxIntervalID);
+    LOGP(fatal, "Reached interval ID {} exceeding maxIntervalID={}", lastID, maxIntervalID);
   }
 
   std::ofstream outf(outName);
@@ -157,21 +158,16 @@ void CreateTimeSlots(const char *o2tfinfolist, const char *outName,
   }
   outf << "[\n";
   for (size_t iint = 0; iint < intervals.size(); iint++) {
-    const auto &tfS = tfids[intervals[iint].first];
-    const auto &tfE = tfids[intervals[iint].second];
+    const auto& tfS = tfids[intervals[iint].first];
+    const auto& tfE = tfids[intervals[iint].second];
     outf << R"(  {)" << "\n"
          << R"(    "run":)" << tfS.runNumber << ",\n"
          << R"(    "ID":)" << startID + int(iint) << ",\n"
          << R"(    "tsS":)" << tfS.creation << ",\n"
-         << R"(    "tsE":)"
-         << tfE.creation +
-                static_cast<int64_t>(curRunInfo.orbitsPerTF *
-                                     o2::constants::lhc::LHCOrbitMUS * 1e-3)
-         << "\n"
+         << R"(    "tsE":)" << tfE.creation + static_cast<int64_t>(curRunInfo.orbitsPerTF * o2::constants::lhc::LHCOrbitMUS * 1e-3) << "\n"
          << R"(  })" << (iint + 1 < intervals.size() ? "," : "") << "\n";
   }
   outf << "]\n";
   outf.close();
-  LOGP(info, "Wrote {} intervals (IDs {} ... {}) of max {} s duration to {}",
-       intervals.size(), startID, lastID, intervalSec, outName);
+  LOGP(info, "Wrote {} intervals (IDs {} ... {}) of max {} s duration to {}", intervals.size(), startID, lastID, intervalSec, outName);
 }
