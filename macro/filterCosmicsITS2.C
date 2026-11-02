@@ -9,7 +9,8 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-// Filter TrackCosmicsExtended tree selecting only tracks with >= nITSCL ITS cluster candidates
+// Filter TrackCosmicsExtended tree selecting only tracks with >= nITSCL ITS cluster candidates,
+// Drop tfID branch as it is identical to the DPL TimingInfo 
 // Run in an O2 environment:
 //   root -l -b -q 'filterCosmicsITS2.C()'
 //   root -l -b -q 'filterCosmicsITS2.C("/path/input.root", 3, true)'
@@ -42,8 +43,8 @@ void filterCosmicsITS2(const char* inputName, int nITSCl = 2, bool zeroCovAndDEd
     throw std::runtime_error("Cannot open input file");
   }
   auto* tree = input->Get<TTree>("cosmicsFull");
-  if (!tree || !tree->GetBranch("cosmics") || !tree->GetBranch("tfInfo") || !tree->GetBranch("tfID")) {
-    throw std::runtime_error("Expected cosmicsFull tree with cosmics, tfInfo and tfID branches");
+  if (!tree || !tree->GetBranch("cosmics") || !tree->GetBranch("tfInfo")) {
+    throw std::runtime_error("Expected cosmicsFull tree with cosmics and tfInfo branches");
   }
   std::vector<Cosmic> buffer;
   auto* cosmics = &buffer;
@@ -57,7 +58,10 @@ void filterCosmicsITS2(const char* inputName, int nITSCl = 2, bool zeroCovAndDEd
     throw std::runtime_error("Cannot create output file (it may already exist)");
   }
   output->cd();
-  // Clone all branches, including TF metadata, using the input addresses.
+  // Exclude tfID from the clone while retaining the other TF metadata.
+  if (tree->GetBranch("tfID")) {
+    tree->SetBranchStatus("tfID", 0);
+  }
   auto* filtered = tree->CloneTree(0);
   if (!filtered) {
     throw std::runtime_error("Cannot clone cosmicsFull tree");
