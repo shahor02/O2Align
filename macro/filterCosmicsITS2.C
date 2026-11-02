@@ -13,13 +13,18 @@
 // Drop tfID branch as it is identical to the DPL TimingInfo 
 // Run in an O2 environment:
 //   root -l -b -q 'filterCosmicsITS2.C()'
-//   root -l -b -q 'filterCosmicsITS2.C("/path/input.root", 3, true)'
-// The 2nd argument passes nCluster selection, 3d argument zeros covariance matrices and both TPC dEdx objects.
+//   root -l -b -q 'filterCosmicsITS2.C("_its2", 3, true, true)'
+// Arguments: output suffix (empty replaces inputs), minimum ITS clusters,
+// zero covariance matrices and both TPC dEdx objects, suppress empty TFs.
+// Inputs in the current directory: o2_cosmics_full.root and optional o2_tfidinfo.root.
 
 #if !defined(__CLING__) || defined(__ROOTCLING__)
 #include <TFile.h>
+#include <TBranch.h>
 #include <TTree.h>
 #include <TString.h>
+#include <TSystem.h>
+#include "CommonDataFormat/TFIDInfo.h"
 #include "DataFormatsGlobalTracking/TrackCosmicsExtended.h"
 
 #include <iostream>
@@ -30,14 +35,19 @@
 #include <vector>
 #endif
 
-void filterCosmicsITS2(const char* inputName, int nITSCl = 2, bool zeroCovAndDEdx = false)
+void filterCosmicsITS2(const char* outSuffix = "", unsigned int nITSCl = 3, bool noEmpty = true, bool zeroCovAndDEdx = false)
 {
   using Cosmic = o2::dataformats::TrackCosmicsExtended;
-  TString outputName(inputName);
-  if (!outputName.EndsWith(".root")) {
-    throw std::runtime_error("Input filename must end in .root");
-  }
-  outputName.Insert(outputName.Length() - 5, "_its2");
+  const char* inputName = "o2_cosmics_full.root";
+  const char* tfidName = "o2_tfidinfo.root";
+  const bool replaceInputs = !outSuffix || !*outSuffix;
+  auto makeOutputName = [&](const char* name) {
+    TString result(name);
+    result.Insert(result.Length() - 5, replaceInputs ? TString::Format("_tmp_%d", gSystem->GetPid()).Data() : outSuffix);
+    return result;
+  };
+  const auto outputName = makeOutputName(inputName);
+  const auto tfidOutputName = makeOutputName(tfidName);
   std::unique_ptr<TFile> input(TFile::Open(inputName, "READ"));
   if (!input || input->IsZombie()) {
     throw std::runtime_error("Cannot open input file");
@@ -45,6 +55,44 @@ void filterCosmicsITS2(const char* inputName, int nITSCl = 2, bool zeroCovAndDEd
   auto* tree = input->Get<TTree>("cosmicsFull");
   if (!tree || !tree->GetBranch("cosmics") || !tree->GetBranch("tfInfo")) {
     throw std::runtime_error("Expected cosmicsFull tree with cosmics and tfInfo branches");
+  }
+  std::unique_ptr<TFile> tfidInput, tfidOutput;
+  TTree* tfidTree = nullptr;
+  TTree* filteredTFID = nullptr;
+  std::vector<o2::dataformats::TFIDInfo>* tfidInfo = nullptr;
+  std::vector<o2::dataformats::TFIDInfo> filteredTFIDInfo;
+  if (!gSystem->AccessPathName(tfidName)) {
+    tfidInput.reset(TFile::Open(tfidName, "READ"));
+    if (!tfidInput || tfidInput->IsZombie()) {
+      throw std::runtime_error("Cannot open o2_tfidinfo.root");
+    }
+    tfidTree = tfidInput->Get<TTree>("tfidTree");
+    tfidInput->GetObject("tfidinfo", tfidInfo);
+    if (!tfidInfo && !tfidTree) {
+      throw std::runtime_error("Expected tfidinfo vector and/or tfidTree in o2_tfidinfo.root");
+    }
+    if (tfidTree && !tfidTree->GetBranch("tfidinfo")) {
+      throw std::runtime_error("Expected tfidinfo branch in tfidTree");
+    }
+    // Each available representation must have one record per input TF.
+    if ((tfidTree && tfidTree->GetEntries() != tree->GetEntries()) ||
+        (tfidInfo && tfidInfo->size() != static_cast<size_t>(tree->GetEntries()))) {
+      throw std::runtime_error("TFID vector, TFID tree and cosmic tree must have matching entry counts");
+    }
+    if (tfidInfo) {
+      filteredTFIDInfo.reserve(tfidInfo->size());
+    }
+    tfidOutput.reset(TFile::Open(tfidOutputName.Data(), "CREATE"));
+    if (!tfidOutput || tfidOutput->IsZombie()) {
+      throw std::runtime_error("Cannot create TFID output file (it may already exist)");
+    }
+    tfidOutput->cd();
+    if (tfidTree) {
+      filteredTFID = tfidTree->CloneTree(0);
+      if (!filteredTFID) {
+        throw std::runtime_error("Cannot clone tfidTree");
+      }
+    }
   }
   std::vector<Cosmic> buffer;
   auto* cosmics = &buffer;
@@ -58,13 +106,16 @@ void filterCosmicsITS2(const char* inputName, int nITSCl = 2, bool zeroCovAndDEd
     throw std::runtime_error("Cannot create output file (it may already exist)");
   }
   output->cd();
-  // Exclude tfID from the clone while retaining the other TF metadata.
-  if (tree->GetBranch("tfID")) {
-    tree->SetBranchStatus("tfID", 0);
+  // Build the retained schema explicitly. CloneTree can leave a split
+  // tfID parent with dangling child pointers after pruning disabled leaves.
+  o2::dataformats::CosmicsTFInfo tfInfoBuffer;
+  auto* tfInfo = &tfInfoBuffer;
+  if (tree->SetBranchAddress("tfInfo", &tfInfo) < 0) {
+    throw std::runtime_error("Cannot bind CosmicsTFInfo branch");
   }
-  auto* filtered = tree->CloneTree(0);
-  if (!filtered) {
-    throw std::runtime_error("Cannot clone cosmicsFull tree");
+  auto* filtered = new TTree(tree->GetName(), tree->GetTitle());
+  if (!filtered->Branch("cosmics", &cosmics) || !filtered->Branch("tfInfo", &tfInfo)) {
+    throw std::runtime_error("Cannot create filtered cosmic branches");
   }
   Long64_t nInput = 0, nSelected = 0, nEmpty = 0;
   const auto nTF = tree->GetEntries();
@@ -109,7 +160,17 @@ void filterCosmicsITS2(const char* inputName, int nITSCl = 2, bool zeroCovAndDEd
     cosmics->resize(count);
     nSelected += count;
     nEmpty += count == 0;
-    // Fill even for an empty vector: one output entry per input TF.
+    if (noEmpty && count == 0) {
+      continue;
+    }
+    if (tfidInfo) {
+      filteredTFIDInfo.push_back((*tfidInfo)[entry]);
+    }
+    if (tfidTree) {
+      if (tfidTree->GetEntry(entry) <= 0 || filteredTFID->Fill() < 0) {
+        throw std::runtime_error("Failed to copy TFID entry " + std::to_string(entry));
+      }
+    }
     if (filtered->Fill() < 0) {
       throw std::runtime_error("Failed to write TF " + std::to_string(entry));
     }
@@ -121,7 +182,39 @@ void filterCosmicsITS2(const char* inputName, int nITSCl = 2, bool zeroCovAndDEd
   filtered->ResetBranchAddresses();
   tree->ResetBranchAddresses();
   output->Close();
-  std::cout << "Wrote " << outputName << ": " << nTF << " TFs ("
-            << nEmpty << " empty), " << nSelected << '/' << nInput
-            << " tracks selected; zeroCovAndDEdx=" << zeroCovAndDEdx << '\n';
+  if (tfidOutput) {
+    tfidOutput->cd();
+    if (tfidInfo && tfidOutput->WriteObjectAny(&filteredTFIDInfo, "std::vector<o2::dataformats::TFIDInfo>", "tfidinfo") <= 0) {
+      throw std::runtime_error("Failed to write filtered TFID vector");
+    }
+    if (filteredTFID && filteredTFID->Write() <= 0) {
+      throw std::runtime_error("Failed to write filtered TFID tree");
+    }
+    if (tfidTree) {
+      filteredTFID->ResetBranchAddresses();
+      tfidTree->ResetBranchAddresses();
+    }
+    tfidOutput->Close();
+    tfidInput->Close();
+  }
+  input->Close();
+  if (replaceInputs) {
+    auto replaceFile = [](const TString& temporary, const char* original) {
+      if (gSystem->CopyFile(temporary.Data(), original, true) != 0) {
+        throw std::runtime_error("Failed to replace " + std::string(original) + "; output retained in " + temporary.Data());
+      }
+      gSystem->Unlink(temporary.Data());
+    };
+    replaceFile(outputName, inputName);
+    if (tfidOutput) {
+      replaceFile(tfidOutputName, tfidName);
+    }
+  }
+  std::cout << " Folder: " << gSystem->pwd() << " Wrote " << (replaceInputs ? TString(inputName) : outputName) << ": " << (noEmpty ? nTF - nEmpty : nTF) << " TFs ("
+            << nEmpty << (noEmpty ? " empty suppressed), " : " empty retained), ") << nSelected << '/' << nInput
+            << " tracks selected; zeroCovAndDEdx=" << zeroCovAndDEdx;
+  if (tfidOutput) {
+    std::cout << " Wrote " << (replaceInputs ? TString(tfidName) : tfidOutputName);
+  }
+  std::cout << "\n";
 }
