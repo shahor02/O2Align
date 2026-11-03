@@ -46,6 +46,12 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
 
   int minGBLPoints = 4;       // minimum number of GBL points per track
   float cosmMaxChi2Cl = 30.f; // cosmics: max chi2 wrt the reference track of an ITS cluster, TRD tracklet or TOF cluster to be accepted (ambiguity resolution)
+  // cosmics: "golden" selection of the ITS road hits (CosmicsITSClean.h, B=0 only)
+  bool cosmiGoldOnly = true;      // keep only the ITS hits on the straight line of the cosmic, requiring a clean cosmic (see below); false: all road hits
+  bool cosmGoldRequireTOF = true; // golden cosmic must have a TOF time (hasTOFTime()): its road is then a single ROF
+  float cosmGoldCut = 0.1f;       // golden: max distance [cm] of a hit from the OB straight line in its sensor plane
+  int cosmGoldMinOBPerHalf = 1;   // golden: min number of kept OB hits on each half of the cosmic
+  int cosmGoldROFWindow = 1;      // golden: kept hits within this many ROFs of the majority ROF (<0: no check)
 
   bool writeLocalAlignParams = true; // create output AlignParams in local convention.
 

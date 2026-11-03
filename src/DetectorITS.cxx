@@ -27,6 +27,8 @@
 #include "ITStracking/IOUtils.h"
 #include "MathUtils/Utils.h"
 #include "O2Align/DetectorITS.h"
+#include "O2Align/CosmicsITSClean.h"
+#include "DataFormatsITSMFT/DPLAlpideParam.h"
 #include "O2Align/Params.h"
 #include "DataFormatsGlobalTracking/TrackCosmicsExtended.h"
 #include "O2Align/SensorITS.h"
@@ -579,6 +581,24 @@ std::string DetectorITS::reportDOFSummary() const
   return oss.str();
 }
 
+// With Params::cosmiGoldOnly the road hits are pre-selected once per cosmic (CosmicsITSClean.h): the ones on its straight line, if the
+// cosmic is golden, none otherwise.
+void DetectorITS::prepareCosmic(const o2::dataformats::TrackCosmicsExtended& cosm)
+{
+  const auto& params = Params::Instance();
+  mCosmGoldActive = params.cosmiGoldOnly;
+  if (!mCosmGoldActive) {
+    return;
+  }
+  cosmics_its_clean::GoldSettings settings;
+  settings.requireTOF = params.cosmGoldRequireTOF;
+  settings.cut = params.cosmGoldCut;
+  settings.minOBPerHalf = params.cosmGoldMinOBPerHalf;
+  settings.rofWindow = params.cosmGoldROFWindow;
+  settings.rofLengthBC = o2::itsmft::DPLAlpideParam<o2::detectors::DetID::ITS>::Instance().roFrameLengthInBC;
+  cosmics_its_clean::gold(cosm, mITSDict, *o2::its::GeometryTGeo::Instance(), mCosmGoldKeep, settings);
+}
+
 // ITS clusters of the leg (the ones of the matched ITS track and those found on the road, with pattern bytes stored in the cosmic)
 // are grouped by layer. In every layer the cluster closest to the reference track is taken, if its chi2 is acceptable, and the best
 // one among the other candidates which look like the second hit of the overlap with it is added, as for the collision tracks.
@@ -601,8 +621,9 @@ int DetectorITS::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
     double chi2{0.};
   };
   std::array<std::vector<Candidate>, 7> perLayer;
-  for (const auto& cl : cosm.clITS) {
-    if (cl.leg != leg) {
+  for (size_t icl = 0; icl < cosm.clITS.size(); ++icl) {
+    const auto& cl = cosm.clITS[icl];
+    if (cl.leg != leg || (mCosmGoldActive && !mCosmGoldKeep[icl])) {
       continue;
     }
     const o2::itsmft::CompClusterExt comp(cl.row, cl.col, cl.pattID, cl.chipID);

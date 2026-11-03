@@ -50,6 +50,7 @@ class DetectorITS : public Detector
 
   void prepareData(o2::globaltracking::RecoContainer* recoData) final;
   bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) final;
+  void prepareCosmic(const o2::dataformats::TrackCosmicsExtended& cosm) final;
   int prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& cosm, int leg, const o2::track::TrackParCovD& ref, std::vector<FrameInfoExt>& frames) final;
   int getMinCosmicMeasurements() const final;
 
@@ -88,6 +89,8 @@ class DetectorITS : public Detector
   std::vector<int> mITSOvlClusRef;
   std::array<int, o2::itsmft::MaxClusLayers> mITSLayerOffsets{};
   std::vector<FrameInfoExt> mITSPointsInfo;
+  bool mCosmGoldActive{false};      // the golden selection is applied to the current cosmic
+  std::vector<bool> mCosmGoldKeep;  // per clITS of the current cosmic: hit kept by the golden selection (all false if the cosmic is not golden)
 };
 
 } // namespace o2::alignrs

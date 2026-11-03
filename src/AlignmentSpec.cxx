@@ -594,6 +594,11 @@ static float yLab(const FrameInfoExt& frame)
 bool AlignmentSpec::collectCosmicFrames(const o2::dataformats::TrackCosmicsExtended& cosm, const std::array<const TrackD*, 2>& refLeg, std::array<std::vector<FrameInfoExt>, 2>& frames, DetID::mask_t& contributed, std::string& why)
 {
   std::vector<bool> disabled(mDetectors.size(), false);
+  for (auto* det : mDetectors) {
+    if (det->getO2DetID() >= 0) {
+      det->prepareCosmic(cosm);
+    }
+  }
   for (bool repeat = true; repeat;) {
     repeat = false;
     frames[0].clear();

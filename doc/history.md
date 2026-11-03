@@ -303,3 +303,7 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   in B0, B+, B−): the Mille data mildly prefer v19 independently of the field, the opposite of the pp checkResid. Removing the PV point
   from the checkResid IB sub-track (`checkresid.addPVAsCluster=false`, 11-01) changes the kink by ≤ 3 µrad for V10n,
   v19 and cure012: the kink is in the clusters, not set by the vertex.
+- Cosmics: the ITS road of `TrackCosmicsExtended` is a candidate list (without a TOF time the window is the TPC one, so hits
+  from many ROFs; `leg` is the half of the cosmic, not the half-barrel; ~95 % of IB and 5–20 % of OB road hits are off the
+  track). `AlignParams.cosmiGoldOnly` (default true) keeps only the hits on the straight line of a golden cosmic
+  (`CosmicsITSClean.h`, from the 569489 B=0 study: ~18 gold cosmics per CTF file with TOF required), 11-03.

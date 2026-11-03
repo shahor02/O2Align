@@ -62,6 +62,8 @@ class Detector
   virtual void prepareData(o2::globaltracking::RecoContainer* recoData) = 0;
   virtual bool prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack) = 0;
 
+  /// called once per cosmic before prepareCosmicLeg, to let the detector pre-select its hits of the cosmic
+  virtual void prepareCosmic(const o2::dataformats::TrackCosmicsExtended& /*cosm*/) {}
   /// Cosmic counterpart of prepareTrack: append to `frames` the points of the leg (0: bottom, 1: top) of the cosmic
   /// provided by this detector, in the tracking frames of the (possibly pre-aligned) volumes. The points need not be ordered
   /// and no fit is done: the track dependent quantities (cluster errors, ambiguity resolution) are evaluated with `ref`, the
