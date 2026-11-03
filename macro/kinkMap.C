@@ -15,12 +15,13 @@
 // mean of dPar0 = y_IB - y_OB [um] and dPar2 = snp_IB - snp_OB [urad] at R = 12 cm, and their phi harmonics n = 0, |n=1|,
 // n = 2 (cos, sin). R0 = 12 - dPar0/dPar2 of the n = 2 term is the radius where the two sub-tracks cross: R0 ~ 12 cm means a
 // purely directional kink, i.e. a relative IB/OB rotation about R = 12 cm.
-// With curvCorr = true (B != 0 data only) dPar2 is also shown after subtracting k * dPar4, k being the regression slope of
-// dPar2 on dPar4 over all tracks: in B+ OO data dPar2 is dominated by the IB/OB curvature difference.
+// With curvCorr = true (B != 0 data) dPar2 is also shown with both sub-tracks constrained to their common q/pT
+// (kink::DPar2QC): without it dPar2 is dominated by the IB sub-track curvature error, the cell errors being ~3x larger.
+// The statistical errors of the harmonics are printed as well (from the cell errors, n0: e/sqrt(NP), n > 0: e*sqrt(2/NP)).
 //
 // Usage (O2 environment, e.g. after `o2d`):
 //   root -b -q 'kinkMap.C+("v19=/data/devAlg/solA2v19/checkResid_LHC25ab_562862_AlgRS_PV1.root,cure=/data/devAlg/solA2v19cure/cure012/checkResid_LHC25ab_562862_AlgRS_PV1.root")'
-//   root -b -q 'kinkMap.C+("v19OO=/data/devAlg/solA2v19/checkResid_LHC25ae_AlgRS_PV1.root", true)'
+//   root -b -q 'kinkMap.C+("v19Bp=/data/devAlg/solA2v19/checkResid_LHC25ab_562837_AlgRS_PV1.root", true)'
 // nmax limits the number of tracks read per tree.
 #include "kinkUtils.h"
 
@@ -43,26 +44,28 @@ void kinkMapOne(const char* fname, const char* tag, bool curvCorr, long nmax)
            harmonic(m0[it], 0).Re(), TComplex::Abs(harmonic(m0[it], 1)), p0.Re(), p0.Im(),
            harmonic(m2[it], 0).Re(), TComplex::Abs(harmonic(m2[it], 1)), p2.Re(), p2.Im(), RComp - 100 * r.Re());
   }
+  auto printErr = [&](const char* title) {
+    printf("  %s [urad], harmonics with statistical errors\n   tgl bin    | n0         | n2 cos     | n2 sin\n", title);
+    for (int it = 0; it < NT; it++) {
+      double se = 0;
+      int nc = 0;
+      for (int i = 0; i < NP; i++) {
+        if (std::isfinite(e2[it][i]) && e2[it][i] > 0) {
+          se += e2[it][i] * e2[it][i], nc++;
+        }
+      }
+      double ec = nc ? sqrt(se / nc) : 0;
+      TComplex p2 = harmonic(m2[it], 2);
+      printf("  [%+4.1f,%+4.1f] | %5.0f±%4.0f | %5.0f±%4.0f | %5.0f±%4.0f\n", TE[it], TE[it + 1], harmonic(m2[it], 0).Re(), ec / sqrt(NP),
+             p2.Re(), ec * sqrt(2. / NP), p2.Im(), ec * sqrt(2. / NP));
+    }
+  };
+  printErr("dPar2");
   if (!curvCorr) {
     return;
   }
-  // regression slope of dPar2 on dPar4 over the core
-  const char* core = "trIBOut.mX>1&&trOBInw.mX>1&&abs(trIBOut.mP[2]-trOBInw.mP[2])<3e-3&&abs(trIBOut.mP[4]-trOBInw.mP[4])<0.3";
-  long nt = std::min<long>(nmax, t->GetEntries());
-  t->SetEstimate(nt + 1);
-  long n = t->Draw("trIBOut.mP[2]-trOBInw.mP[2]:trIBOut.mP[4]-trOBInw.mP[4]", core, "goff", nt);
-  double sx = 0, sy = 0, sxy = 0, syy = 0;
-  for (long i = 0; i < n; i++) {
-    double x = t->GetV1()[i], y = t->GetV2()[i];
-    sx += x, sy += y, sxy += x * y, syy += y * y;
-  }
-  double k = (sxy / n - sx / n * sy / n) / (syy / n - sy / n * sy / n);
-  cellMeans(t, Form("trIBOut.mP[2]-trOBInw.mP[2]-(%g)*(trIBOut.mP[4]-trOBInw.mP[4])", k), 4e-3, 1e6, m2, e2, "", nmax);
-  printf("  dPar2 - k*dPar4, k = %.1f urad per 1e-3 (GeV/c)^-1\n   tgl bin    | n0  |n1|  n2(cos,sin)\n", k * 1e3);
-  for (int it = 0; it < NT; it++) {
-    TComplex p2 = harmonic(m2[it], 2);
-    printf("  [%+4.1f,%+4.1f] | %5.0f %5.0f (%5.0f,%5.0f)\n", TE[it], TE[it + 1], harmonic(m2[it], 0).Re(), TComplex::Abs(harmonic(m2[it], 1)), p2.Re(), p2.Im());
-  }
+  dParMeans(t, 2, m2, e2, "", nmax, true);
+  printErr("dPar2, sub-tracks constrained to the common q/pT");
 }
 
 /// inputs: comma-separated "label=file" list (a bare file name is labelled by itself)

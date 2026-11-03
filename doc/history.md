@@ -302,7 +302,10 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   (see `doc/handovers/kink_cure.md`). pede with the labels fixed at the cure costs Δχ² = +0.73 M (0.05 per record, equal
   in B0, B+, B−): the Mille data mildly prefer v19 independently of the field, the opposite of the pp checkResid. Removing the PV point
   from the checkResid IB sub-track (`checkresid.addPVAsCluster=false`, 11-01) changes the kink by ≤ 3 µrad for V10n,
-  v19 and cure012: the kink is in the clusters, not set by the vertex.
+  v19 and cure012: the kink is in the clusters, not set by the vertex. On pp B+ 562837, next to B0 562862 (11-03), with
+  dPar2 constrained to the common IB/OB q/pT (`kinkMap.C` `curvCorr`, replacing the dPar4 regression), v19 shows no
+  B0-like kink and the cure makes it worse: the B0 kink is B = 0 specific, not geometric. The pede Δχ² of the cure is
+  ~150× the χ² the kink carries, so it does not test the kink.
 - Cosmics: the ITS road of `TrackCosmicsExtended` is a candidate list (without a TOF time the window is the TPC one, so hits
   from many ROFs; `leg` is the half of the cosmic, not the half-barrel; ~95 % of IB and 5–20 % of OB road hits are off the
   track). `AlignParams.cosmiGoldOnly` (default true) keeps only the hits on the straight line of a golden cosmic

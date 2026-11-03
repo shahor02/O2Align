@@ -3,7 +3,7 @@
 Written for: whoever continues the ITS alignment (a person or Claude), familiar with O2Align, Millepede-II and checkResid.
 Date: 2026-10-31. State: v19 (`/data/devAlg/solA2v19`, config `doc/ITS_RB_v19.json`) and its cure `cure012`
 (`/data/devAlg/solA2v19cure/cure012`), with checkResid on pp B0 (LHC25ab 562862) and OO B+ (LHC25ae) for both.
-Sections 6 (pede evaluation of the cure) and 6a (PV test) were added on 2026-11-01.
+Sections 6 (pede evaluation of the cure) and 6a (PV test) were added on 2026-11-01, 6b (B0 vs B+) on 2026-11-03.
 
 ## 1. What the kink is
 
@@ -175,8 +175,11 @@ Result (2026-11-01):
 - The Mille data disfavour the cure, but by 0.05 per record, 70 times less than the v18 → v19 χ² gap (+51 M). The value is an
   upper bound: all other labels stay at v19, none is allowed to readjust to the cure.
 - The cost per record is the same in B0, B+ and B−, so the Mille preference for v19 is not field-related. Hence pp B0
-  data prefer cure012 in checkResid and v19 in the Mille fit: the two estimators disagree on this mode, as they did for
-  v18 vs v19.
+  data prefer cure012 in checkResid and v19 in the Mille fit.
+- The χ² is however almost blind to the kink. The χ² the kink itself carries is Σ (A/σ_A)² of its harmonics: for v19 pp B0
+  562862 (2.9 M tracks) the n = 2 terms give ≈ 1.3k, i.e. ~4·10⁻⁴ per track. Removing a kink seen equally by the Mille
+  tracks would gain O(1k) on the 4 M B0 records, 100–200 times less than the +204k measured. The pede Δχ² is therefore set
+  by other properties of the cure (it is applied per chip, from the chip-centre phi and tgl), and does not test the kink.
 
 ## 6a. Is the checkResid kink set by the vertex? No
 
@@ -189,14 +192,43 @@ dPar0 and dPar2 for PV0 and PV1 in every tgl bin, within 0.5 µm and 3 µrad, fo
 made of the same tracks, so on average it lies on their IB extrapolation and does not bias the IB direction. The kink
 is therefore in the cluster positions, and the checkResid/Mille disagreement of section 6 is not caused by the vertex.
 
-Other cheap tests not yet done: checkResid on the second B0 run 562837; a pair of runs of the same period with B = 0 and
-B ≠ 0.
+## 6b. B0 vs B+ of the same period: the kink is B0-only
+
+checkResid on pp B+ 562837 (LHC25ab, next to B0 562862, both used for the alignment; 0.9 M IB/OB tracks) for V10n, v19 and
+cure012: `checkResid_LHC25ab_562837_*_PV1.root` in the same directories (2026-11-03). In B ≠ 0 the plain dPar2 is
+dominated by the IB sub-track curvature error (cell errors ~250 µrad vs 25 µrad in B0); `kinkMap.C` with `curvCorr = true`
+also gives dPar2 with both sub-tracks constrained to their common q/pT (`kink::DPar2QC`), cell errors 75–140 µrad.
+dPar2 n = 2 (cos, sin) [µrad], q/pT-constrained for B+:
+
+| tgl bin | v19 B0 (±6–10) | v19 B+ | cure012 B+ |
+|---|---|---|---|
+| [−2.0,−1.2] | (−125, 138) | (9, 119) ± 41 | (73, 80) ± 42 |
+| [−1.2,−0.8] | (−62, 29) | (41, −27) ± 30 | (77, −26) ± 30 |
+| [−0.8,−0.4] | (−32, −2) | (−20, 46) ± 25 | (22, 37) ± 24 |
+| [−0.4, 0.0] | (−12, −42) | (−22, 23) ± 21 | (9, 82) ± 21 |
+| [ 0.0,+0.4] | (−19, −53) | (17, 35) ± 21 | (46, 82) ± 21 |
+| [+0.4,+0.8] | (−44, −5) | (29, 34) ± 25 | (62, 41) ± 25 |
+| [+0.8,+1.2] | (−88, 56) | (−25, 72) ± 31 | (86, 12) ± 31 |
+| [+1.2,+2.0] | (−134, 186) | (28, 65) ± 38 | (110, −64) ± 40 |
+
+- v19 B+ shows no B0-like kink: the B0 pattern (negative cos everywhere, large at |tgl| > 0.8) is absent, the two differ by
+  3–4σ in several bins ([+1.2,+2.0] cos, central sin).
+- The cure moves B+ in the same direction as B0 (cos up by 30–110 µrad), as a geometric change must, and makes B+ worse.
+  So in B+ checkResid prefers v19, like the Mille fit.
+- The geometry is the same and the runs are adjacent, so the B0 kink comes from the B = 0 data or their treatment in
+  checkResid (straight sub-tracks, fixed pT = 0.6 GeV/c for the MS), not from the alignment. The cure should not be used.
+- Errors: B+ statistics are ~3× lower and the per-track error ~3× larger than B0; ~4× more B+ tracks would make the
+  B0/B+ difference > 6σ per bin. A B− run of the same period would tell whether the B ≠ 0 residual pattern changes with
+  the field sign.
 
 ## 7. Notes for Claude (environment)
 
 - Run ROOT through `bash -ic 'o2d >/dev/null 2>&1; root -l -b -q ...' < /dev/null`. `o2d` is an interactive alias; the
   "O2PDPSuite/latest was not found" message it prints is harmless. Without `< /dev/null` backgrounded DPL workflows hang.
 - Compile the macros (`.C+`) from a copy in the scratchpad, not in `macro/`.
+- Since 2026-11-03 the new stack (`~/alice/sw/ubuntu2604_x86-64`, ROOT in `$ROOTSYS`) compiles the macros:
+  `env -u PYTHONHOME $ROOTSYS/bin/root -l -b -q 'kinkMap.C+(...)'`; the libssl.so.1.1 / HistoManagerS messages of the
+  logon are harmless.
 - After the 2026-11 OS upgrade, ACLiC of the old (`sw_old`, ubuntu2404) ROOT fails on the system pthread headers
   (`__GTHREAD_COND_INIT`), and cling crashes on the O2/TGeo headers of `kinkUtils.h`. Until the new stack is built,
   `kinkMap.C` runs interpreted (no `+`) from a scratch copy whose `kinkUtils.h` drops `Frame`/`loadFrames` and the

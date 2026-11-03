@@ -50,6 +50,10 @@ constexpr double RLayer[7] = {2.24, 3.01, 3.78, 19.6, 24.5, 34.4, 39.3};   // no
 // global azimuth of the IB sub-track position at R = 12 cm, in [0, 2pi)
 const char* PhiIB = "TMath::ATan2(TMath::Sin(trIBOut.mAlpha+TMath::ATan2(trIBOut.mP[0],trIBOut.mX)),TMath::Cos(trIBOut.mAlpha+TMath::ATan2(trIBOut.mP[0],trIBOut.mX)))+TMath::Pi()*(1-TMath::Sign(1.,TMath::Sin(trIBOut.mAlpha+TMath::ATan2(trIBOut.mP[0],trIBOut.mX))))";
 const char* SelIOB = "trIBOut.mX>1&&trOBInw.mX>1"; // both sub-tracks defined (7-cluster tracks)
+// dPar2 with both sub-tracks moved, through their own snp-q/pT covariance, to their covariance-weighted common q/pT:
+// removes the IB sub-track curvature error from dPar2 in B != 0 data (no effect at B = 0)
+#define KINK_QW "((trIBOut.mP[4]/trIBOut.mC[14]+trOBInw.mP[4]/trOBInw.mC[14])/(1/trIBOut.mC[14]+1/trOBInw.mC[14]))"
+const char* DPar2QC = "(trIBOut.mP[2]+trIBOut.mC[12]/trIBOut.mC[14]*(" KINK_QW "-trIBOut.mP[4]))-(trOBInw.mP[2]+trOBInw.mC[12]/trOBInw.mC[14]*(" KINK_QW "-trOBInw.mP[4]))";
 
 int tglBin(double t)
 {
@@ -94,8 +98,12 @@ void cellMeans(TTree* t, const char* expr, double range, double scale, double m[
 }
 
 /// dPar0 [um] / dPar2 [urad] cell means
-void dParMeans(TTree* t, int ipar, double m[NT][NP], double e[NT][NP], const char* extraSel = "", long nmax = TTree::kMaxEntries)
+void dParMeans(TTree* t, int ipar, double m[NT][NP], double e[NT][NP], const char* extraSel = "", long nmax = TTree::kMaxEntries, bool qConstr = false)
 {
+  if (ipar == 2 && qConstr) {
+    cellMeans(t, DPar2QC, 4e-3, 1e6, m, e, extraSel, nmax);
+    return;
+  }
   cellMeans(t, Form("trIBOut.mP[%d]-trOBInw.mP[%d]", ipar, ipar), ipar == 0 ? 0.02 : 4e-3, ipar == 0 ? 1e4 : 1e6, m, e, extraSel, nmax);
 }
 
