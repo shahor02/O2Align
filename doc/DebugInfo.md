@@ -73,9 +73,12 @@ One `DbgPoint` per **GBL point**, which is not the same as one per cluster:
 | `x`, `alpha` | position of the point in its tracking frame (`x` along the local radial direction) and the rotation angle of that frame |
 | `y`, `z` | the measured coordinates in the tracking frame (0 if no measurement) |
 | `sigY`, `sigZ` | cluster errors, including the extra errors (`extraClsErr*`) |
+| `sigYZ` | cluster Y-Z covariance (cm²) |
 | `snp` | sin of the track azimuthal angle in the tracking frame at the point, from the linearization track |
 | `dyPre`, `dzPre` | residual that was fed to GBL: measurement minus the linearization track (see below) |
 | `dyFit`, `dzFit` | residual after the GBL fit: measurement minus the fitted track |
+| `dyUnb`, `dzUnb` | unbiased (leave-one-out) residual: measurement minus the GBL fit of the trajectory without this measurement |
+| `sigYUnb`, `sigZUnb` | errors of `dyUnb`, `dzUnb` (cluster and track contributions); 0 if they could not be computed |
 | `kinkY`, `kinkZ` | fitted kink of the scatterer at the point, along the tracking-frame `snp` and `tgl` |
 | `pullKinkY`, `pullKinkZ` | kink divided by its fitted error |
 
@@ -92,8 +95,12 @@ of the measured point; the lab `Z` is `z`. `hasMeas()` and `hasKink()` test the 
   not track residuals in the usual sense. They are the input to the fit: if a misalignment is injected, it is included in them.
 - `dyFit`, `dzFit` are the residuals with respect to the GBL-fitted track. They are *biased*: the point itself pulls the fit, so their
   RMS is below the cluster error (about 0.5 σ for ITS tracks with ~7 points), as for any residual to a fit that includes the point.
-  Their mean as a function of position (sensor, phi, z, ...) is what shows the misalignment that the fit could not absorb. The unbiased
-  version is not stored.
+  Their mean as a function of position (sensor, phi, z, ...) is what shows the misalignment that the fit could not absorb.
+- `dyUnb`, `dzUnb` are the leave-one-out residuals, obtained exactly from the biased ones since the GBL fit is linear: with V the
+  measurement covariance (`sigY`, `sigZ`, `sigYZ`) and C the fitted covariance of the offsets at the point,
+  r_unb = V (V − C)⁻¹ r_fit, of covariance V (V − C)⁻¹ V = V + the covariance of the fit without the point. Their pulls
+  `dyUnb/sigYUnb` should have unit RMS. They are the residuals to use for one-out studies (e.g. per sensor), as those of
+  checkResid; for the tracks of a composed trajectory the fit left out of is that of the whole composed trajectory.
 - Residuals of the same point in a composed trajectory belong to a fit with the common vertex of all its tracks.
 
 **Kinks.** The kink is the change of direction at the scatterer, which stands for the material crossed since the previous point

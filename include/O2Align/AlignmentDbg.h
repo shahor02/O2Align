@@ -40,11 +40,16 @@ struct DbgPoint {
   float z = 0.f;     // measured Z
   float sigY = 0.f;  // cluster errors
   float sigZ = 0.f;
+  float sigYZ = 0.f; // cluster Y-Z covariance (cm^2)
   float snp = 0.f;   // track snp at the point
   float dyPre = 0.f; // residuals wrt the linearization track, as fed to GBL (include the injected misalignment, if any)
   float dzPre = 0.f;
   float dyFit = 0.f; // residuals wrt the GBL fit
   float dzFit = 0.f;
+  float dyUnb = 0.f; // unbiased (leave-one-out) residuals: wrt the GBL fit without this measurement
+  float dzUnb = 0.f;
+  float sigYUnb = 0.f; // errors of the unbiased residuals (cluster and track errors), 0 if not computed
+  float sigZUnb = 0.f;
   float kinkY = 0.f; // GBL kinks at the scatterer (snp-like, tgl-like)
   float kinkZ = 0.f;
   float pullKinkY = 0.f; // kink / its fitted error
@@ -55,7 +60,7 @@ struct DbgPoint {
   float getLabR() const { return std::sqrt(x * x + y * y); }
   bool hasMeas() const { return flags & HasMeas; }
   bool hasKink() const { return flags & HasKink; }
-  ClassDefNV(DbgPoint, 1)
+  ClassDefNV(DbgPoint, 2)
 };
 
 /// Debug record of a track: its parameters at the reference point (the innermost one) and all its GBL points

@@ -316,3 +316,7 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   from many ROFs; `leg` is the half of the cosmic, not the half-barrel; ~95 % of IB and 5–20 % of OB road hits are off the
   track). `AlignParams.cosmiGoldOnly` (default true) keeps only the hits on the straight line of a golden cosmic
   (`CosmicsITSClean.h`, from the 569489 B=0 study: ~18 gold cosmics per CTF file with TOF required), 11-03.
+- Unbiased (leave-one-out) residuals `dyUnb`, `dzUnb` with errors, and the cluster `sigYZ`, added to the `gbltrack` debug points
+  (`DbgPoint` v2), 11-05. checkResid needs collision tracks with a PV; B = 0 cosmics crossing both half-barrels at non-radial
+  angles test the ray-wise OB patterns (the IB/OB kink candidates) that radial collision tracks are blind to, and with few IB
+  hits only one-out residuals are usable for them.

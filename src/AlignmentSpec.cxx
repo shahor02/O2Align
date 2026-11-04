@@ -1585,6 +1585,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
         dp.z = cluster.getZ();
         dp.sigY = std::sqrt(cluster.getSigmaY2());
         dp.sigZ = std::sqrt(cluster.getSigmaZ2());
+        dp.sigYZ = cluster.getSigmaYZ();
         dp.dyPre = res[0];
         dp.dzPre = res[1];
       }
@@ -1877,7 +1878,10 @@ bool AlignmentSpec::selectForDebug()
 
 // Add to the debug points the results of the GBL fit: the residuals wrt the fitted track (measurement
 // minus track: the prefit residual minus the fitted correction of the offsets of the local parameters,
-// which are (q/p, 2 slopes, 2 offsets), and the kinks.
+// which are (q/p, 2 slopes, 2 offsets), the unbiased residuals, and the kinks.
+// The unbiased (leave-one-out) residual follows from the biased one exactly, the fit being linear:
+// with V the measurement covariance and C the fitted covariance of the offsets at the point,
+// r_unb = V (V - C)^-1 r_fit, with covariance V (V - C)^-1 V (= V + covariance of the fit without the point).
 // The kinks are read with getScatResults, which GBL gives in the diagonalised basis of the scatterer,
 // rotated back with the transformation stored in the point.
 // GBL labels the points of the trajectory consecutively from 1, firstLabel is the label of points[0].
@@ -1895,6 +1899,18 @@ void AlignmentSpec::fillDbgFitResults(gbl::GblTrajectory& traj, unsigned int fir
     if (dp.hasMeas() && !traj.getResults(label, par, cov)) {
       dp.dyFit = dp.dyPre - par[3];
       dp.dzFit = dp.dzPre - par[4];
+      Eigen::Matrix2d measCov;
+      measCov << dp.sigY * dp.sigY, dp.sigYZ, dp.sigYZ, dp.sigZ * dp.sigZ;
+      const Eigen::Matrix2d resCov = measCov - cov.block<2, 2>(3, 3); // covariance of the biased residual
+      if (measCov.determinant() > 0. && resCov.determinant() > 0.) {
+        const Eigen::Matrix2d toUnb = measCov * resCov.inverse();
+        const Eigen::Vector2d unb = toUnb * Eigen::Vector2d(dp.dyFit, dp.dzFit);
+        const Eigen::Matrix2d unbCov = toUnb * measCov;
+        dp.dyUnb = unb[0];
+        dp.dzUnb = unb[1];
+        dp.sigYUnb = std::sqrt(unbCov(0, 0));
+        dp.sigZUnb = std::sqrt(unbCov(1, 1));
+      }
     }
     unsigned int nData = 0;
     if (dp.hasKink() && !traj.getScatResults(label, nData, res, measErr, resErr, downW) && nData == 2) {
