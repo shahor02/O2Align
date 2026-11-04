@@ -3,7 +3,7 @@
 Written for: whoever continues the ITS alignment (a person or Claude), familiar with O2Align, Millepede-II and checkResid.
 Date: 2026-10-31. State: v19 (`/data/devAlg/solA2v19`, config `doc/ITS_RB_v19.json`) and its cure `cure012`
 (`/data/devAlg/solA2v19cure/cure012`), with checkResid on pp B0 (LHC25ab 562862) and OO B+ (LHC25ae) for both.
-Sections 6 (pede evaluation of the cure) and 6a (PV test) were added on 2026-11-01, 6b (B0 vs B+) on 2026-11-03, 6c (B−) and 6d (IB/half-barrel equivalents) on 2026-11-04.
+Sections 6 (pede evaluation of the cure) and 6a (PV test) were added on 2026-11-01, 6b (B0 vs B+) on 2026-11-03, 6c (B−) and 6d (IB/half-barrel equivalents) on 2026-11-04, 6e (v18, field-dependent response) on 2026-11-05.
 
 ## 1. What the kink is
 
@@ -228,32 +228,28 @@ dPar2 n = 2 (cos, sin) [µrad], q/pT-constrained for B+:
   B0/B+ difference > 6σ per bin. A B− run of the same period would tell whether the B ≠ 0 residual pattern changes with
   the field sign.
 
-## 6c. B+ and B−, more statistics: the kink is field-off only
+## 6c. B+ and B−, more statistics: v19 is nearly flat at B ≠ 0
 
 2026-11-04: B+ 562837 with ~3× the statistics of 6b, and pp B− LHC25ah 564644 (another period), for V10n, v19, cure012
-(`checkResid_LHC25ah_564644_*_PV1.root`). v19 dPar2 n = 2 (cos, sin) [µrad], B± q/pT-constrained:
+(`checkResid_LHC25ah_564644_*_PV1.root`). (The B+ and B− columns of the first version of this table were swapped; corrected
+2026-11-05.) v19 dPar2 n = 2 (cos, sin) [µrad], B± q/pT-constrained:
 
 | tgl bin | B0 562862 (±6–10) | B+ 562837 | B− 564644 |
 |---|---|---|---|
-| [−2.0,−1.2] | (−125, 138) | (34, 24) ± 14 | (19, 97) ± 23 |
-| [−1.2,−0.8] | (−62, 29) | (4, −8) ± 11 | (40, 27) ± 18 |
-| [−0.8,−0.4] | (−32, −2) | (1, −2) ± 9 | (−8, 30) ± 14 |
-| [−0.4, 0.0] | (−12, −42) | (0, −1) ± 8 | (−21, 22) ± 12 |
-| [ 0.0,+0.4] | (−19, −53) | (13, 3) ± 8 | (7, 24) ± 12 |
-| [+0.4,+0.8] | (−44, −5) | (−5, 25) ± 9 | (31, 18) ± 14 |
-| [+0.8,+1.2] | (−88, 56) | (5, 26) ± 11 | (8, 48) ± 18 |
-| [+1.2,+2.0] | (−134, 186) | (37, 43) ± 15 | (−9, 71) ± 23 |
+| [−2.0,−1.2] | (−125, 138) | (19, 97) ± 23 | (34, 24) ± 14 |
+| [−1.2,−0.8] | (−62, 29) | (40, 27) ± 18 | (4, −8) ± 11 |
+| [−0.8,−0.4] | (−32, −2) | (−8, 30) ± 14 | (1, −2) ± 9 |
+| [−0.4, 0.0] | (−12, −42) | (−21, 22) ± 12 | (0, −1) ± 8 |
+| [ 0.0,+0.4] | (−19, −53) | (7, 24) ± 12 | (13, 3) ± 8 |
+| [+0.4,+0.8] | (−44, −5) | (31, 18) ± 14 | (−5, 25) ± 9 |
+| [+0.8,+1.2] | (−88, 56) | (8, 48) ± 18 | (5, 26) ± 11 |
+| [+1.2,+2.0] | (−134, 186) | (−9, 71) ± 23 | (37, 43) ± 15 |
 
-- v19 is flat in B+ (≤ 3σ) and nearly so in B− (sin 20–70 µrad); only B0 has the kink.
-- cure − v19 is the same in B+ and B− (outer bins ≈ (+105, −105) and (+120, −145)) and in B0: a pure geometric shift, which
-  creates in B± the kink it removes in B0.
-- B0 − B+ at the outer bins is the same for V10n ((−117, 182), (−95, 127)) and v19 ((−159, 114), (−171, 143)): independent
-  of the alignment.
-- The effect is even in B (B+ ≈ B−), so not a Lorentz-like (odd in B) cluster shift. Remaining: an ITS movement between
-  magnet off and on (v19, fitted on 10 M B± vs 4 M B0 records, describes the field-on geometry; pede is blind to the kink),
-  or a cluster position effect that differs between field off and on.
-- The v18 IB/OB kink that motivated the v19 IB gauge (section 1) was judged on pp B0. To do: checkResid of v18 on B+ 562837
-  and B− 564644; if flat, the v19 gauge (+51 M χ²) fixed a B0-only effect.
+- v19 is flat in B− (≤ 3σ) and nearly so in B+ (sin +20…+100); only B0 has the large kink.
+- cure − v19 is the same in B+ and B− (outer bins ≈ (+105, −100) and (+120, −145)) and in B0: the cure is linear in r,
+  and such a pattern has the same dPar2 response in all fields (section 6e).
+- This does not make the B0 kink non-geometric: section 6e shows that geometric patterns that are not linear in r
+  respond differently at B = 0 and B ≠ 0.
 
 ## 6d. Can the cure be expressed as IB (half-barrel) motions?
 
@@ -298,6 +294,52 @@ Written as a phase, b ∝ cos 2(φ − ψ) per tgl bin.
   - The kink sits at |tgl| > 0.8, i.e. |z| ≈ 3–8 cm on the IB, so the shifts would also have to vary along z: a
     half-barrel bending, not a rigid motion.
 - The kink appears only at B = 0 (section 6c), so this geometric reading is given only for completeness.
+
+## 6e. v18 at B0, B+, B−: the dPar2 response depends on the field
+
+2026-11-05: checkResid of v18 on the same three runs (`/data/devAlg/solA2v18/checkResid_{LHC25ab_562862,LHC25ab_562837,
+LHC25ah_564644}_AlgRS_PV1.root`). dPar2 n = 2 (cos, sin) [µrad], B± q/pT-constrained:
+
+| tgl bin | v18 B0 (±6–10) | v18 B+ | v18 B− |
+|---|---|---|---|
+| [−2.0,−1.2] | (−123, 161) | (5, 106) ± 24 | (10, 31) ± 14 |
+| [−0.4, 0.0] | (−102, 91) | (4, −5) ± 12 | (18, −33) ± 8 |
+| [ 0.0,+0.4] | (−115, 67) | (30, 1) ± 12 | (30, −21) ± 8 |
+| [+1.2,+2.0] | (−204, 73) | (−7, 122) ± 23 | (26, 78) ± 15 |
+
+v18 has a large B0 kink in every tgl bin, but at B± it is as flat as v19. The v18 − v19 change is (−90, +133) µrad at
+B0 in the central bins and only ≈ (+20, −30) at B±.
+
+**The response differs by field.** `kinkResponse.C` with `qConstr = true` on B+ and B− (reference V10n; v18, v19,
+cure012), and on B0 with the same set (cells |tgl| < 1.2; B+: χ² 3583 → 236 over 432 cells). c_L [µrad/µm]:
+
+| field | Lr0 | Lr1 | Lr2 | Lr3 | Lr4 | Lr5 | Lr6 | OB gain |
+|---|---|---|---|---|---|---|---|---|
+| B0 | −33.2 | −42.4 | 75.7 | 20.7 | −21.5 | 1.2 | 0.0 | 0.845 |
+| B+ | −51.3 | −28.6 | 79.9 | 45.0 | −43.0 | −31.5 | 29.6 | 0.944 |
+| B− | −51.3 | −28.7 | 81.3 | 44.4 | −44.2 | −29.0 | 28.3 | 0.894 |
+
+- B+ and B− agree. In B0 the OB sub-track direction at 12 cm is set by Lr3 − Lr4 only (pT is fixed at 0.6 GeV/c, so the
+  multiple scattering weights favour the innermost points). At B ≠ 0 Lr5 − Lr6 also enters, and the common q/pT,
+  dominated by the OB, absorbs curvature-like OB patterns.
+- A pattern linear in r (rotation, as the cure) has almost the same response in all fields. A pattern that is not linear
+  in r across the OB, such as a bow of Lr4/Lr5 against the Lr3–Lr6 line, gives a B0 kink but little B± dPar2.
+- Folding the v18 − v19 apparent layer shifts (`kink::cellHitShifts`) with each c_L reproduces the measured changes:
+  central bins predicted (−90, +133) at B0 and (+14, −32) at B±. The OB part of v18 − v19 reaches ~50 µm at Lr6 and is
+  not linear in r (Lr4/Lr5 ~3 µm off the Lr3–Lr6 line); the IB part is −1.5 … −2.4 µm, growing with r.
+- **dPar4 at B±** ((q/pT)_IB − (q/pT)_OB, n = 2 sin): v18 − v19 is +3…+7 ·10⁻³ (GeV/c)⁻¹ in B+ and −2…−7 ·10⁻³ in B−.
+  It flips sign with the field, as a geometric curvature-like change must. cure − v19 is 0, as for a pattern linear in r.
+  1 µm of Lr4/Lr5 bow gives ≈ 1.8 ·10⁻³ (GeV/c)⁻¹ at 0.5 T.
+
+Consequences:
+- The B0 kink can be geometric: an OB rφ pattern that is not linear in r, which B± tracks see mostly as a q/pT bias
+  (weak mode for B ≠ 0) and B0 tracks as an IB/OB kink. The conclusions "field-off only, non-geometric" of the first
+  versions of 6b/6c are withdrawn.
+- cure012, linear in r, is the wrong shape: it removes the B0 kink by creating one at B±. A cure that is consistent with
+  all fields must lie in the B±-blind subspace: per cell, OB layer shifts with c_B0·d = −b, c_B±·d = 0, and no dPar0
+  change, then checked against dPar4 at B±.
+- The Mille χ² hardly constrains this (section 6). B0 data are the lever on it; the v18 → v19 choice was made on B0
+  checkResid, where v19 is better than v18 at |tgl| < 0.8.
 
 ## 7. Notes for Claude (environment)
 

@@ -307,7 +307,11 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   B0-like kink and the cure makes it worse: the B0 kink is B = 0 specific, not geometric. The pede Δχ² of the cure is
   ~150× the χ² the kink carries, so it does not test the kink. With more B+ statistics and pp B− 564644 (11-04), v19 is flat in B+ and
   nearly in B−, and cure − v19 is the same shift in all fields: the kink is a field-off (even in B) effect, the same for
-  V10n and v19. The v18 kink that led to the v19 IB gauge was judged on B0, so v18 is to be rechecked on B±.
+  V10n and v19. The v18 kink that led to the v19 IB gauge was judged on B0, so v18 is to be rechecked on B±. v18 on B0/B+/B− (11-05): large B0
+  kink, B± as flat as v19. The dPar2 response to the layer shifts differs by field (B0: OB direction from Lr3 − Lr4 only,
+  pT fixed; B±: Lr5/Lr6 enter and the common q/pT absorbs curvature-like OB patterns), and folding the v18 − v19 shifts
+  with each response reproduces the measured B0 and B± changes; dPar4 at B± flips sign with the field. So the B0 kink can
+  be a geometric OB pattern that is not linear in r; the 11-04 "field-off only, non-geometric" reading is withdrawn.
 - Cosmics: the ITS road of `TrackCosmicsExtended` is a candidate list (without a TOF time the window is the TPC one, so hits
   from many ROFs; `leg` is the half of the cosmic, not the half-barrel; ~95 % of IB and 5–20 % of OB road hits are off the
   track). `AlignParams.cosmiGoldOnly` (default true) keeps only the hits on the straight line of a golden cosmic

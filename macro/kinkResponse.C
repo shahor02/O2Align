@@ -23,6 +23,8 @@
 //     "/data/devAlg/solA2v18/algdump.root,/data/devAlg/solA2v19/algdump.root,/data/devAlg/solA2v19rmc/algdump.root",
 //     "/data/devAlg/solA2v18/checkResid_LHC25ab_562862_AlgRS_PV1.root,/data/devAlg/solA2v19/checkResid_LHC25ab_562862_AlgRS_PV1.root,/data/devAlg/solA2v19rmc/checkResid_LHC25ab_562862_AlgRS_PV1.root")'
 //   (pp B0 run 562862, giving c_L = -33.9 -42.3 75.7 20.7 -21.6 1.2 0.04 for Lr0..Lr6)
+//   For B != 0 data pass qConstr = true: dPar2 is then taken with both sub-tracks constrained to their common q/pT
+//   (kink::DPar2QC), whose response may differ from the B = 0 one.
 // kinkPredict(): predicted dPar2 harmonics of a modified geometry (e.g. a cure) from the measured ones of a solution:
 //   root -b -q -e '.L kinkResponse.C+' -e 'kinkPredict("/data/devAlg/solA2v19/o2sim_geometry-aligned.root", "/data/devAlg/solA2v19cure/cure012/o2sim_geometry-aligned.root",
 //     "/data/devAlg/solA2v19/checkResid_LHC25ab_562862_AlgRS_PV1.root")'
@@ -35,7 +37,7 @@
 // default c_L [urad/um], fitted on pp B0 562862 with V10n as reference and v18, v19, v19rmc
 const std::array<double, 7> CLpp{-33.86, -42.28, 75.73, 20.72, -21.64, 1.18, 0.04};
 
-void kinkResponse(const char* refGeom, const char* refRes, const char* geoms, const char* ress, long nmax = 600000)
+void kinkResponse(const char* refGeom, const char* refRes, const char* geoms, const char* ress, long nmax = 600000, bool qConstr = false)
 {
   using namespace kink;
   auto gl = tokenize(geoms), rl = tokenize(ress);
@@ -63,7 +65,7 @@ void kinkResponse(const char* refGeom, const char* refRes, const char* geoms, co
     auto t = (TTree*)f.Get("res");
     double m[NT][NP], e[NT][NP];
     for (int o = 0; o < 2; o++) {
-      dParMeans(t, o ? 2 : 0, m, e);
+      dParMeans(t, o ? 2 : 0, m, e, "", TTree::kMaxEntries, qConstr);
       for (int a = 0; a < NT; a++) {
         for (int b = 0; b < NP; b++) {
           M[s][o][a][b] = m[a][b], E[s][o][a][b] = e[a][b];
