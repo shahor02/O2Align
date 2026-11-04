@@ -3,7 +3,7 @@
 Written for: whoever continues the ITS alignment (a person or Claude), familiar with O2Align, Millepede-II and checkResid.
 Date: 2026-10-31. State: v19 (`/data/devAlg/solA2v19`, config `doc/ITS_RB_v19.json`) and its cure `cure012`
 (`/data/devAlg/solA2v19cure/cure012`), with checkResid on pp B0 (LHC25ab 562862) and OO B+ (LHC25ae) for both.
-Sections 6 (pede evaluation of the cure) and 6a (PV test) were added on 2026-11-01, 6b (B0 vs B+) on 2026-11-03, 6c (B−) on 2026-11-04.
+Sections 6 (pede evaluation of the cure) and 6a (PV test) were added on 2026-11-01, 6b (B0 vs B+) on 2026-11-03, 6c (B−) and 6d (IB/half-barrel equivalents) on 2026-11-04.
 
 ## 1. What the kink is
 
@@ -254,6 +254,50 @@ dPar2 n = 2 (cos, sin) [µrad], q/pT-constrained for B+:
   or a cluster position effect that differs between field off and on.
 - The v18 IB/OB kink that motivated the v19 IB gauge (section 1) was judged on pp B0. To do: checkResid of v18 on B+ 562837
   and B− 564644; if flat, the v19 gauge (+51 M χ²) fixed a B0-only effect.
+
+## 6d. Can the cure be expressed as IB (half-barrel) motions?
+
+Written as a phase, b ∝ cos 2(φ − ψ) per tgl bin.
+
+- **Rigid half-barrel motions do not reproduce it.**
+  - A translation of a half-barrel (IB or OB) moves all its layers equally in rφ. dPar2 hardly responds: Σc_L = −0.5
+    (IB) and +0.3 (OB) µrad/µm. The shift goes to dPar0, while the kink is directional (dPar0 ≈ 0, R0 ≈ 12 cm).
+  - Opposite rotations of the top and bottom halves about z give rΔφ ∝ r·sign(sin φ), which has only odd harmonics.
+  - Half-barrel tilts (RX, RY) are linear in z, i.e. odd in tgl, while the kink is mostly even in tgl at large |tgl|.
+- **Phase versus the half-barrel structure.** The halves meet at φ = 0, π. A deformation that is the same in the top
+  and bottom halves, mirrored, has rΔφ odd under φ → −φ: pure sin 2φ (2ψ = ±90°). cos 2φ is antisymmetric between the
+  halves; any n = 2 term is invariant under a 180° rotation. v19 B0, n = 2 (cos, sin) [µrad] and ψ:
+
+  | tgl bin | (cos, sin) | ψ |
+  |---|---|---|
+  | [−2.0,−1.2] | (−125, 138) | 66° |
+  | [−1.2,−0.8] | (−62, 29) | 77° |
+  | [−0.4, 0.0] | (−12, −42) | 127° |
+  | [ 0.0,+0.4] | (−19, −53) | 125° |
+  | [+0.8,+1.2] | (−88, 56) | 74° |
+  | [+1.2,+2.0] | (−134, 186) | 63° |
+
+  - Central bins: ψ ≈ 125°, close to a mirror-symmetric deformation.
+  - |tgl| > 0.8, where most of the kink is: ψ ≈ 63–77°, mixed symmetric and antisymmetric, not aligned with the split.
+  - The field-independent B0 − B+ difference has the same phase at the outer bins (≈ 61° V10n, 63° v19).
+  - |n1| is as large as |n2| (90–240 µrad).
+  - So the kink is not a clean half-barrel deformation, as a field-on/off movement of the half-barrels would suggest.
+- **IB-side equivalent and the role of r.** The IB spans 2.2–3.8 cm, so an IB displacement acts through two numbers per
+  (φ, tgl) cell: its mean, which moves the IB sub-track at 12 cm (dPar0), and its slope across Lr0..Lr2 (dPar2, gain
+  Σc_L·r_L·10⁻² = 0.83 µrad per µrad).
+  - Since dPar0 n2 ≈ 0, the IB equivalent of the OB cure is a rotation about R = 12 cm: rΔφ = −ω(r − 12).
+  - For ω = 150 µrad: about 13 µm common to Lr0..Lr2 (±1 µm), and only 2.3 µm differential between Lr0 and Lr2. The
+    differential cures dPar2; the common part keeps dPar0 unchanged.
+  - `tangentialHarmonic2` (rΔφ = ε·r, pivot at the origin) is not this mode: it moves the IB sub-track at 12 cm by 12ε
+    (≈ 18 µm), i.e. it creates a dPar0 n2 that is not observed.
+- **Half-barrel content of the IB equivalent.**
+  - The common 13 µm is an r-independent n = 2 tangential shift. Relative IB/OB half-barrel translations produce it:
+    top/bottom separation in y gives ≈ 0.85·Δy·sin 2φ; opposite sliding in x gives cos 2φ plus an n = 0 term.
+  - The differential needs per-layer IB half-barrel shifts in the ratio (12 − r_L) ≈ 9.8 : 9.0 : 8.2, about 1 µm per
+    layer step (per-layer half-barrel DOFs).
+  - The kink sits at |tgl| > 0.8, i.e. |z| ≈ 3–8 cm on the IB, so the shifts would also have to vary along z: a
+    half-barrel bending, not a rigid motion.
+- The kink appears only at B = 0 (section 6c), so this geometric reading is given only for completeness.
 
 ## 7. Notes for Claude (environment)
 
