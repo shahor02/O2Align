@@ -191,6 +191,9 @@ dPar0 and dPar2 for PV0 and PV1 in every tgl bin, within 0.5 µm and 3 µrad, fo
 [+1.2,+2.0]: dPar2 n2 (−134, 186) with the PV, (−135, 184) without; cure012 stays at ≤ 33 µrad. The refitted PV is
 made of the same tracks, so on average it lies on their IB extrapolation and does not bias the IB direction. The kink
 is therefore in the cluster positions, and the checkResid/Mille disagreement of section 6 is not caused by the vertex.
+The test is sensitive: matching tracks by gid, the PV changes the IB snp at 12 cm by 167 µrad rms per track (OB: 0.9 µrad),
+so any vertex bias relative to the IB would move the PV1 means away from the PV0 ones; in PV0 the IB sub-track is the three
+IB clusters only. The mean vertex dy in the same cells has |n2| < 0.8 µm.
 
 ## 6b. B0 vs B+ of the same period: the kink is B0-only
 
@@ -215,8 +218,12 @@ dPar2 n = 2 (cos, sin) [µrad], q/pT-constrained for B+:
   3–4σ in several bins ([+1.2,+2.0] cos, central sin).
 - The cure moves B+ in the same direction as B0 (cos up by 30–110 µrad), as a geometric change must, and makes B+ worse.
   So in B+ checkResid prefers v19, like the Mille fit.
-- The geometry is the same and the runs are adjacent, so the B0 kink comes from the B = 0 data or their treatment in
-  checkResid (straight sub-tracks, fixed pT = 0.6 GeV/c for the MS), not from the alignment. The cure should not be used.
+- The geometry is the same and the runs are adjacent, so the B0 kink is not an alignment error of v19; the cure should not
+  be used. A straight-line fit of unbiased clusters gives no mean kink, and the vertex is excluded (section 6a), so the
+  IB-only and OB-only cluster sets of B0 tracks disagree. Candidates: an ITS movement between magnet off and on (v19 is
+  fitted on 10 M B± vs 4 M B0 records, and pede is blind to the kink), or a field-dependent cluster position effect
+  (Lorentz-like shift, odd in B; incidence angle of radial vs bent tracks). A B− run of the same period separates them:
+  B− like B+ means field on vs off, B− − B0 opposite to B+ − B0 means an effect odd in B.
 - Errors: B+ statistics are ~3× lower and the per-track error ~3× larger than B0; ~4× more B+ tracks would make the
   B0/B+ difference > 6σ per bin. A B− run of the same period would tell whether the B ≠ 0 residual pattern changes with
   the field sign.
