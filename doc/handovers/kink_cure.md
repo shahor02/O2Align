@@ -3,7 +3,7 @@
 Written for: whoever continues the ITS alignment (a person or Claude), familiar with O2Align, Millepede-II and checkResid.
 Date: 2026-10-31. State: v19 (`/data/devAlg/solA2v19`, config `doc/ITS_RB_v19.json`) and its cure `cure012`
 (`/data/devAlg/solA2v19cure/cure012`), with checkResid on pp B0 (LHC25ab 562862) and OO B+ (LHC25ae) for both.
-Sections 6 (pede evaluation of the cure) and 6a (PV test) were added on 2026-11-01, 6b (B0 vs B+) on 2026-11-03.
+Sections 6 (pede evaluation of the cure) and 6a (PV test) were added on 2026-11-01, 6b (B0 vs B+) on 2026-11-03, 6c (B−) on 2026-11-04.
 
 ## 1. What the kink is
 
@@ -228,11 +228,41 @@ dPar2 n = 2 (cos, sin) [µrad], q/pT-constrained for B+:
   B0/B+ difference > 6σ per bin. A B− run of the same period would tell whether the B ≠ 0 residual pattern changes with
   the field sign.
 
+## 6c. B+ and B−, more statistics: the kink is field-off only
+
+2026-11-04: B+ 562837 with ~3× the statistics of 6b, and pp B− LHC25ah 564644 (another period), for V10n, v19, cure012
+(`checkResid_LHC25ah_564644_*_PV1.root`). v19 dPar2 n = 2 (cos, sin) [µrad], B± q/pT-constrained:
+
+| tgl bin | B0 562862 (±6–10) | B+ 562837 | B− 564644 |
+|---|---|---|---|
+| [−2.0,−1.2] | (−125, 138) | (34, 24) ± 14 | (19, 97) ± 23 |
+| [−1.2,−0.8] | (−62, 29) | (4, −8) ± 11 | (40, 27) ± 18 |
+| [−0.8,−0.4] | (−32, −2) | (1, −2) ± 9 | (−8, 30) ± 14 |
+| [−0.4, 0.0] | (−12, −42) | (0, −1) ± 8 | (−21, 22) ± 12 |
+| [ 0.0,+0.4] | (−19, −53) | (13, 3) ± 8 | (7, 24) ± 12 |
+| [+0.4,+0.8] | (−44, −5) | (−5, 25) ± 9 | (31, 18) ± 14 |
+| [+0.8,+1.2] | (−88, 56) | (5, 26) ± 11 | (8, 48) ± 18 |
+| [+1.2,+2.0] | (−134, 186) | (37, 43) ± 15 | (−9, 71) ± 23 |
+
+- v19 is flat in B+ (≤ 3σ) and nearly so in B− (sin 20–70 µrad); only B0 has the kink.
+- cure − v19 is the same in B+ and B− (outer bins ≈ (+105, −105) and (+120, −145)) and in B0: a pure geometric shift, which
+  creates in B± the kink it removes in B0.
+- B0 − B+ at the outer bins is the same for V10n ((−117, 182), (−95, 127)) and v19 ((−159, 114), (−171, 143)): independent
+  of the alignment.
+- The effect is even in B (B+ ≈ B−), so not a Lorentz-like (odd in B) cluster shift. Remaining: an ITS movement between
+  magnet off and on (v19, fitted on 10 M B± vs 4 M B0 records, describes the field-on geometry; pede is blind to the kink),
+  or a cluster position effect that differs between field off and on.
+- The v18 IB/OB kink that motivated the v19 IB gauge (section 1) was judged on pp B0. To do: checkResid of v18 on B+ 562837
+  and B− 564644; if flat, the v19 gauge (+51 M χ²) fixed a B0-only effect.
+
 ## 7. Notes for Claude (environment)
 
 - Run ROOT through `bash -ic 'o2d >/dev/null 2>&1; root -l -b -q ...' < /dev/null`. `o2d` is an interactive alias; the
   "O2PDPSuite/latest was not found" message it prints is harmless. Without `< /dev/null` backgrounded DPL workflows hang.
 - Compile the macros (`.C+`) from a copy in the scratchpad, not in `macro/`.
+- If the shell environment points to `sw_old` again, load the new stack in a clean environment:
+  `env -i HOME=$HOME PATH=/usr/bin:/bin bash -c 'ALIBUILD_WORK_DIR=$HOME/alice/sw alienv printenv O2PDPSuite/latest' > newenv.sh`,
+  then run ROOT as `env -i HOME=$HOME PATH=/usr/bin:/bin bash -c '. newenv.sh; root ...'`.
 - Since 2026-11-03 the new stack (`~/alice/sw/ubuntu2604_x86-64`, ROOT in `$ROOTSYS`) compiles the macros:
   `env -u PYTHONHOME $ROOTSYS/bin/root -l -b -q 'kinkMap.C+(...)'`; the libssl.so.1.1 / HistoManagerS messages of the
   logon are harmless.
