@@ -9,7 +9,8 @@ Examples:
 
 Supports the common hadd flags listed by --help, rather than every hadd flag.
 Vectors (including those in directories) are concatenated in source order,
-without sorting or deduplication. Only the latest key cycle is used.
+without sorting or deduplication. Only the latest input key cycle is used,
+and each merged vector is stored in a single output key cycle.
 Local output only; input ROOT URLs are supported by ROOT.
 """
 
@@ -149,6 +150,9 @@ def main(argv=None):
                 directory = output.GetDirectory(parent) if parent else output
                 if not directory:
                     raise RuntimeError(f'Missing output directory for {path}')
+                # hadd may have copied multiple cycles. Overwrite replaces only
+                # the latest one, so remove all existing cycles first.
+                directory.Delete(name + ';*')
                 if directory.WriteObject(vector, name, 'Overwrite') <= 0:
                     raise OSError(f'Failed to write {path}')
                 print(f'{path}: {vector.size()} TFIDInfo records')
