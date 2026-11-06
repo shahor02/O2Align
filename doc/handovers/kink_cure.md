@@ -341,6 +341,37 @@ Consequences:
 - The Mille χ² hardly constrains this (section 6). B0 data are the lever on it; the v18 → v19 choice was made on B0
   checkResid, where v19 is better than v18 at |tgl| < 0.8.
 
+## 6f. B = 0 cosmics as an independent test (pede, labels fixed)
+
+2026-11-06: B = 0 cosmics of LHC25aa (`/data0/devAlg/tests/cosmNoGold`, 104 runs, `cosmiGoldOnly=false`, v10n geometry,
+`doc/ITS_RB_all.json`, assigned pT 2 GeV/c; ~272k accepted records, ndf 2.07 M, no mean-vertex labels). Setup in
+`/data0/devAlg/tests/cosmEval`: `mkCosmEval.sh` writes one parameter file per solution with every ITS label fixed at its
+millepede.res value (v10n = 0), except ITS TX (to which straight cosmics are blind), free with presigma 1e-5 cm so that
+pede runs (it stays at 1e-12); no constraints. `runCosmEval.sh` runs the variants `cut` (chisqcut 20 5,
+outlierdownweighting 4, as in production) and `nocut` (one pass); `sumCosmEval.sh` writes `summary.txt`.
+
+| solution | χ² (cut) | rejected | Δχ² vs v10n (cut) | Δχ² vs v10n (nocut) |
+|---|---|---|---|---|
+| v10n | 3 292 086 | 58 979 | 0 | 0 |
+| v11 | 3 165 976 | 56 060 | −126 110 | −64 797 |
+| v16 | 3 209 408 | 59 009 | −82 678 | +280 280 |
+| v17N | 3 160 662 | 55 874 | −131 424 | −192 464 |
+| v18 | 3 160 806 | 55 806 | −131 280 | −193 834 |
+| v19 | 3 164 866 | 55 928 | −127 219 | −202 434 |
+| v19rmc | 3 161 995 | 56 323 | −130 091 | −102 481 |
+| cure012 | 3 151 035 | 55 386 | −141 051 | −234 760 |
+
+- All Mille solutions improve the cosmics by ~4 % of χ², an independent confirmation, since no cosmics entered the fits. v16 (module RY
+  fixed, OB per-layer bow) is the worst of them and is worse than v10n without the cut.
+- **cure012 is better than v19 on the cosmics**: Δχ² = −13.8k (cut, with 540 fewer records rejected) and −32.3k (nocut).
+  The collision pede gives the opposite sign (+0.73 M, section 6), but per record the cosmic preference is 4–5 times
+  larger: about −0.05 (cut) and −0.12 (nocut) vs +0.05 for collisions. B = 0 non-radial tracks are the data most sensitive to a
+  ray-wise OB rotation.
+- v17N, v18, v19 and v19rmc are within 4k (cut); without the cut the order changes (v19 −8.6k vs v18, v19rmc +91k vs v18), so the
+  tails dominate the nocut numbers.
+- This does not settle the field dependence of section 6e (cure012 creates a B± kink). It says the cosmics carry a
+  B = 0 lever on the OB ray-wise patterns that pede should get in the combined fit.
+
 ## 7. Notes for Claude (environment)
 
 - Run ROOT through `bash -ic 'o2d >/dev/null 2>&1; root -l -b -q ...' < /dev/null`. `o2d` is an interactive alias; the

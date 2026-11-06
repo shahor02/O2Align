@@ -320,3 +320,7 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   (`DbgPoint` v2), 11-05. checkResid needs collision tracks with a PV; B = 0 cosmics crossing both half-barrels at non-radial
   angles test the ray-wise OB patterns (the IB/OB kink candidates) that radial collision tracks are blind to, and with few IB
   hits only one-out residuals are usable for them.
+- pede on the B = 0 cosmics alone with the labels fixed at each solution (`/data0/devAlg/tests/cosmEval`, 11-06): all Mille
+  solutions gain ~130k (4 %) over v10n, so the cosmics confirm them independently. v16 gains least. cure012 beats v19 by 14k (cut) / 32k (no cut),
+  ~0.05–0.12 per record, against +0.05 per record for collisions: the cosmics favour the ray-wise OB rotation that collisions
+  disfavour (`doc/handovers/kink_cure.md` 6f).
