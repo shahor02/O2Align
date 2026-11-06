@@ -38,7 +38,7 @@
   {
     "match": "TOF/sm[0-9]+",
     "rigidBody": "all"
-  }
+  },
   {
     "match": "TOF/sm[0-9]+/strip[0-9]+",
     "rigidBody": "all"

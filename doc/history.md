@@ -324,3 +324,10 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   solutions gain ~130k (4 %) over v10n, so the cosmics confirm them independently. v16 gains least. cure012 beats v19 by 14k (cut) / 32k (no cut),
   ~0.05–0.12 per record, against +0.05 per record for collisions: the cosmics favour the ray-wise OB rotation that collisions
   disfavour (`doc/handovers/kink_cure.md` 6f).
+- Combined pede fit B0 + B+ + B− + cosmics in the v18 configuration (`solC1v18`, 11-06). The cosmics gain 127k over v18,
+  mostly via stave-end OB chips outside the collision acceptance and a 4 µm IB + mean-vertex shift. Collision checkResid is
+  unchanged to 0.01 µm, and the B0 kink stays, yet its pede χ² was ≈ 52 M above v18. Fixed-label evaluations with one pede
+  (05.01.07, one file per field) give v18 = v19 within 0.004 per record and C1v18 +0.02. ⇒ the "+51 M v18 → v19 gap" was
+  the χ² definition of the binaries: v18 was fitted with the outlier-fixed pede (epn000), v19/v19rmc/C1v18 and the
+  pedeEval with the official 05.01.06 on epn224, which lacks the fix (χ² ratio 0.894 in both comparisons). The v19 IB
+  gauge costs nothing measurable. Fits on epn224 must be redone with ≥ 05.01.07 (`kink_cure.md` 6g).
