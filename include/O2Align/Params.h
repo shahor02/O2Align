@@ -72,6 +72,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // TRD
   bool applyXORTRD = false;       // apply XOR in TRD tranfformer
   int minTRDTracklets = 3;        // min TRD tracklets to accept the track
+  float TRDAngularPullNSigma = 2.f; // max |angular pull| (tracklet dy vs track snp) of a TRD tracklet to be accepted in the track fit, <=0: no cut
   float TRDCorrDVT = 0.f;         // correction to Vdrift*t (equivalent to a shift in X at which Y is evaluated)
   float TRDNonRCCorrDzDtgl = 0.f; // correction in Z proportional to tgl for non-row-crossing tracklets
 

@@ -120,6 +120,17 @@ bool DetectorTRD::trackletToTrackingFrame(const o2::trd::Tracklet64& trackletRaw
   return true;
 }
 
+// Pull of the tracklet slope (dy) w.r.t. the one expected from the track snp, as in TRD QC Tracking
+float DetectorTRD::trackletAngularPull(const o2::trd::Tracklet64& trackletRaw, const o2::trd::CalibratedTracklet& trkltLoc, const o2::track::TrackParD& trkParam) const
+{
+  const auto* geo = o2::trd::Geometry::instance();
+  const o2::trd::PadPlane* pad = geo->getPadPlane(trackletRaw.getDetector());
+  const float tilt = std::tan(TMath::DegToRad() * pad->getTiltingAngle());
+  const float snp = static_cast<float>(trkParam.getSnp());
+  const float dyTiltCorr = tilt * static_cast<float>(trkParam.getTgl()) * geo->cdrHght();
+  return (trkltLoc.getDy() + dyTiltCorr - mRecoParam.convertAngleToDy(snp)) / std::sqrt(mRecoParam.getDyRes(snp, 0));
+}
+
 // Point of a tracklet given the track state at its X: the track provides the Z and the angles needed for the
 // tilt correction and the covariance
 FrameInfoExt DetectorTRD::makeTrackletPoint(const o2::trd::Tracklet64& trackletRaw, const std::array<double, 3>& traXYZ, double alpSens, const o2::track::TrackParD& trkParam) const
@@ -198,6 +209,9 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       resTrack.info.resize(nPointsIni);
       return false;
     }
+    if (params.TRDAngularPullNSigma > 0.f && std::abs(trackletAngularPull(trackletRaw, mTrackletsLoc[trkltId], trkParam)) > params.TRDAngularPullNSigma) {
+      continue; // tracklet slope incompatible with the track direction
+    }
     auto& pnt = resTrack.info.emplace_back(makeTrackletPoint(trackletRaw, traXYZ, alpSens, trkParam));
     chi2 += static_cast<float>(trkParam.getPredictedChi2Quiet(pnt.cluster));
     if (!trkParam.update(pnt.cluster)) {
@@ -243,6 +257,9 @@ int DetectorTRD::prepareCosmicLeg(const o2::dataformats::TrackCosmicsExtended& c
     o2::track::TrackParCovD trk;
     if (!propagateCosmicRef(ref, alpSens, traXYZ[0], trk)) {
       continue;
+    }
+    if (params.TRDAngularPullNSigma > 0.f && std::abs(trackletAngularPull(trackletRaw, trkltLoc, trk)) > params.TRDAngularPullNSigma) {
+      continue; // tracklet slope incompatible with the track direction
     }
     const auto pnt = makeTrackletPoint(trackletRaw, traXYZ, alpSens, trk);
     const double chi2 = trk.getPredictedChi2Quiet(pnt.cluster);
