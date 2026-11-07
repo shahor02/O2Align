@@ -377,13 +377,13 @@ outlierdownweighting 4, as in production) and `nocut` (one pass); `sumCosmEval.s
 ## 6g. Combined fit B0 + B+ + B− + cosmics, v18 configuration (`solC1v18`)
 
 2026-11-06: `/data0/devAlg/tests/solC1v18`: v18 DOF configuration, the 72 collision files of `solA2v18` plus the 104
-cosmic files of 6f, all at weight 1; pede 05.01.06 (epn224, without the outlier fix). Checks: checkResid of pp B0 562862, B+ 562837, B− 564644,
+cosmic files of 6f, all at weight 1; pede on epn224 with the outlier fix reverted (banner 05.01.06). Checks: checkResid of pp B0 562862, B+ 562837, B− 564644,
 and the cosmic evaluation of 6f with the C1v18 labels.
 
 **pede χ² and the pede binaries.** Fit χ²: v18 428 995 802 (ndf 477.44 M, 0.8985), v19 480 360 488 (1.0061), C1v18
 483 866 510 (479.51 M, 1.0091; cosmic part ≈ 3.0 M). v18 was fitted on epn000 with a pede carrying the outlier
 down-weighting fix (b91d586; its `$Id: cb3f0945…$` is that patched pede.f90, not a public blob). v19, v19rmc, C1v18
-and the pedeEval runs of section 6 used the official 05.01.06 on epn224, which predates the fix (released in 05.01.07).
+and the pedeEval runs of section 6 used the epn224 pede (banner 05.01.06), on which the fix had been reverted.
 
 Fixed-label evaluation (ITS fixed, mean vertex free, production cuts), local pede 05.01.07, file `mp2data_0.bin` of each
 field (934k records, 6.7 % of the data), `solC1v18/collEval`:
@@ -399,12 +399,12 @@ field (934k records, 6.7 % of the data), `solC1v18/collEval`:
   (+51 M)" of sections 1 and 6 is not a cost of the v19 IB gauge. It is the χ² definition of the two binaries: v19 χ²/ndf
   with 05.01.07 here (0.613, 1.026, 1.028) is 0.894 ± 0.003 times the epn224 05.01.06 evaluations of section 6 (0.683,
   1.148, 1.150), the same ratio as the v18 / v19 fit χ² (0.893). With `outlierdownweighting 4` the fixed pede sums Cauchy
-  terms, which lie below the Huber terms of 05.01.06 at every residual.
+  terms, which lie below the Huber terms of the unfixed pede at every residual.
 - C1v18 costs the collisions +0.02 per record (≈ +0.28 M scaled) and gains 127k on the cosmics, so on the combined
   objective of the fixed pede it is *worse* than v18. The C1v18 fit (05.01.06, with the inconsistent-weight bug) did not
   find the minimum of the corrected objective.
 - **Consequence: v19, v19rmc, C1v18 and the section 6 pedeEval were all run with the unfixed pede.** Their χ² are on the
-  05.01.06 scale, and the v19/v19rmc/C1v18 solutions may carry the bias that the fix removes. The ±0.05 per record
+  unfixed scale, and the v19/v19rmc/C1v18 solutions may carry the bias that the fix removes. The ±0.05 per record
   comparisons within section 6 are internally consistent (same binary), but the fits should be redone with ≥ 05.01.07.
 - The `measurement` priors give 45k (v18), 50k (C1v18); constraints are satisfied to 4e-7.
 
@@ -429,6 +429,47 @@ Kink (kinkMap, 600k tracks): the C1v18 pp B0 dPar2 n = 2 is the v18 one within e
 µrad at tgλ ∈ [0, 0.4], R0 ≈ 11–12 cm. At B± (q/pT-constrained dPar2) both are consistent with 0, as in 6e. **The
 cosmics in the fit do not remove the B0 kink.** Their gain comes from directions orthogonal to it, consistent with
 the small cure012 − v18 difference on the cosmics (−10k).
+
+## 6h. Refits with the fixed pede (05.01.07): v19 and C1v18
+
+2026-11-07: v19 and C1v18 refitted on epn224 with Millepede 05.01.07, which has the fix. The inputs are those of the
+first fits. Copies are in `/data/devAlg/solA2v19` and `solC1v18` (alternative PC); the earlier results there are
+overwritten. `solC1v18/millepede_labeled.res` is still the one of the unfixed fit.
+
+| fit | χ² | χ²/ndf | rejected |
+|---|---|---|---|
+| v18 (epn000, fixed) | 428 995 802 | 0.8985 | 375 052 |
+| v19 (05.01.07) | 428 841 347 | 0.8982 | 374 591 |
+| C1v18 (05.01.07, + cosmics) | 432 067 126 | 0.9011 | 424 867 |
+
+- **v19 is 155k below v18 on the same data.** The IB `tangentialHarmonic` gauge costs nothing; the "+51 M" was the
+  unfixed pede.
+- Cosmic evaluation (6f setup) of the refits: C1v18 3 037 443 (cut) / 6 108 709 (nocut), v19 3 164 892 / 6 538 745. The
+  unfixed C1v18 gave 3 034 119 and the unfixed v19 3 164 866, so the fix barely changes the cosmic side.
+- Split of C1v18, against v18:
+  - cosmics 3.037 M vs 3.161 M: **−123.4k**;
+  - collisions 432.067 − 3.037 = 429.030 M vs 428.996 M: **+33.9k** (+0.002 per record);
+  - combined 432.067 M vs 432.157 M: **−89.5k**.
+- At weight 1 the two samples are compatible: the cosmics gain 123k in directions the collisions hardly constrain, at a
+  collision cost of 34k.
+- v19 against v18: −155k on collisions, +4k on cosmics. The cosmics are neutral on the v19 OB z-odd patterns.
+- Next: a combined fit in the v19 configuration (C1v19, same 72 + 104 files, weight 1, 05.01.07).
+- Geometry relative to v18 (aligned chip centres):
+  - **C1v18:** IB rigid shift of 1.8 µm. OB medians 0.6–2 µm, plus the same stave-end tails as in 6g, no harmonic
+    pattern ≥ 1 µm. The fixed-pede C1v18 is again essentially v18.
+  - **v19:** IB about 5 µm (n = 1 and n = 2). The OB carries large z-odd rφ patterns: c1·z +16 / +18 / +52 / +53 µm
+    and s2·z −10 / −12 / −25 / −33 µm at Lr3–Lr6 (amplitudes at the stave ends).
+- Kink (kinkMap, pp B0 562862, 600k tracks), dPar2 n = 2 (cos, sin) in µrad:
+
+| tgλ | v18 | C1v18 | v19 |
+|---|---|---|---|
+| [−0.8, −0.4] | (−82, 101) | (−75, 100) | (−14, −9) |
+| [0, 0.4] | (−110, 58) | (−108, 55) | (−6, −64) |
+| [0.8, 1.2] | (−185, 62) | (−186, 52) | (−101, 79) |
+| [1.2, 2] | (−201, 79) | (−213, 84) | (−106, 204) |
+
+  v19 keeps the behaviour of the unfixed v19: kink removed at |tgλ| < 0.8, not at the ends. C1v18 is v18. At B± (q/pT
+  constrained) all three are consistent with 0 within 2–3σ.
 
 ## 7. Notes for Claude (environment)
 
