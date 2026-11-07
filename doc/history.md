@@ -332,3 +332,10 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   Refits with 05.01.07 (11-07): v19 is 155k *below* v18, so the IB gauge costs nothing. C1v18 is again ≈ v18 and the B0 kink
   stays; its cosmics gain 123k over v18 at a collision cost of 34k (−89.5k combined), so collisions and cosmics are
   compatible at weight 1 (`kink_cure.md` 6g, 6h).
+- OB dz-vs-tgλ structures (11-07): the standard checkResid Lr5/Lr6 are flat (|tgλ|<1.4) while the IOB (IB+PV extrapolation) ones
+  reach 100–250 µm at Lr5/Lr6, growing with R; Lr0–2 flat to ±4 µm. First guess was an IB radial error of ~5 µm. A check on the
+  `res` tree (same day) found that in B≠0 most of the IOB signal comes from the estimator, not from geometry. The IB(+PV) sub-track
+  has no curvature information (median σ(q/pT)/|q/pT| = 37–60%), and z extrapolated over 35 cm is quadratic in q/pT. Its mean is
+  therefore biased by −tgλ·σ_C²·R³/24. At fixed pT, the Lr6 slope is −230 µm/unit tgλ for |C_IB/C_OB−1|>0.3 and −50 for <0.3.
+  B0 (straight lines) is free of this bias: Lr3..Lr6 = −9/−13/−25/−35 µm/unit tgλ. Lr3/Lr4 follow from IB−OB Δtgλ ≈ +6–7·10⁻⁵·tgλ,
+  which is field-independent and so geometric. Details are in the handover's "Tree check" section.
