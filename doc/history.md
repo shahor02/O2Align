@@ -331,7 +331,9 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   reverted on epn224, so v19, v19rmc, the pedeEval and C1v18 ran unfixed, while v18 (epn000) had it (χ² ratio 0.894).
   Refits with 05.01.07 (11-07): v19 is 155k *below* v18, so the IB gauge costs nothing. C1v18 is again ≈ v18 and the B0 kink
   stays; its cosmics gain 123k over v18 at a collision cost of 34k (−89.5k combined), so collisions and cosmics are
-  compatible at weight 1 (`kink_cure.md` 6g, 6h).
+  compatible at weight 1 (`kink_cure.md` 6g, 6h). The combined fit in the v19 configuration (C1v19, 11-07) is 158k below
+  C1v18 on the same records: its cosmics gain 151k over v19 at a collision cost of 54k (−248k combined vs v18). It keeps the v19 OB z-odd c1·z pattern and the end-of-acceptance B0 kink, while the cosmics
+  halve the v19 OB s1·z term (`kink_cure.md` 6i).
 - OB dz-vs-tgλ structures (11-07): the standard checkResid Lr5/Lr6 are flat (|tgλ|<1.4) while the IOB (IB+PV extrapolation) ones
   reach 100–250 µm at Lr5/Lr6, growing with R; Lr0–2 flat to ±4 µm. First guess was an IB radial error of ~5 µm. A check on the
   `res` tree (same day) found that in B≠0 most of the IOB signal comes from the estimator, not from geometry. The IB(+PV) sub-track

@@ -471,6 +471,52 @@ overwritten. `solC1v18/millepede_labeled.res` is still the one of the unfixed fi
   v19 keeps the behaviour of the unfixed v19: kink removed at |tgλ| < 0.8, not at the ends. C1v18 is v18. At B± (q/pT
   constrained) all three are consistent with 0 within 2–3σ.
 
+## 6i. Combined fit in the v19 configuration (`solC1v19`)
+
+2026-11-07: v19 configuration, the same inputs as C1v18 (B0 + B+ + B− + cosmics, weight 1), epn224 Millepede 05.01.07.
+A copy is in `/data/devAlg/solC1v19` (alternative PC).
+
+| fit | χ² | χ²/ndf | rejected |
+|---|---|---|---|
+| C1v18 (05.01.07) | 432 067 126 | 0.9011 | 424 867 |
+| C1v19 (05.01.07) | 431 908 691 | 0.9007 | 423 206 |
+
+- **C1v19 is 158.4k below C1v18.** NREC and ndf are identical (14 277 030 records), so the v19 gain on collisions
+  (155k, 6h) survives with the cosmics added.
+- Cosmic evaluation (6f setup): C1v19 3 013 496 (cut) / 6 025 601 (nocut), the lowest of all solutions; v19 alone has
+  3 164 892 / 6 538 745.
+- Split of C1v19 (collisions = total − cosmics = 428 895 195):
+
+| against | cosmics | collisions | combined |
+|---|---|---|---|
+| v19 | −151.4k | +53.8k | −97.5k |
+| v18 | −147.3k | −100.6k | −247.9k |
+| C1v18 | −23.9k | −134.5k | −158.4k |
+
+- The cosmics cost the collisions 54k in the v19 configuration, against 34k in the v18 one: about +0.004 per record, still
+  compatible at weight 1. The cost is most likely the halved OB s1·z term (below).
+- Geometry (aligned chip centres):
+  - **IB:** within 0.3 µm of v19.
+  - **OB, relative to v18:** keeps the v19 z-odd rφ pattern. The c1·z term is +14 / +17 / +48 / +50 µm at Lr3–Lr6
+    (v19: +16 / +18 / +52 / +53) and s2·z is −10 / −11 / −29 / −31 µm.
+  - **Cosmics vs v19:** they reduce the s1·z term about by half: −7 / −7 / −18 µm at Lr4–Lr6, against −14 / −16 / −38
+    for v19. Near-vertical cosmics constrain exactly this pattern.
+  - **Tails:** 432 chips move > 60 µm relative to v19 (284 on Lr5, 117 on Lr6), mostly stave-end modules, as in 6g.
+- Kink (kinkMap, pp B0 562862, 600k tracks), dPar2 n = 2 (cos, sin) in µrad:
+
+| tgλ | v19 | C1v19 |
+|---|---|---|
+| [−2, −1.2] | (−119, 123) | (−87, 107) |
+| [−1.2, −0.8] | (−50, 34) | (−55, 45) |
+| [−0.8, −0.4] | (−14, −9) | (−14, 6) |
+| [0, 0.4] | (−6, −64) | (−9, −39) |
+| [0.8, 1.2] | (−101, 79) | (−96, 90) |
+| [1.2, 2] | (−106, 204) | (−115, 188) |
+
+  Errors are 13–22 µrad. C1v19 equals v19 within about 1.5σ, so the kink at |tgλ| > 0.8 remains. The dPar2 n0
+  term moves by up to +22 µrad at |tgλ| < 1.2. At B± (q/pT constrained, 562837 and 564644) all n = 2 terms are
+  within 3σ of 0, as for v18, v19 and C1v18.
+
 ## 7. Notes for Claude (environment)
 
 - Run ROOT through `bash -ic 'o2d >/dev/null 2>&1; root -l -b -q ...' < /dev/null`. `o2d` is an interactive alias; the
