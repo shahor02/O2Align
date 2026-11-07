@@ -517,6 +517,45 @@ A copy is in `/data/devAlg/solC1v19` (alternative PC).
   term moves by up to +22 µrad at |tgλ| < 1.2. At B± (q/pT constrained, 562837 and 564644) all n = 2 terms are
   within 3σ of 0, as for v18, v19 and C1v18.
 
+### Cosmics weighted ×3 (`solC1v19w3`)
+
+Same input and configuration as C1v19, cosmic files with weight 3 (steering `mpSteerV12CCw3.txt`).
+- Fit: converged, Sum(W·χ²) = 437 815 712, rejected 420 330 (C1v19: 423 206).
+- cosmEval: cosmics 2 924 129 (cut, 44 855 rejected) / 5 790 055 (nocut). Collisions = 437 815 712 − 3 × 2 924 129 =
+  429 043 325. Relative to C1v19 (both at weight 1):
+
+| | cosmics | collisions | combined |
+|---|---|---|---|
+| C1v19w3 − C1v19 | −89.4k | +148.1k | +58.8k |
+
+  The extra 89k gained on cosmics cost 148k on collisions (+0.012 per collision record, against +0.004 for C1v19 vs
+  v19), so the two samples are in tension beyond weight 1. C1v19 stays the preferred solution.
+- Geometry: IB within 0.2 µm of C1v19. OB rφ z-odd terms relative to v18, Lr3–Lr6:
+
+| term | v19 | C1v19 | C1v19w3 |
+|---|---|---|---|
+| s1·z | −3 / −14 / −16 / −38 | 0 / −7 / −7 / −18 | +2 / −1 / +6 / 0 |
+| c1·z | +16 / +18 / +52 / +53 | +14 / +17 / +48 / +50 | +12 / +15 / +41 / +43 |
+| s2·z | −10 / −12 / −25 / −33 | −10 / −11 / −29 / −31 | −8 / −9 / −27 / −27 |
+
+  The weight 3 removes the s1·z term completely and reduces c1·z by 15 %. The chip-level scatter grows: relative to v18
+  the OB dz rms is 23 / 22 µm at Lr5 / Lr6 (C1v19: 13 / 13), dr 16 / 18 µm (9 / 11). 301 chips move > 60 µm
+  relative to C1v19.
+- Kink, pp B0 562862, dPar2 n = 2 (cos, sin) in µrad (errors as above):
+
+| tgλ | C1v19 | C1v19w3 |
+|---|---|---|
+| [−2, −1.2] | (−87, 107) | (−60, 101) |
+| [−1.2, −0.8] | (−55, 45) | (−53, 51) |
+| [−0.8, −0.4] | (−14, 6) | (−20, 25) |
+| [0, 0.4] | (−9, −39) | (−13, −28) |
+| [0.8, 1.2] | (−96, 90) | (−99, 87) |
+| [1.2, 2] | (−115, 188) | (−125, 163) |
+
+  Within 1.3σ of C1v19: removing the s1·z term does not change the kink, so it is not what drives it. The |n1| amplitude
+  drops at |tgλ| < 1.2 (e.g. 65 → 23 µrad at [−1.2, −0.8]). B± (q/pT constrained): all n = 2 terms within 3σ of 0
+  except B− [1.2, 2] sin, 177 ± 56 µrad (C1v19: 87 ± 51).
+
 ## 7. Notes for Claude (environment)
 
 - Run ROOT through `bash -ic 'o2d >/dev/null 2>&1; root -l -b -q ...' < /dev/null`. `o2d` is an interactive alias; the
