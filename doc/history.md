@@ -341,3 +341,17 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   therefore biased by −tgλ·σ_C²·R³/24. At fixed pT, the Lr6 slope is −230 µm/unit tgλ for |C_IB/C_OB−1|>0.3 and −50 for <0.3.
   B0 (straight lines) is free of this bias: Lr3..Lr6 = −9/−13/−25/−35 µm/unit tgλ. Lr3/Lr4 follow from IB−OB Δtgλ ≈ +6–7·10⁻⁵·tgλ,
   which is field-independent and so geometric. Details are in the handover's "Tree check" section.
+- v10n OB chip out-of-plane (TY) and longitudinal (TZ) corrections (11-07). They are carried unchanged into all our
+  solutions, since OB chips are free only in TX, and many look unphysical (|TY|, |TZ| > 100 µm). All chips of a module share
+  the same rotation, so only the chip translations scatter. Net chip displacements from the ideal geometry confirm that the
+  scatter is real: it is not one level compensating another.
+  - Chips without data (2.7k OB chips with < 100 tracks in the C1v19 pp B0 + B+ + B− checkResid samples, mostly at the stave
+    ends) carry most of the outliers: their net z deviates from the module median by 210 µm (MAD).
+  - For chips with data the within-module scatter is 33–36 µm rms in modules without such chips. It is 75 µm (TY) and
+    126 µm (TZ) in modules with some.
+  - Per-chip residuals do not correlate with it. The per-chip ⟨dz⟩ has an rms of 11–16 µm (3.5 µm error), and the
+    regression on the v10n TZ deviation is 0.00 ± 0.02, also for the 1600 live chips with |TZ| > 100 µm. For TY (from the
+    dz-vs-tgλ slope) the regression is ≤ 0.1, up to 0.3 in Lr3 HS0.
+  - So the data support the v10n chip offsets of live chips at the 10–15 µm level, except possibly for coherent patterns at
+    the acceptance edge, which the interpolation does not see. The values of chips without data cannot be corrected by any
+    fit.
