@@ -12,8 +12,8 @@
 // Filter TrackCosmicsExtended tree selecting only tracks with >= nITSCL ITS cluster candidates,
 // Drop tfID branch as it is identical to the DPL TimingInfo 
 // Run in an O2 environment:
-//   root -l -b -q 'filterCosmicsITS2.C()'
-//   root -l -b -q 'filterCosmicsITS2.C("_its2", 3, true, true)'
+//   root -l -b -q 'skimCosmExt.C()'
+//   root -l -b -q 'skimCosmExt.C("_its2", 3, true, true)'
 // Arguments: output suffix (empty replaces inputs), minimum ITS clusters,
 // zero covariance matrices and both TPC dEdx objects, suppress empty TFs.
 // Inputs in the current directory: o2_cosmics_full.root and optional o2_tfidinfo.root.
@@ -35,7 +35,7 @@
 #include <vector>
 #endif
 
-void filterCosmicsITS2(const char* outSuffix = "", unsigned int nITSCl = 3, bool noEmpty = true, bool zeroCovAndDEdx = false)
+void skimCosmExt(const char* outSuffix = "", unsigned int nITSCl = 3, bool noEmpty = true, bool zeroCovAndDEdx = false)
 {
   using Cosmic = o2::dataformats::TrackCosmicsExtended;
   const char* inputName = "o2_cosmics_full.root";
