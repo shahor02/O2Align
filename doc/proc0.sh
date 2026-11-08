@@ -1,5 +1,7 @@
 #!/bin/bash
 
+: ${MYWDIR:="/data0/devAlg/tests"}
+
 source ~/alice/O2Align/install/init.sh
 #Lanes=3 Nthreads=5 runOPTL="-b --run" ./proc0.sh  | tee rr1.log
 
@@ -10,7 +12,7 @@ fi
 
 export ALICEO2_CCDB_CURL_TIMEOUT_DOWNLOAD=200
 
-: ${ConfString:="AlignParams.dofConfigJson=$Config;AlignParams.maxChi2Ndf=15;AlignParams.useMultiTrackPVConstraint=2;AlignParams.maxTracksPerMultiTrackPV=20;AlignParams.minITSClsTrack=6;AlignParams.MVTimeSlotsJson=/data0/devAlg/data/MV_B0BPBM.json;$EXTRACONF;"}
+: ${ConfString:="AlignParams.dofConfigJson=$Config;AlignParams.maxChi2Ndf=15;AlignParams.useMultiTrackPVConstraint=2;AlignParams.maxTracksPerMultiTrackPV=20;AlignParams.minITSClsTrack=6;AlignParams.MVTimeSlotsJson=$MYWDIR/../data/MV_B0BPBM.json;AlignParams.statInFile=$MYWDIR/Mille_V10N/procStat.root;$EXTRACONF;"}
 #: ${ConfString:="AlignParams.dofConfigJson=$Config;AlignParams.useMultiTrackPVConstraint=2;AlignParams.maxTracksPerMultiTrackPV=20;AlignParams.minITSClsTrack=6;AlignParams.MVTimeSlotsJson=/data0/devAlg/data/MV_B0BPBM.json"}
 #: ${ConfString:="AlignParams.dofConfigJson=$Config;AlignParams.useMultiTrackPVConstraint=2;AlignParams.maxTracksPerMultiTrackPV=20;"}
 #export ALICEO2_CCDB_LOCALCACHE=ccdb
@@ -24,7 +26,7 @@ export ALICEO2_CCDB_CURL_TIMEOUT_DOWNLOAD=200
 export DPL_DISABLE_TPC_TRIGGER_READER=1
 export DPL_REPORT_PROCESSING=1
 
-if [[ $OutType == *"MilleRes"* ]] || [[ $OutType == "MilleSteer" ]] || [[ $OutType == *"WeakModesDiag"* ]] ; then
+if [[ $OutType == *"MilleRes"* ]] || [[ $OutType == "MilleSteer" ]] || [[ $OutType == *"WeakModesDiag"* ]] || [[ $OutType == "Regularize" ]]  ; then
     : ${TimeStamp:=1746914681240}
       o2-dev-alignment-workflow  --shm-segment-size ${SHMSIZE:-8000000000} --disable-mc  --detectors ${DetList}  --output $OutType --hbfutils-config hbfutils --configKeyValues "HBFUtils.startTime=$TimeStamp;${ConfString};" ${runOPTL}
       echo "Extracted $OutType"
