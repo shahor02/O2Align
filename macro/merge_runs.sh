@@ -6,12 +6,12 @@ usage() {
     cat <<'EOF'
 Usage: merge_runs.sh [-f] DIRECTORY [DIRECTORY ...]
 
-Merge *.root files with the same basename into LHC*/RUN/merged/BASENAME.
+Merge all root files supplied */LHC*/<RUN>/*/ directories into */LHC*/<RUN>/merged/.
 Directories belonging to each run must be consecutive; their order is preserved.
 Only files directly inside the supplied directories are included.
 Use -f to overwrite existing outputs. Run in an O2 environment.
-Set HADDV to override the merger executable (default: haddv, haddv.py on PATH,
-or haddv.py beside this script).
+Set HADDV to override the merger executable (default: $O2Align/shared/macro/haddv.py).
+Note that haddv.py script works as the roor hadd utility but also concatenates the std::vectors.
 EOF
 }
 

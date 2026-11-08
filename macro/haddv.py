@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hadd with concatenation of std::vector<o2::dataformats::TFIDInfo>.
+"""hadd with concatenation of arbitrary std::vector<T> objects.
 
 Run inside an O2 environment with PyROOT and hadd on PATH.
 Examples:
@@ -11,6 +11,8 @@ Supports the common hadd flags listed by --help, rather than every hadd flag.
 Vectors (including those in directories) are concatenated in source order,
 without sorting or deduplication. Only the latest input key cycle is used,
 and each merged vector is stored in a single output key cycle.
+Element types must have ROOT dictionaries available in the current environment.
+Vectors at the same key path must have the same C++ type across all inputs.
 Local output only; input ROOT URLs are supported by ROOT.
 """
 
@@ -84,7 +86,7 @@ def vectors(ROOT, directory, prefix=''):
         path = prefix + name
         if cls and cls.InheritsFrom('TDirectory'):
             yield from vectors(ROOT, directory.Get(name), path + '/')
-        elif key.GetClassName().replace('std::', '').replace(' ', '') == 'vector<o2::dataformats::TFIDInfo>':
+        elif re.match(r'^(?:std::)?vector\s*<', key.GetClassName().strip()):
             yield path, directory.Get(name)
 
 
@@ -105,7 +107,6 @@ def main(argv=None):
     import ROOT
     ROOT.PyConfig.IgnoreCommandLineOptions = True
     ROOT.gROOT.SetBatch(True)
-    vector_type = ROOT.std.vector('o2::dataformats::TFIDInfo')
     merged = {}
     valid = []
     if args.a and target.exists():
@@ -121,7 +122,11 @@ def main(argv=None):
         try:
             for path, vector in vectors(ROOT, f):
                 if path not in merged:
-                    merged[path] = vector_type()
+                    merged[path] = type(vector)()
+                elif type(merged[path]) != type(vector):
+                    raise ValueError(
+                        f'Vector type mismatch at {path} in {source}: '
+                        f'{type(merged[path]).__cpp_name__} versus {type(vector).__cpp_name__}')
                 merged[path].insert(merged[path].end(), vector.begin(), vector.end())
             valid.append(source)
         finally:
@@ -129,7 +134,7 @@ def main(argv=None):
     if not valid:
         raise ValueError('No readable inputs')
     # Keep the old destination intact until both merging steps have succeeded.
-    with tempfile.TemporaryDirectory(prefix='.hadd_tfidinfo-', dir=target.parent) as work:
+    with tempfile.TemporaryDirectory(prefix='.haddv-', dir=target.parent) as work:
         temporary = Path(work) / 'merged.root'
         options = list(args.compression)
         for flag in ('O', 'T'):
@@ -155,7 +160,7 @@ def main(argv=None):
                 directory.Delete(name + ';*')
                 if directory.WriteObject(vector, name, 'Overwrite') <= 0:
                     raise OSError(f'Failed to write {path}')
-                print(f'{path}: {vector.size()} TFIDInfo records')
+                print(f'{path}: {vector.size()} elements ({type(vector).__cpp_name__})')
         finally:
             output.Close()
         if output.TestBit(ROOT.TFile.kWriteError):
@@ -172,5 +177,5 @@ if __name__ == '__main__':
     try:
         sys.exit(main())
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
-        print(f'hadd_tfidinfo: {error}', file=sys.stderr)
+        print(f'haddv: {error}', file=sys.stderr)
         sys.exit(1)
