@@ -30,3 +30,49 @@ so a dedicated treatment is needed.
   - Alternative without a post-fit step: per-chip `measurement` priors centred on the value that cancels the
     inherited deviation from the ideal placement. This only acts on parameters pede does not fix, and needs the
     module-mean constraints weighted by statistics (`weightedMean`), so the priors do not fight the constraint.
+
+## Regularize: common child rotations grow when the children translations are large
+
+With `Regularize` applied to the v10n alignment (`AlignParams.regularizeParents` including `ITSUModule[0-9]+`),
+the common rotation of the chips of a module gets larger rather than smaller. For example, on
+`ITS/ITSULayer6/ITSUHalfBarrel1/ITSUStave23/ITSUHalfStave1`:
+
+| module | chip rotation, v10n | chip rotation, regularized | mean chip \|t\|, v10n → regularized |
+|---|---|---|---|
+| Module0 | (−0.016, +0.039, +0.000) mrad | (−0.20, −0.25, +1.45) mrad | 210 → 159 µm |
+| Module1 | (+0.032, +0.051, +0.000) mrad | (−1.32, −0.27, +2.16) mrad | 167 → 94 µm |
+
+The angles are the local pitch, roll and yaw of the chips. In each module, all chips carry the same rotation, before
+and after. The sensor placement is unchanged (closure verified).
+
+**Cause.** The motion `e` transferred to the module is fitted to the corner displacements of its chips'
+bounding boxes ([Regularization.md](Regularization.md#estimating-the-common-motion)). In v10n these displacements come
+almost entirely from the chip translations, which are 100–300 µm and differ from chip to chip and between the two chip
+rows. The pattern looks like a mrad-level rotation of the module. The common chip rotation (16–51 µrad) is a rotation
+about each chip's own centre. Over a chip's half-size it moves the corners by less than 1 µm, and it is not a rigid
+motion of the module anyway (the "turbine" case of [Regularization.md](Regularization.md)). The sensors are kept in
+place, so every chip of the module gets the same counter-rotation `e⁻¹`. The common chip rotation therefore becomes
+about `−ω(e)`.
+
+**Check.** A least-squares fit of the module motion from the v10n chip deltas and the real chip boxes was made with
+the translations only and with the rotations only. This fit is the first IRLS iteration. The values are in the module
+frame:
+
+| module | ω, fit with translations only | ω, fit with rotations only | observed change of the chip rotation (sign flipped) |
+|---|---|---|---|
+| Module0 | (−0.59, +0.21, +2.34) mrad | (+0.001, +0.003, 0) mrad | (−0.19, +0.29, +1.45) mrad |
+| Module1 | (−1.52, +0.31, +2.16) mrad | (−0.002, +0.004, 0) mrad | (−1.35, +0.32, +2.16) mrad |
+
+The translations reproduce the transferred rotation. For Module0, the L1 iterations then move away from the
+least-squares starting point. The fit minimizes the summed corner displacement in cm, which counts a mrad chip
+rotation as almost free.
+
+**Options, if the children's rotations should stay small:**
+
+- Leave the level out: exclude `ITSUModule[0-9]+` from `regularizeParents`, so the chip→module level is not touched.
+  No code change is needed.
+- A translation-only transfer for selected parents: fit with ω = 0 and transfer only T. This needs a new parameter,
+  e.g. a regex `AlignParams.regularizeShiftOnlyParents`.
+- A penalty on the children's rotations: add a term λ²·Σᵢ‖Δωᵢ‖² to the robust fit, Δωᵢ being the change of child i's
+  own rotation implied by `e`, with λ a length (e.g. the child half-size or a few cm). A rotation then costs as much as
+  the corner shift it would produce at the distance λ, instead of almost nothing.

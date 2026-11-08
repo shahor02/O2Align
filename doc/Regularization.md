@@ -35,10 +35,13 @@ some levels.
 
 ```bash
 o2-dev-alignment-workflow -b --run --output Regularize --detectors ITS --disable-mc \
-  --hbfutils-config <some>/o2_tfidinfo.root \
+  --hbfutils-config hbfutils \
   --condition-remap "file://<dir>=ITS/Calib/Align,GLO/Config/GeometryAligned" \
   --configKeyValues "AlignParams.regularizeParents=ITSUStave[0-9]+|ITSUModule[0-9]+"
 ```
+
+Note that the `--hbfutils-config hbfutils` allows to pass the timestamp for CCDB access via ConfigurableParam, e.g. `--configKeyValues "HBFUtils.startTime=$TimeStamp;..."` 
+if the geometry (or any other object) should be downloaded from the CCDB.
 
 **The aligned geometry loaded (`GLO/Config/GeometryAligned`) must be the one obtained by applying
 the input alignment (`ITS/Calib/Align`) to the ideal geometry.** The ideal matrices are derived from
