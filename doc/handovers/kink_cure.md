@@ -559,7 +559,9 @@ Same input and configuration as C1v19, cosmic files with weight 3 (steering `mpS
 ### v20, cosmics ×3 (`solC1v20w3`)
 
 `doc/ITS_RB_v20.json` = v19 plus OB chip TY, TZ (priors 30 µm; the end-chip rules repeat them) and a stat-weighted
-module mean (`weightedMean` TX, TY, TZ, RY). Cosmics weighted 3 as in C1v19w3.
+module mean (`weightedMean` TX, TY, TZ, RY). Cosmics weighted 3 as in C1v19w3. The steering files were regenerated
+without `AlignParams.statInFile`, so the `weightedMean` rule fell back to the equal split: the module means are
+unweighted, as in v19 (`mp2con.txt` is identical to that of A2v20).
 - Fit: Sum(W·χ²) = 432 973 990, rejected 388 056; vs C1v19w3 −4.84 M with 32k fewer records rejected.
 - cosmEval: cosmics 1 887 592 (cut, 19 422 rejected) / 3 384 762 (nocut); C1v19w3: 2 924 129 (44 855) / 5 790 055.
   Collisions = 432 973 990 − 3 × 1 887 592 = 427 311 214. At weight 1:
@@ -604,6 +606,41 @@ module mean (`weightedMean` TX, TY, TZ, RY). Cosmics weighted 3 as in C1v19w3.
 
   The n = 2 kink is unchanged, and |n1| roughly halves at |tgλ| > 0.8 (93 → 46 and 175 → 141 µrad). B± (q/pT
   constrained): all terms within 2.7σ of 0; B− [1.2, 2] sin 108 ± 49 µrad (C1v19w3: 177 ± 56).
+
+### v20 without cosmics (`solA2v20`)
+
+Same steering files as C1v20w3 (equal-split module means, see above), collisions only.
+- Fit: Sum(χ²) = 427 056 594, rejected 367 783; vs A2v19 (428 841 347, 374 591) −1.78 M, close to the collision gain
+  of C1v20w3 over C1v19w3 (−1.73 M).
+- Chip moves vs v18, live chips (≥ 200 tracks), A2v20 / C1v20w3:
+  - c = ΔZ − t0·ΔR: rms 13 / 14, 12 / 13, 16 / 19, 22 / 25 µm (Lr3–Lr6), correlation 0.88–0.92 between the two fits.
+    The collisions alone fix it.
+  - Along the ray, a = (ΔR + t0·ΔZ)/√(1 + t0²): rms 27 / 51, 30 / 47, 34 / 58, 37 / 63 µm, correlation 0.53–0.79.
+    The difference C1v20w3 − A2v20 lies on the ray (corr(ΔZ, t0·ΔR) 0.96–0.98 at |t0| > 0.8). The cosmics roughly double
+    the projective component, which the collisions fix only weakly (z_PV spread and the priors).
+  - rφ: rms 8–38 µm, correlation 0.82–0.84.
+- cosmEval: 2 819 555 (cut, 43 538 rejected) / 5 530 044 (nocut). At weight 1:
+
+| | cosmics | collisions | combined |
+|---|---|---|---|
+| A2v20 − A2v19 | −345.3k | −1 784.8k | −2 130.1k |
+| C1v20w3 − A2v20 | −932.0k | +254.6k | −677.3k |
+| C1v19w3 − A2v19 (for comparison) | −240.8k | +202.0k | −38.8k |
+
+  - Without seeing them, v20 improves the cosmics by 345k (11 %; nocut −1.01 M): an independent confirmation of the
+    collision-determined part c.
+  - This is 27 % of the cosmic gain of C1v20w3 over A2v19. The rest, 932k, comes from the cosmic-driven projective
+    component. It costs the collisions 255k at cosmic weight 3, a ratio of 0.27, against 0.84 in v19: the chip TY/TZ
+    freedom makes the two samples much more compatible.
+  - The cosmics are needed to fix the projective component. Whether it is geometry or a cosmic-specific bias, e.g. of
+    the cluster position at the cosmic incidence, is not decided by these numbers.
+- Weak modes (`weakModes.json`, metric B, µm), A2v19 / C1v20w3 / A2v20: `elliptical_cos2phi` 9.2 / 15.5 / 21.6 and
+  `radialHarmonic2_cos2phi` −11.9 / −19.4 / −27.8, `curl` −0.1 / −1.8 / 4.1 and `tangentialPolar_r0t0` 0.0 / 2.9 / −6.8.
+  Each pair is correlated at −0.97 / −0.96 and cancels largely, so the bars cannot be read singly. Per-chip radial
+  cos2φ amplitude, A2v20 − A2v19 (Lr3–Lr6): +4.9 / +5.1 / −0.8 / −4.3 µm, an ellipse of Lr3/4 against Lr6. It lies on
+  the IP ray: along-ray part +4.2 / +5.8 / −1.1 / −3.9, collision-measured c ≤ 2.4 µm. C1v20w3 − C1v19w3 has the same
+  Lr3/4 cos2φ (+6.2 / +5.8), so the cosmics support that part. A2v20 − C1v20w3 is again on the ray (a up to 6 µm, mostly
+  sin2φ and Lr3/Lr6; c ≤ 2.5 µm). The layer rφ offsets change by ≤ 2 µm (the curl pair).
 
 ## 7. Notes for Claude (environment)
 

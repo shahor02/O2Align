@@ -372,3 +372,10 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
     1). Both samples now agree, unlike in C1v19w3, so the chip moves (including the projective component) are supported by
     tracks not pointing to the IP. An independent check (v20 without cosmics) is pending.
   - (`kink_cure.md` 6i.)
+  - The v20 steering files (C1v20w3 and A2v20) were regenerated without `AlignParams.statInFile`, so the `weightedMean`
+    rule fell back to the equal split. A2v20 (v20, no cosmics): −1.78 M vs A2v19. It reproduces C1v20w3 on the combination
+    the collisions measure, c = ΔZ − t0·ΔR (corr ≈ 0.9). Its projective component is half as large: that component in
+    C1v20w3 is driven by the cosmics.
+  - cosmEval of A2v20: cosmics −345k vs A2v19 without being in the fit, an independent confirmation of c. C1v20w3 gains a
+    further 932k on the cosmics for +255k on the collisions (v19: −241k for +202k), so the cosmics fix the projective
+    component at a small collision cost.
