@@ -358,3 +358,17 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   - So the data support the v10n chip offsets of live chips at the 10–15 µm level, except possibly for coherent patterns at
     the acceptance edge, which the interpolation does not see. The values of chips without data cannot be corrected by any
     fit.
+- v20 (11-08, `doc/ITS_RB_v20.json`: v19 plus OB chip TY, TZ, with priors of 30 µm and a stat-weighted module mean) was fitted
+  with cosmics ×3 (C1v20w3). It is 4.84 M below C1v19w3 and rejects 32k fewer records. The OB dz-vs-tgλ sigmoid shrinks
+  and sets in at larger |tgλ|; the Lr6 one, which was leakage of Lr5, disappears.
+  - The chips move mainly along the direction projective from the IP, ΔZ = tgλ·ΔR: 30–45 µm rms for live chips and up to
+    120 µm for chips without data. Collision tracks barely constrain this direction.
+  - The combination the collision tracks measure, ΔZ − tgλ·ΔR, is mostly stave-specific (stave-to-stave rms 25–40 µm at
+    |tgλ| > 1.4). That part of the sigmoid is therefore geometry, not a universal incidence bias.
+  - The part common to all staves is odd in tgλ, ≈ 20–35 µm at |tgλ| ≈ 1.8, with the same sign at Lr5 and Lr6. It could
+    still be a cluster-z incidence bias, since chip TY + TZ absorb any function of tgλ locally.
+  - The B0 n = 2 kink is unchanged. The OB s1·z term reappears with the sign opposite to v19 (+26 µm at Lr5/Lr6 vs v18).
+  - cosmEval: the cosmics gain 1.04 M (35 %, nocut −2.41 M) and the collisions 1.73 M vs C1v19w3 (−2.77 M combined at weight
+    1). Both samples now agree, unlike in C1v19w3, so the chip moves (including the projective component) are supported by
+    tracks not pointing to the IP. An independent check (v20 without cosmics) is pending.
+  - (`kink_cure.md` 6i.)

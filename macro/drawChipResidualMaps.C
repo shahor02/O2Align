@@ -45,8 +45,8 @@ R__LOAD_LIBRARY(libO2CCDB)
 #endif
 
 
-void drawChipResidualMaps(const char* input,  // input histomanager file from CheckResid workflow
-			  const char* output = "chipResidualMaps", // output name (pdf and root will be added)
+void drawChipResidualMaps(const char* input="checkResid_LHC25ab_562862_hman_AlgRS_PV1.root",  // input histomanager file from CheckResid workflow
+			  const char* output = "chipResidualMaps_B0", // output name (pdf and root will be added)
 			  const char* geometry = nullptr, // if empty, load from CCDB for run 566190
 			  int firstLayer = 0, int lastLayer = 6, int idOffset = 0,
 			  float nMads = 4.f)
@@ -62,7 +62,7 @@ void drawChipResidualMaps(const char* input,  // input histomanager file from Ch
     if (geometry && geometry[0]) {
       o2::base::GeometryManager::loadGeometry(geometry);
     } else {
-      gGeoManager = o2::ccdb::BasicCCDBManager::instance().getForRun<TGeoManager>("GLO/Config/Geometry", 566190);
+      gGeoManager = o2::ccdb::BasicCCDBManager::instance().getForRun<TGeoManager>("GLO/Config/GeometryAligned", 566190);
       if (!gGeoManager) {
         throw std::runtime_error("Cannot load GLO/Config/Geometry from CCDB for run 566190");
       }
@@ -109,6 +109,9 @@ void drawChipResidualMaps(const char* input,  // input histomanager file from Ch
           throw std::runtime_error("Missing chip geometry matrix");
         }
         const auto* xyz = mat->GetTranslation();
+        // getMatrix() may return a shared temporary in an ideal geometry.
+        // Copy coordinates before the reference-chip query overwrites it.
+        const double z = xyz[2];
         double phi = std::atan2(xyz[1], xyz[0]);
         // Unwrap about the first chip in each stave, including across 2*pi.
         auto* ref = geom->getMatrix(firstChip + localStave * nRows * nZ);
@@ -116,7 +119,7 @@ void drawChipResidualMaps(const char* input,  // input histomanager file from Ch
         double phi0 = std::atan2(r[1], r[0]);
         if (phi0 < 0) phi0 += 2 * std::acos(-1.);
         phi = phi0 + std::remainder(phi - phi0, 2 * std::acos(-1.));
-        rows[localStave * nRows + row].push_back({id, xyz[2], phi});
+        rows[localStave * nRows + row].push_back({id, z, phi});
       }
       auto meanPhi = [](const std::vector<Chip>& row) {
         double sum = 0;

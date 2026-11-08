@@ -556,6 +556,55 @@ Same input and configuration as C1v19, cosmic files with weight 3 (steering `mpS
   drops at |tgλ| < 1.2 (e.g. 65 → 23 µrad at [−1.2, −0.8]). B± (q/pT constrained): all n = 2 terms within 3σ of 0
   except B− [1.2, 2] sin, 177 ± 56 µrad (C1v19: 87 ± 51).
 
+### v20, cosmics ×3 (`solC1v20w3`)
+
+`doc/ITS_RB_v20.json` = v19 plus OB chip TY, TZ (priors 30 µm; the end-chip rules repeat them) and a stat-weighted
+module mean (`weightedMean` TX, TY, TZ, RY). Cosmics weighted 3 as in C1v19w3.
+- Fit: Sum(W·χ²) = 432 973 990, rejected 388 056; vs C1v19w3 −4.84 M with 32k fewer records rejected.
+- cosmEval: cosmics 1 887 592 (cut, 19 422 rejected) / 3 384 762 (nocut); C1v19w3: 2 924 129 (44 855) / 5 790 055.
+  Collisions = 432 973 990 − 3 × 1 887 592 = 427 311 214. At weight 1:
+
+| | cosmics | collisions | combined |
+|---|---|---|---|
+| C1v20w3 − C1v19w3 | −1 036.5k | −1 732.1k | −2 768.6k |
+| C1v20w3 − C1v19 | −1 125.9k | −1 584.0k | −2 709.9k |
+
+  The cosmics gain 35 % of their χ² (nocut −2.41 M) and reject 57 % fewer records. The ~47k new chip parameters are far
+  too few to explain this as fitting freedom, so the cosmics support the chip moves, including the IP-projective
+  component that collisions cannot see. The cosmics are in the fit, though: an independent check needs v20 without
+  cosmics (A2v20) evaluated with cosmEval.
+- OB dz vs tgλ (checkResid, fitted means): the sigmoid shrinks and sets in later in all three runs. pp B0 562862,
+  tgλ ≈ +1.5: Lr3 +24 → +14, Lr5 +35 → +18 µm; tgλ ≈ −1.9: Lr5 −84 → −64. The Lr6 one (−25 at +1.6, leakage of Lr5
+  into the Lr6 extrapolation) is gone.
+- Chip motion vs C1v19w3 (chips with ≥ 200 tracks in the three checkResid runs):
+  - Live chips move by 30–45 µm rms within their module, and chips with little or no data by 50–120 µm. Module means
+    move by 8–18 µm.
+  - The moves lie along the projective direction ΔZ = t0·ΔR, where t0 is the chip's mean tgλ (corr 0.86–0.94 at
+    |t0| > 0.8). Tracks from the IP do not see this direction; only the z_PV spread, the cosmics and the priors fix it.
+  - The combination the collision tracks measure, c = ΔZ − t0·ΔR, has an rms of 13–25 µm. Its stave-to-stave rms grows
+    from 3 µm at t0 ≈ 0 to 25–40 µm at |t0| > 1.4. Only 10–27 % of its variance is common to all staves at the same z.
+  - The common part is odd in t0, and is significant only at Lr5 and Lr6: +20 / +24 µm at t0 = −1.8, −32 / −36 µm at
+    +1.8.
+  - A single incidence bias f(tgλ) would be common to all staves. The stave-specific part therefore indicates geometry.
+    The common odd part, of the same sign at Lr5 and Lr6, is what a cluster-z incidence bias would look like. Chip
+    TY + TZ absorb any f(tgλ) locally, so they cannot tell the two origins apart.
+- Geometry vs v18, OB rφ: c1·z +7 / +8 / +23 / +28, s1·z +10 / +9 / +26 / +26 (Lr3–Lr6). The s1·z term removed by
+  C1v19w3 comes back with the sign opposite to v19, and c1·z halves. Chip dz rms vs v18 is 54 / 59 µm at Lr5 / Lr6
+  (C1v19w3: 23 / 22).
+- Kink, pp B0 562862, dPar2 (cos, sin) in µrad, C1v19w3 → C1v20w3:
+
+| tgλ | C1v19w3 | C1v20w3 |
+|---|---|---|
+| [−2, −1.2] | (−60, 101) | (−71, 140) |
+| [−1.2, −0.8] | (−53, 51) | (−57, 62) |
+| [−0.8, −0.4] | (−20, 25) | (−15, 40) |
+| [0, 0.4] | (−13, −28) | (−15, −33) |
+| [0.8, 1.2] | (−99, 87) | (−112, 77) |
+| [1.2, 2] | (−125, 163) | (−137, 140) |
+
+  The n = 2 kink is unchanged, and |n1| roughly halves at |tgλ| > 0.8 (93 → 46 and 175 → 141 µrad). B± (q/pT
+  constrained): all terms within 2.7σ of 0; B− [1.2, 2] sin 108 ± 49 µrad (C1v19w3: 177 ± 56).
+
 ## 7. Notes for Claude (environment)
 
 - Run ROOT through `bash -ic 'o2d >/dev/null 2>&1; root -l -b -q ...' < /dev/null`. `o2d` is an interactive alias; the
