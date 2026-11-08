@@ -10,6 +10,8 @@ Merge all root files supplied */LHC*/<RUN>/*/ directories into */LHC*/<RUN>/merg
 Directories belonging to each run must be consecutive; their order is preserved.
 Only files directly inside the supplied directories are included.
 Use -f to overwrite existing outputs. Run in an O2 environment.
+Unreadable inputs are logged and skipped. Failed merges are logged; remaining
+files and runs are still processed, with a nonzero exit status at the end.
 Set HADDV to override the merger executable (default: $O2Align/shared/macro/haddv.py).
 Note that haddv.py script works as the roor hadd utility but also concatenates the std::vectors.
 EOF
@@ -48,6 +50,7 @@ shopt -s nullglob
 declare -A lists=()
 names=()
 run_dir=
+status=0
 
 merge_run() {
     [[ -n $run_dir ]] || return 0
@@ -56,7 +59,12 @@ merge_run() {
     local name
     for name in "${names[@]}"; do
         printf 'Merging %s -> %s/merged/%s\n' "${run_dir##*/}" "$run_dir" "$name"
-        "$merger" "${options[@]}" "$run_dir/merged/$name" "@${lists[$name]}"
+        if "$merger" -k "${options[@]}" "$run_dir/merged/$name" "@${lists[$name]}"; then
+            :
+        else
+            printf 'merge_runs: Failed to merge %s/merged/%s; continuing\n' "$run_dir" "$name" >&2
+            status=1
+        fi
     done
 }
 
@@ -87,3 +95,4 @@ for directory in "$@"; do
     done
 done
 merge_run
+exit "$status"

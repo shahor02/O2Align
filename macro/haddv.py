@@ -14,6 +14,7 @@ and each merged vector is stored in a single output key cycle.
 Element types must have ROOT dictionaries available in the current environment.
 Vectors at the same key path must have the same C++ type across all inputs.
 Local output only; input ROOT URLs are supported by ROOT.
+Unreadable input files are logged and skipped.
 """
 
 import argparse
@@ -40,7 +41,7 @@ def arguments(argv):
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     for flag, help_text in [('-f', 'overwrite output (also -fN, -fk[N], -ff)'),
                             ('-a', 'append to existing output'),
-                            ('-k', 'skip unreadable input files'),
+                            ('-k', 'skip unreadable input files (enabled by default)'),
                             ('-O', 're-optimize tree baskets'),
                             ('-T', 'do not merge trees')]:
         p.add_argument(flag, action='store_true', help=help_text)
@@ -115,7 +116,7 @@ def main(argv=None):
         try:
             f = open_root(ROOT, source)
         except (OSError, ReferenceError) as error:
-            if not args.k or source == str(target):
+            if source == str(target):
                 raise
             print(f'Skipping {source}: {error}', file=sys.stderr)
             continue
@@ -136,7 +137,7 @@ def main(argv=None):
     # Keep the old destination intact until both merging steps have succeeded.
     with tempfile.TemporaryDirectory(prefix='.haddv-', dir=target.parent) as work:
         temporary = Path(work) / 'merged.root'
-        options = list(args.compression)
+        options = [*args.compression, '-k']
         for flag in ('O', 'T'):
             if getattr(args, flag):
                 options.append('-' + flag)
