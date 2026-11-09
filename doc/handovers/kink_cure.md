@@ -642,6 +642,99 @@ Same steering files as C1v20w3 (equal-split module means, see above), collisions
   Lr3/4 cos2φ (+6.2 / +5.8), so the cosmics support that part. A2v20 − C1v20w3 is again on the ray (a up to 6 µm, mostly
   sin2φ and Lr3/Lr6; c ≤ 2.5 µm). The layer rφ offsets change by ≤ 2 µm (the curl pair).
 
+### v21: v20 + OB chip RX/RY/RZ, cosmics ×3 (`solC1v21w3`)
+
+Steering also without `statInFile` (equal split). Results in `/data0/devAlg/tests/solC1v21w3`.
+- Fit: Sum(W·χ²) = 429 696 760, rejected 377 195; vs C1v20w3 (432 973 990, 388 056) −3.28 M.
+- cosmEval (cut): 1 767 358 (18 699 rejected). At weight 1:
+
+| | cosmics | collisions | combined |
+|---|---|---|---|
+| C1v21w3 − C1v20w3 | −120.2k | −2 916.5k | −3 036.8k |
+
+  The collision gain is larger than that of the whole v20 step (−1.73 M), and the collision part (424.39 M) is below
+  the collisions-only A2v20 (427.06 M).
+- Chip rotations, live chips, rms (max) in mrad: RX 1.0–1.2 (≤ 8), RY 0.15–0.8 (≤ 7.5), RZ 2.4–3.6 (≤ 17).
+- checkResid (Gaussian core of the 2D histograms; C1v19w3 / C1v20w3 / C1v21w3, all three runs alike):
+  - OB dz core σ: −1.0…−3.4 µm vs C1v20w3, e.g. Lr5 201.9 / 200.9 / 197.5 (562837). The rms over φ of the
+    per-bin dz means roughly halves (Lr5 4.5 / 4.0 / 2.1, Lr3 2.2 / 1.9 / 1.2 µm).
+  - dy: σ −0.05…−0.1 µm, means vs φ unchanged within ±0.3 µm. IB and vertex unchanged.
+  - dz vs tgλ: unchanged at |tgλ| < 1.5. At the edges Lr5 improves slightly; Lr3 (tgλ → +2) and Lr6 (tgλ → −2,
+    +42 vs +11 µm in 564644) partly return towards C1v19w3. Chip-level rotations do not change the stave-common sigmoid.
+- Weak modes: rmsDisplacement 80.4 → 72.7 µm, no mode amplitude grows beyond the v20 range.
+
+## 6j. IOB dz vs tgλ: OB vs (IB+PV) extrapolation, and the IB/OB rz-slope mismatch
+
+Merged from `doc/obsoleteNotes/handover_OB_dz_tgl_IOB_07_11_26.md` (2026-11-07, solA2v19 trees), which has the full
+tables. The IOB residual is the OB cluster vs the IB+PV sub-track extrapolation (and the IB cluster vs the OB sub-track),
+as in `checkResid_PV1_iob_hman.pdf` p.4 (dz vs Z) and p.8 (dz vs tgλ).
+
+**Established on 2026-11-07:**
+- **B≠0 IOB OB panels are an estimator artefact.** The IB+PV sub-track barely measures curvature: median
+  σ(q/pT)/|q/pT| is 0.37–0.60, against 0.10 for the OB sub-track. The extrapolated z is quadratic in C, so
+  dz = −tgλ·σ_C²R³/24. At fixed pT, the Lr6 slope is about −50 µm per unit tgλ for |C_IB/C_OB − 1| < 0.3 and about −230
+  above. That accounts for the 100–250 µm curves and for the deeper tgλ ≈ 1.2 dip in B± than in B0. Using the IOB residual
+  at B≠0 needs the IB sub-track q/pT fixed to the full-track value in CheckResidSpec (not done).
+- **B0 IOB is clean.** In A2v19, Lr3/Lr4 (−9/−13) match the IB−OB par1 + par3·(R − 12). The IB+PV line is steeper than the
+  OB line, Δtgλ ≈ +7·10⁻⁵·tgλ. par3 has no curvature bias and is field-independent. It differs between V10n and MP2, so it is
+  geometry. A common IB radial shift (~2 µm) or an IB/OB radial scale (7·10⁻⁵) does not also fit the vertex IOB value.
+- **Rigid Lr5/Lr6 offsets** are limited to a few µm: the B0 IOB excess over the Lr3–Lr4 line is −5/−11, and the standard
+  Lr5/Lr6 slopes (−2.7/−1.1) don't confirm even that.
+
+**Response to v19w3–v21 (2026-11-09).** These are linear slopes for |tgλ| < 1, in µm (par3 in 10⁻⁶) per unit tgλ, from
+±2σ Gaussian core fits of the per-run hman 2D histograms. The par3 values come out higher than the tree values of 11-07
+(A2v19 B0 87 vs 71), so compare only within this table.
+
+| B0 (562862) | IOB Vtx | IOB Lr3 | IOB Lr4 | IOB Lr5 | IOB Lr6 | IB−OB par1 | IB−OB par3 | std Lr5 |
+|---|---|---|---|---|---|---|---|---|
+| A2v19 | −9.1 | −8.8 | −12.8 | −26.2 | −33.8 | 3.8 | 87 | −2.8 |
+| C1v19w3 | −11.0 | −9.0 | −13.5 | −27.1 | −33.8 | 3.1 | 99 | −1.9 |
+| A2v20 | −14.1 | −8.5 | −13.1 | −24.4 | −32.5 | 1.8 | 108 | 0.8 |
+| C1v20w3 | −14.9 | −9.4 | −14.4 | −23.0 | −27.7 | 1.8 | 121 | 4.9 |
+| C1v21w3 | −13.7 | −9.6 | −14.0 | −22.7 | −27.8 | 2.8 | 113 | 2.9 |
+
+- **The IB/OB rz-slope mismatch is not cured by the OB chip DOFs. It grows:** par3 goes 87 → 108 with chip TY/TZ (A2v20)
+  and → 121 with the cosmics on top (C1v20w3). B+ and B− show the same ordering (B+ 65 / 77 / 88 / 100 / 93, B− 60 / 72 / 84 /
+  95 / 83 for A2v19 / C1v19w3 / A2v20 / C1v20w3 / C1v21w3). The IOB vertex slope follows (−9 → −15).
+- **The Lr5/Lr6 IOB excess drops by about 5 µm** in C1v20w3/C1v21w3 (Lr6 −34 → −28), while the collisions-only A2v20 barely
+  moves it. So this is the cosmic-driven projective component (6i), and the Lr5/Lr6 part of the user's IOB observation is
+  partly real and partly fixed by it.
+- So the remaining IOB signal is an IB-vs-OB slope difference that the collisions do not remove even with free OB chip
+  positions, and which the cosmics push further. Candidates: an IB-side (radial or z-scale) term, or a non-geometric bias of
+  the IB sub-track at the vertex. Next: par3 vs (z_PV, tgλ) per solution from the trees, and the IB half-barrel/stave
+  radial and z-scale freedoms (6d) in a fit with cosmics.
+
+## 6k. Per-chip residual maps (`rmap_*`, `macro/drawChipResidualMaps.C`) and the stave-end sigmoid
+
+The maps are per-chip Gaussian means of the checkResid residuals, per half barrel, for C1v21w3 (2026-11-09).
+- **Chip-to-chip structure at large |Z| is mostly statistical.** Group the chip columns by distance from the stave centre
+  and compare the three runs (B0 562862, B+ 562837, B− 564644). In every group the median |value| ≈ the mean error, and
+  χ²/n ≈ 2 at all |Z|, so the edges are not more significant than the centre. The error grows from 3–6 µm at the centre to
+  20–26 µm at the Lr5/Lr6 ends. The run-to-run correlation of the chip values is 0.1–0.35, about the same at all |Z|. The
+  reproducible part is √(corr·rms₁·rms₂) ≈ 5–8 µm per chip. With the median ± 4·MAD colour scale the noisy edge chips
+  saturate.
+- **The stave-common part at the edges is significant.** It is the sigmoid. Standard dz core means for
+  tgλ ∈ [−2, −1.6] / [1.6, 2] (B0, µm):
+
+| | A2v19 | C1v19w3 | A2v20 | C1v20w3 | C1v21w3 |
+|---|---|---|---|---|---|
+| Lr3 | −9.8 / 28.5 | −11.6 / 29.9 | −3.1 / 16.2 | −3.5 / 15.7 | −5.9 / 17.2 |
+| Lr5 | −30.2 / 52.5 | −34.8 / 55.3 | −16.0 / 32.5 | −14.3 / 32.3 | −10.7 / 29.2 |
+| Lr6 | 0.5 / −18.1 | 1.7 / −19.6 | −5.5 / −2.3 | −3.7 / 0.8 | 4.2 / −5.5 |
+
+  (B− 564644 is the same within 1–10 µm.) A2v20 = C1v20w3, so the cosmics neither cause nor remove what is left.
+- **Candidate reason why free chip DOFs stop at about half.** An odd-in-tgλ dz common to the staves is a radial displacement
+  even in z (bow-like, dz = t·Δr) or a Δz odd in z. These shapes are what the v17+ gauge pins, as sensor-projected
+  equations that chip DOFs cannot evade: the per-layer `bowing` groupModes (Δr = ε·z²), and the OB-wide `radialPolar_r0t0`,
+  `r0t2` (Δr = ε, ε·t²) and `longitudinalPolar_r0t1` (Δz = ε·t). The stave-specific part is absorbed, the common part
+  stays. The IB−OB tgλ mismatch ∝ tgλ (6j) is also of the pinned r0t0 / longitudinal r0t1 type. These polar p = 0 modes
+  are broken by the vertex and by the cosmics, so they need not be pinned in a fit with cosmics.
+- Test (not run): v21 without the per-layer `bowing` groupModes and the OB polar p = 0 modes, as C1 w3 and as A2. Look at
+  the edge sigmoid, at IB−OB par3 and at the χ², and check that the v15-era per-layer bow is supported by the cosmics.
+  Fast version prepared in `/data0/devAlg/tests/reducedFit` (README there). Everything is fixed at C1v21w3 except the OB
+  stave/half-stave/module DOFs (plus module RX) and the mean vertex, 10 223 free. The constraints are reduced with the fixed
+  labels moved to the right-hand side. S1 releases the five gauge equations above; S2 also releases `Ray mode dr`.
+
 ## 7. Notes for Claude (environment)
 
 - Run ROOT through `bash -ic 'o2d >/dev/null 2>&1; root -l -b -q ...' < /dev/null`. `o2d` is an interactive alias; the

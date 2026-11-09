@@ -343,7 +343,16 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   has no curvature information (median σ(q/pT)/|q/pT| = 37–60%), and z extrapolated over 35 cm is quadratic in q/pT. Its mean is
   therefore biased by −tgλ·σ_C²·R³/24. At fixed pT, the Lr6 slope is −230 µm/unit tgλ for |C_IB/C_OB−1|>0.3 and −50 for <0.3.
   B0 (straight lines) is free of this bias: Lr3..Lr6 = −9/−13/−25/−35 µm/unit tgλ. Lr3/Lr4 follow from IB−OB Δtgλ ≈ +6–7·10⁻⁵·tgλ,
-  which is field-independent and so geometric. Details are in the handover's "Tree check" section.
+  which is field-independent and so geometric. Details are in the handover's "Tree check" section
+  (`doc/obsoleteNotes/handover_OB_dz_tgl_IOB_07_11_26.md`, merged into `kink_cure.md` 6j on 11-09).
+  - 11-09: the OB chip DOFs do not remove this IB−OB slope mismatch, they increase it (B0 par3 87 → 108·10⁻⁶ for A2v19 → A2v20,
+    121 with cosmics ×3, 113 in C1v21w3; same ordering in B±). The B0 Lr5/Lr6 IOB excess over the Lr3–Lr4 line shrinks by
+    ~5 µm/unit tgλ only in the fits with cosmics, i.e. through the projective component (`kink_cure.md` 6j).
+  - 11-09, per-chip residual maps (`macro/drawChipResidualMaps.C`, C1v21w3): the chip-to-chip structure at large |Z| is
+    mostly statistical (run-to-run correlation 0.1–0.35, χ²/n ≈ 2 at all |Z|). The significant part is stave-common and is
+    the same with and without cosmics (A2v20 = C1v20w3). Candidate: the v17+ sensor-projected gauge (per-layer `bowing`,
+    OB `radialPolar_r0t0/r0t2`, `longitudinalPolar_r0t1`) pins exactly the stave-common odd-in-tgλ dz shapes
+    (`kink_cure.md` 6k).
 - v10n OB chip out-of-plane (TY) and longitudinal (TZ) corrections (11-07). They are carried unchanged into all our
   solutions, since OB chips are free only in TX, and many look unphysical (|TY|, |TZ| > 100 µm). All chips of a module share
   the same rotation, so only the chip translations scatter. Net chip displacements from the ideal geometry confirm that the
@@ -379,3 +388,7 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   - cosmEval of A2v20: cosmics −345k vs A2v19 without being in the fit, an independent confirmation of c. C1v20w3 gains a
     further 932k on the cosmics for +255k on the collisions (v19: −241k for +202k), so the cosmics fix the projective
     component at a small collision cost.
+- v21 = v20 + OB chip RX/RY/RZ (`solC1v21w3`, cosmics ×3): −3.28 M vs C1v20w3, of which −2.92 M collisions and −0.12 M
+  cosmics at weight 1. The gain shows in the checkResid widths and φ-uniformity of the OB dz (core σ −1…−3 µm, spread of
+  the dz means vs φ halved), not in the layer-averaged means vs tgλ: the OB sigmoid is unchanged (its edges at Lr3/Lr6
+  slightly worse). (`kink_cure.md` 6i.)

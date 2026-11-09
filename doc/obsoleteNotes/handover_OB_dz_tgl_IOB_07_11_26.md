@@ -2,6 +2,8 @@
 
 Date: 2026-11-07
 
+Superseded: merged into `doc/handovers/kink_cure.md` §6j (2026-11-09).
+
 Data: `/data/devAlg/solA2v19/checkResid_PV1_hman.pdf` (standard) and `checkResid_PV1_iob_hman.pdf`
 (OB clusters vs IB+PV sub-track extrapolation, IB clusters vs OB sub-track extrapolation), p.4 = dz vs Z,
 p.8 = dz vs tgλ. Only p.4 and p.8 were looked at, by eye. Tree (`res`) not yet used.
