@@ -734,6 +734,86 @@ The maps are per-chip Gaussian means of the checkResid residuals, per half barre
   Fast version prepared in `/data0/devAlg/tests/reducedFit` (README there). Everything is fixed at C1v21w3 except the OB
   stave/half-stave/module DOFs (plus module RX) and the mean vertex, 10 223 free. The constraints are reduced with the fixed
   labels moved to the right-hand side. S1 releases the five gauge equations above; S2 also releases `Ray mode dr`.
+  - **Result (11-09, ~1/7 of the collision statistics, MINRES-QLP, full-rank constraints):** S1 reached Sum(W·χ²) 61.706 M,
+    S2 61.685 M. No run with everything fixed at v21 on the same sample exists yet, so the absolute gain is unknown.
+  - **S1 changes nothing:** the common module shifts are ≤ 4–6 µm, module RX ≤ 0.1 mrad. Edge dz (B0, tgλ ∈ [−2, −1.6] /
+    [1.6, 2]): Lr3 −5.0 / 16.9, Lr5 −9.9 / 28.2 µm, against −5.9 / 17.2 and −10.7 / 29.2 for C1v21w3. Released, the gauge is
+    not used: the collisions + cosmics χ² does not want the stave-common edge shapes at module level.
+  - **S2 moves the sigmoid rather than curing it:** Lr5 at +2 goes 29 → 18 µm, but Lr6 worsens (−2 edge +4 → +11, +2
+    edge −5 → −11). The common module TY oscillates along the stave (Lr5 +12 / −13, Lr6 +16 / −10 µm at modules 1 / 3),
+    which looks like the released projective direction rather than a bow.
+  - **Conclusion:** the gauge-pinning hypothesis is not confirmed. With the freedom to remove the stave-common edge dz, pede
+    does not do it. Most likely its track model sees no such residual at the edge chips, while checkResid does. Next: compare the
+    per-chip GBL residuals (`debugTracksFraction` → `gbltrack`, MilleData stage run with the C1v21w3 aligned geometry on
+    a small sample) with the checkResid maps for the same geometry.
+  - **GBL vs checkResid, same tracks (11-09).** Inputs: debug trees `/data0/devAlg/tests/Mille_C1V21/mille{B0,BPlus,BMinus}`
+    (geometry of reducedFit/S1, PV mode 2, 2000 TFs) and checkResid of reducedFit/S1. 300 701 7-cluster B0 tracks matched by
+    the sensor and z of their Lr3 and Lr6 clusters (tgλ difference rms 6·10⁻³). Core means for tgλ ∈ [−2, −1.6] / [1.6, 2], µm:
+
+| | checkResid dz | GBL dzUnb | per-track difference at [1.6, 2] (corr) |
+|---|---|---|---|
+| Lr3 | −6.5 / 16.5 | −0.5 / 1.2 | 13.4 (0.75) |
+| Lr4 | 1.5 / 8.5 | 2.9 / −5.9 | 14.2 (0.19) |
+| Lr5 | −12.5 / 30.9 | −1.6 / 7.1 | 23.7 (0.58) |
+| Lr6 | 3.1 / −3.8 | 1.9 / 1.6 | −2.5 (0.92) |
+
+    The sigmoid is a property of the residual estimator, not of the geometry or of the track sample. PV contributors only
+    (`t.composed`) give the same flat GBL values. The checkResid Lr5 residual is in effect an outward extrapolation (rms
+    1050 µm vs 345 µm for GBL); at Lr6 both are one-sided and agree.
+  - **Where the GBL fit puts it.** The fitted kinks have systematic means, odd in tgλ, much larger at large |tgλ|
+    (`kinkZ`, B0, core means, µrad, tgλ = −1.9 … +1.7):
+    - Lr0: +256 … −452
+    - Lr1: +86 … −88
+    - Lr3: about −100 at tgλ 0.9–1.3
+    - Lr4: +374 at 1.7
+
+    The straight B0 lines through the aligned geometry are not consistent at large |tgλ|. GBL absorbs this as scattering,
+    which is cheap with the p = 0.6 GeV assumed for all B0 tracks (σ_MS ≈ mrad). So pede pays little for it, and
+    checkResid shows it as the inner/outer prediction mismatch.
+  - **B±, `debug_algPM.root`.** With pT > 2 the OB kinks are as large as with pT < 1, i.e. they do not scale with 1/p. They
+    are a fixed-angle misfit, not scattering:
+    - kinkZ at tgλ +1.8: Lr3 +286, Lr4 +300, Lr5 +133 µrad;
+    - at −1.8: −75 / −109 / +12 µrad;
+    - pulls 0.2–0.3.
+
+    pede does see it in the B≠0 data. At fixed cluster Z (B±, pT > 1), the Lr3 kink at z ∈ [24, 32] cm changes sign with
+    tgλ: −131 at 1.1, −24 at 1.4, +139 at 1.6, +468 µrad at 1.9. Lr4 at z ∈ [30, 40] cm goes −27 … +559 µrad. Tracks of
+    different tgλ through the same chip come from different z_PV and cross other chips in the other layers, so this alone
+    does not exclude geometry. checkResid dz at fixed tgλ shows no significant cluster-size dependence (±8 µm, at the
+    statistical level).
+  - **S3: edge chips free together with the released gauge** (`reducedFit/S3`, S1 plus TY, TZ, RX of the 8 064 chips of
+    the end modules, priors 30 µm / 1 mrad; 34 415 free, 3 410 constraints, full rank; reduced statistics as S1/S2).
+    - pede Sum(W·χ²) 61 324 771 vs S1 61 706 226 (−381k) and S2 61 685 055, with 63 667 rejected records vs 66 268.
+    - The end chips move a lot: median |Δ| vs C1v21w3 TY 16–31 µm, TZ 6–41 µm (Lr4 smallest, Lr5 largest), RX 0.4–0.9 mrad;
+      p90 TZ 90–130 µm at Lr3/5/6. All Lr5/6 end chips have < 2k entries in this sample, so the moves are prior-limited.
+    - checkResid dz edge bins (µm, tgλ ∈ [−2,−1.6] | [−1.6,−1.3] | [1.3,1.6] | [1.6,2]), pp B0 562862:
+
+      | | S1 | S3 |
+      |---|---|---|
+      | Lr3 | −5.0, 0.2, 2.8, 16.9 | −1.4, 2.1, 2.1, 14.6 |
+      | Lr4 | 1.6, 3.9, −5.0, 6.5 | 7.4, 7.3, −8.0, 0.2 |
+      | Lr5 | −9.9, −3.5, 6.5, 28.2 | 7.2, 5.2, 3.0, 19.0 |
+      | Lr6 | 1.4, −0.6, 1.1, −4.9 | 5.1, 1.9, −0.7, −6.0 |
+
+      B+ 562837 and B− 564644 behave the same (Lr5 B−: −16.2 … 28.9 → −2.4 … 20.1). The odd part at Lr5 drops from 19 to
+      6 µm, but an even part of +5…+13 µm appears at Lr4/Lr5, so the dz vs tgλ curves are not flatter overall.
+    - GBL kinks do not shrink, they are redistributed. B0 kinkZ at tgλ +1.8: Lr3 165 → 61, Lr4 374 → 272 µrad, but Lr5 at
+      −1.8 14 → 113. B±, pT > 2: Lr3 at −1.8 −75 → +81, Lr5 at −1.8 12 → 181 µrad. GBL dzUnb (B0) was flat already in S1
+      and stays flat.
+    - **χ² weight of the misfit.** Averaged over all tracks, the mean OB kink pull per tgλ bin is ≤ 0.06 (B0 and B±, S3
+      trees, debugTracksFraction = 1, 2000 TFs). Σ N·⟨pull⟩² over the tgλ bins is 0.1–1.8k per layer, against ~2M of
+      Σ pull². Removing the mean kinks entirely would gain pede only a few k per 2000 TFs. The sigmoid is nearly free in
+      χ² terms, so the fit has almost no lever to remove it, and moves of the end chips by tens of µm buy much more χ²
+      elsewhere than they cost or gain at the edges.
+- **IB staves at the half-barrel boundaries (dY).** Weighted per-stave means over the 9 chips, C1v21w3.
+  - The standard dY is flat everywhere, within ±1 µm.
+  - IOB dY in B0 (562862, IB cluster vs OB sub-track extrapolation): last stave of each half barrel +17…+21 µm in all
+    three layers (L0 S5/S11 18/21, L1 S7/S15 17/19, L2 S9/S19 17/17). First stave of HB1 +11, first of HB0 +1…+3,
+    middle staves 0…−3. It is cos2φ-like with a positive mean, and decreases from L0 to L2 by up to ×1.2, as expected
+    from a direction kink about R ≈ 12 cm ((12 − r) lever).
+  - B+ (562837) and B− (564644) give HB0 +6…+7 / −5…−7 and HB1 −7…−8 / −10…−11 at the same staves.
+  - This is the B0 IB/OB kink of §1–6 in map form. It depends on the field, so it is not visible in the full-track
+    residuals and not fixed by a single geometry. B0 cosmics also preferred the kink cure (§6f).
 
 ## 7. Notes for Claude (environment)
 

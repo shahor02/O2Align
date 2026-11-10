@@ -353,6 +353,11 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
     the same with and without cosmics (A2v20 = C1v20w3). Candidate: the v17+ sensor-projected gauge (per-layer `bowing`,
     OB `radialPolar_r0t0/r0t2`, `longitudinalPolar_r0t1`) pins exactly the stave-common odd-in-tgλ dz shapes
     (`kink_cure.md` 6k).
+  - 11-09, reduced refits on top of C1v21w3 (`/data0/devAlg/tests/reducedFit`, all fixed except a chosen subset) do not
+    confirm the gauge candidate. Releasing those gauge equations with the OB modules free (S1, S2) changes the sigmoid
+    little. Also freeing the end-module chips (S3) moves them by tens of µm and trades the odd part of the sigmoid for an even
+    one, while the GBL kinks are only redistributed. The mean kink pulls are ≤ 0.06, so the sigmoid costs pede only a few k χ²
+    per 2000 TFs: the fit has almost no lever on it (`kink_cure.md` 6k).
 - v10n OB chip out-of-plane (TY) and longitudinal (TZ) corrections (11-07). They are carried unchanged into all our
   solutions, since OB chips are free only in TX, and many look unphysical (|TY|, |TZ| > 100 µm). All chips of a module share
   the same rotation, so only the chip translations scatter. Net chip displacements from the ideal geometry confirm that the
