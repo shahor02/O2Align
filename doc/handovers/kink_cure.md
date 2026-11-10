@@ -805,6 +805,64 @@ The maps are per-chip Gaussian means of the checkResid residuals, per half barre
       Σ pull². Removing the mean kinks entirely would gain pede only a few k per 2000 TFs. The sigmoid is nearly free in
       χ² terms, so the fit has almost no lever to remove it, and moves of the end chips by tens of µm buy much more χ²
       elsewhere than they cost or gain at the edges.
+  - **S1R/S2R/S3R and S1RR/S2RR/S3RR (11-10).** Same free sets, new collision Mille data (`Mille_V10N_Rigid`,
+    `badProcRigid.sh`: B0 tracks assigned pT = 1.5 GeV instead of 0.6, B± pT > 2, PV mode 4, maxChi2Ndf 10). R = B0 + B± +
+    cosmics, RR = without the B0 collisions.
+    - Neither changes the sigmoid. The checkResid edge-bin dz of R and RR equals that of the plain S1/S3 within 1–3 µm, in all
+      three runs. Example, Lr5 562862 [1.6,2]: S1/S1R/S1RR 28.2/26.8/27.9, S3/S3R/S3RR 19.0/19.3/19.7 µm.
+    - The end-chip moves of S3, S3R and S3RR correlate at 0.85–0.94 (Lr3–5 TY/TZ/RX) and 0.4–0.8 at Lr6. The B0
+      collisions with their pT hypothesis do not drive them.
+    - The χ² weight stays negligible.
+      - V10n geometry trees of `Mille_V10N_Rigid` (10% of the tracks): the mean edge kink pulls grow to 0.1–0.2, but
+        Σ N·⟨pull⟩² is 0.1% (B0) to 0.6% (B±) of Σ pull².
+      - checkResid, Σ_tgλ N·(mean/σ)² of dz: 0.5–6k per layer for 3–4.5M tracks, of which only 0.2–1.3k come from
+        |tgλ| > 1.3. Compare with the 199k that S3R gains over S1R.
+      - Less GBL scattering freedom does not give the fit a lever.
+  - **S3R with a boosted edge sample (11-10, overwrites the S3R above).**
+    - Data: an edge-only B± file (|tgλ| > 1.2 via `tgLCut=-1.2`, ≥ 4 ITS clusters, pT > 1.5) at weight 30, the old
+      Mille_V10N B0 (6 files) and the cosmics at weight 2, with no normal B± files.
+    - The edges improve (564644: Lr6 at tgλ −2 58 → 16 µm, Lr3 −26 → −10, Lr5 at +2 37 → 24).
+    - The bulk is distorted:
+      - a new odd dz term of ∓8…10 µm at Lr3/Lr5 for 0.3 < |tgλ| < 0.9;
+      - dz vs φ at Lr3/Lr5 −4…−8 µm for φ < π and +2…+6 µm above;
+      - dy vs φ structures of 10–18 µm at Lr4/Lr5.
+    - The fit reshuffles every level by about its full amplitude (rms of the change vs S3RR: stave TX 9, module TX 21,
+      module TZ 24, chip TY/TZ 22/29 µm). The shared stave/module DOFs absorb the weight-30 edge tracks, with nothing at
+      normal weight to hold the bulk.
+  - **S4R (11-10): only the OB stave ends free**, everything else at C1v21w3 (`reducedFit/README.md`).
+    - Free set: end modules (all 5 DOFs) with their chips' TY/TZ/RX, plus Lr5/6 Module1/5. Priors are 100 µm.
+    - Data: the full normal Mille_V10N, the edge-only B± at weight 15, and the cosmics at weight 3.
+    - First real improvement of the +tgλ edge. dz at [1.6, 2], C1v21w3 → S4R (µm):
+
+      | run | Lr3 | Lr5 |
+      |---|---|---|
+      | 562862 (B0) | 17.2 → 9.6 | 29.2 → 9.8 |
+      | 562837 (B+) | 11.9 → 2.9 | 24.8 → 3.1 |
+      | 564644 (B−) | 13.2 → 4.6 | 30.2 → 9.5 |
+
+    - At negative tgλ, Lr5 [−2, −1.6] improves less: −13…−17 → −6…−12 µm.
+    - The bulk (|tgλ| < 1.2) is unchanged by construction.
+    - IOB at the edges:
+      - dPar3 at tgλ 1.83: B0 −27 → −3·10⁻⁵, B+ −51 → −28·10⁻⁵, B− −37 → −14·10⁻⁵;
+      - dPar1 at 1.83: B0 26 → 5 µm, B+ 47 → 29 µm.
+    - The central dPar3 wave (≈ +1.3·10⁻⁴·tgλ for |tgλ| < 1.2, all fields) is unchanged. S1 (OB radial and z-scale
+      gauges released) made it slightly larger.
+    - The IOB dz vs Z is unchanged.
+  - **Vertex dz vs tgλ (S4R, same in C1v21w3).** The slope, fitted in |tgλ| < 1.5, is the same for q+ and q− and nearly
+    pT-independent:
+    - B+ 562837: −1.8…−2.9 µm per unit tgλ;
+    - B− 564644: −0.1…−0.4;
+    - B0 562862: −0.7.
+
+    It acts as an effective radial offset between the IB extrapolation and the PV of ~2 µm in B+ and ~0 in B−. Field
+    polarity and period (B+ and B0 are LHC25ab, B− is LHC25ah) are not separated with these runs.
+  - **Lr0 dY rise at |z| > 12 cm (p.3).**
+    - The tracks come from vertices at |z_vtx| ≈ 12 cm with tgλ ≈ 0, so they cross the last chip of all three IB layers.
+    - For them, the vertex dy is −5…−8 µm at both z ends, for both charges and in all three fields. Lr0 shows only
+      +1…+1.5 µm of leakage.
+    - It is the same in all 12 staves. A rigid end-chip rotation (chip RY is free) is not the lever.
+    - A signed rφ DCA common to all azimuths is a track-direction effect, not a vertex-position error. The IB at its stave
+      ends is displaced in rφ relative to the OB line, even in z.
 - **IB staves at the half-barrel boundaries (dY).** Weighted per-stave means over the 9 chips, C1v21w3.
   - The standard dY is flat everywhere, within ±1 µm.
   - IOB dY in B0 (562862, IB cluster vs OB sub-track extrapolation): last stave of each half barrel +17…+21 µm in all

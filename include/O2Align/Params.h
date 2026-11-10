@@ -22,6 +22,7 @@ namespace o2::alignrs
 struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // Track selection for alignment
   float minPt = 0.4f;     // minimum pt required
+  float tgLCut = 5.f;     // maximum or minimum |tgLambda| if >0 or <0
   int minITSClsTrack = 7; // minimum number of ITS clusters in the full track
   int minITSClsAB = 4;    // minimum number of ITS clusters in the AB track
 

@@ -358,6 +358,13 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
     little. Also freeing the end-module chips (S3) moves them by tens of µm and trades the odd part of the sigmoid for an even
     one, while the GBL kinks are only redistributed. The mean kink pulls are ≤ 0.06, so the sigmoid costs pede only a few k χ²
     per 2000 TFs: the fit has almost no lever on it (`kink_cure.md` 6k).
+  - 11-10, the same refits on new collision data, with B0 tracks at an assumed 1.5 GeV and B± at pT > 2, with and without
+    the B0 collisions (S*R, S*RR), give the same sigmoid and the same end-chip moves (correlation 0.85–0.94). Reducing
+    the GBL scattering freedom does not give the sigmoid a χ² weight (`kink_cure.md` 6k).
+  - 11-10, `AlignParams.tgLCut` was added to write edge-only Mille data (|tgλ| > 1.2, ≥ 4 ITS clusters, B± pT > 1.5).
+    Boosting it with the bulk free (S3R) distorts the bulk. With only the OB stave ends free (S4R) it halves to removes the
+    +tgλ edge sigmoid and most of the IOB edge kink. The central IOB dtgλ wave, the B+ vertex dz-vs-tgλ slope and the
+    Lr0 |z| > 12 cm dY rise stay (`kink_cure.md` 6k).
 - v10n OB chip out-of-plane (TY) and longitudinal (TZ) corrections (11-07). They are carried unchanged into all our
   solutions, since OB chips are free only in TX, and many look unphysical (|TY|, |TZ| > 100 µm). All chips of a module share
   the same rotation, so only the chip translations scatter. Net chip displacements from the ideal geometry confirm that the

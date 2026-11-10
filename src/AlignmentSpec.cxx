@@ -784,6 +784,10 @@ void AlignmentSpec::collectVertexTracks(const V2TRef& trackRef, bool useVertexCo
       if (!mFieldOFF && trPar.getPt() < mParams->minPt) {
         continue;
       }
+      auto tgLA = std::abs(trPar.getTgl());
+      if ((mParams->tgLCut > 0.f && tgLA > mParams->tgLCut) || (mParams->tgLCut < 0.f && tgLA < -mParams->tgLCut)) {
+        continue;
+      }
       ++mProcessingStats.nTrc;
       auto& tr = resTracks.emplace_back();
       tr.gid = trackIndex;
