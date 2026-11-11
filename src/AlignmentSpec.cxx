@@ -740,6 +740,14 @@ void AlignmentSpec::process() // collisions
   for (int ivref = 0; ivref < nvRefs; ivref++) {
     // the last reference holds the tracks not attached to any vertex
     const PVertex* vtx = (ivref < nvRefs - 1) ? &primVertices[ivref] : nullptr;
+    if (vtx) {
+      auto zvAbs = std::abs(vtx->getZ());
+      if ((mParams->PVZCut > 0.f && zvAbs > mParams->PVZCut) || (mParams->PVZCut < 0.f && zvAbs < -mParams->PVZCut)) {
+        continue;
+      }
+    } else if (mParams->PVContributorsOnly) {
+      continue;
+    }
     if (mParams->verbose > 0) {
       LOGP(info, "processing vtref {} of {} with {} tracks, {}", ivref, nvRefs, primVer2TRefs[ivref].getEntries(), vtx ? vtx->asString() : std::string{});
     }
@@ -1032,6 +1040,11 @@ void AlignmentSpec::initOnFirstTF()
     o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
   }
   buildHierarchy();
+  if (mITS) {
+    if (!mParams->ITSSensRequest.empty()) {
+      mITS->setRequestedChips(mParams->ITSSensRequest);
+    }
+  }
   if (mTPC) {
     mTPCParam = std::make_unique<o2::gpu::GPUParam>();
     mTPCParam->SetDefaults(o2::base::PropagatorD::Instance()->getNominalBz(), false);
@@ -1040,7 +1053,7 @@ void AlignmentSpec::initOnFirstTF()
   }
   if (mTRD) {
     mTRD->initCalib();
-  }
+  }  
   if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes] && !mCosmicsExt) { // the vertexer is not used for cosmics
     initVertexer();
   }

@@ -14,6 +14,7 @@
 
 #include <vector>
 #include <array>
+#include <string>
 #include "DataFormatsITSMFT/ClusterID.h"
 
 #include "DataFormatsITSMFT/CompCluster.h"
@@ -68,6 +69,10 @@ class DetectorITS : public Detector
   /// from the outer parameters with the covariance reset. `track` keeps its PID. Used for the PV refit.
   bool refitITSTrack(o2::globaltracking::RecoContainer* recoData, GTrackID gidITS, o2::track::TrackParCov& track) const;
 
+  /// Require the tracks to be contributed by at least one chip from the list: comma-separated chip IDs or
+  /// ranges with hyphen (e.g. "0-11,25,300-310"). Empty string: no requirement.
+  void setRequestedChips(const std::string& req);
+
   const std::vector<FrameInfoExt>& getPointsInfo() const { return mITSPointsInfo; }
 
   std::string reportDOFSummary() const final;
@@ -89,6 +94,7 @@ class DetectorITS : public Detector
   std::vector<int> mITSOvlClusRef;
   std::array<int, o2::itsmft::MaxClusLayers> mITSLayerOffsets{};
   std::vector<FrameInfoExt> mITSPointsInfo;
+  std::vector<char> mRequestedChip; // per chip: the track must be contributed by at least one of the flagged chips; empty = no requirement
   bool mCosmGoldActive{false};      // the golden selection is applied to the current cosmic
   std::vector<bool> mCosmGoldKeep;  // per clITS of the current cosmic: hit kept by the golden selection (all false if the cosmic is not golden)
 };

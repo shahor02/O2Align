@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "Framework/Logger.h"
+#include "CommonUtils/StringUtils.h"
 #include "DataFormatsGlobalTracking/RecoContainer.h"
 #include "ITS3Reconstruction/IOUtils.h"
 #include "ITS3Reconstruction/TopologyDictionary.h"
@@ -268,6 +269,31 @@ bool DetectorITS::refitITSTrack(o2::globaltracking::RecoContainer* recoData, GTr
   return true;
 }
 
+void DetectorITS::setRequestedChips(const std::string& req)
+{
+  mRequestedChip.clear();
+  if (req.empty()) {
+    return;
+  }
+  const int nChips = o2::its::GeometryTGeo::Instance()->getNumberOfChips();
+  mRequestedChip.assign(nChips, 0);
+  for (const auto& tok : o2::utils::Str::tokenize(req, ',')) {
+    const auto dash = tok.find('-');
+    int lo = 0, hi = 0;
+    try {
+      lo = std::stoi(tok.substr(0, dash));
+      hi = dash == std::string::npos ? lo : std::stoi(tok.substr(dash + 1));
+    } catch (const std::exception&) {
+      LOGP(fatal, "Failed to interpret ITS chip request entry {:?} of {:?}", tok, req);
+    }
+    if (lo < 0 || hi < lo || hi >= nChips) {
+      LOGP(fatal, "Invalid ITS chip request entry {:?}: must be within 0-{} with lo<=hi", tok, nChips - 1);
+    }
+    std::fill(mRequestedChip.begin() + lo, mRequestedChip.begin() + hi + 1, 1);
+  }
+  LOGP(info, "ITS tracks must be contributed by at least 1 of {} requested chips ({})", std::count(mRequestedChip.begin(), mRequestedChip.end(), 1), req);
+}
+
 bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, const GlobalIDSet& ids, Track& resTrack)
 {
   const auto& params = Params::Instance();
@@ -317,12 +343,14 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   };
 
   int nPoints = 0;
+  bool hasRequestedChip = mRequestedChip.empty();
   auto registerCluster = [&](int composedID) {
     const int clusID = flatClusterIndex(composedID);
     auto& curInfo = mITSPointsInfo[clusID];
     if (curInfo.cluster.getBits() && curInfo.cluster.isBitSet(DetectorITS::EdgeFlags::Biased)) {
       return;
     }
+    hasRequestedChip = hasRequestedChip || mRequestedChip[curInfo.cluster.getSensorID()];
     frameArr[curInfo.lr] = &curInfo;
     clusIDArr[curInfo.lr] = clusID;
     ++nPoints;
@@ -343,7 +371,7 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       registerCluster(abTrackClusIdx[clEntry + icl]);
     }
   }
-  if (nPoints < (useITS ? params.minITSClsTrack : params.minITSClsAB)) {
+  if (nPoints < (useITS ? params.minITSClsTrack : params.minITSClsAB) || !hasRequestedChip) {
     return false;
   }
 

@@ -29,7 +29,9 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   // Track selection for PV refitting
   float minPtPV = 0.3f; // minimum pt required for tracks used in PV refitting
   int minITSClsPV = 4;  // minimum number of ITS clusters in the track used for PV refitting
-  // PV constraint
+
+  // PV selection and constraints
+  float PVZCut = 30.f;              // maximum or minimum |Vz| if >0 or <0
   int usePVConstraintMinTracks = 5; // minimum number of tracks to use PV constraint
   // steering of multi-track PV constraint:
   // 0: no multi-track PV constraint,
@@ -40,6 +42,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   //    each a separate composed trajectory with its own free vertex; the non-contributors w/o PV constraint, as in 2
   int useMultiTrackPVConstraint = 1;
   int maxTracksPerMultiTrackPV = 15;      // maximum number of tracks to use for multi-track PV constraint (mode 4: per group),
+  bool PVContributorsOnly = false;        // discard tracks not contributing to PV
   bool refitVtxFollowsMV = true;          // per-track PV constraint: the refitted vertex moves with the correction of the mean vertex position (same global derivatives as the prior), otherwise it anchors the frame of the starting geometry
   bool scaleMVPriorWithNTracks = true;    // per-track PV constraint: scale the luminous region covariance of the mean vertex prior by the number of tracks of the vertex, for the prior to count once per collision
   float vtxMultiTrackRefCovScale = 1e-2f; // multi-track PV constraint: scale of the vertex covariance in the KF update defining the reference state at the vertex point, for the references of all tracks to pass (almost) through the common vertex. The stored vertex point keeps the true covariance
@@ -61,7 +64,9 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   float ITSOverlapMaxChi2 = 16;  // max chi2 between track and overlapping cluster
   float ITSOverlapMaxDZ = 0.3;   // max difference in Z for clusters on overlapping ITS chips to consider as candidate for a double hit
   int ITSOverlapEdgeRows = 1;    // require clusters to not have pixels closer than this distance from the edge
-
+  // ITS specific chips contribution request
+  std::string ITSSensRequest = ""; // require each track to be contributed by at least one chip from this list (comma-separated single entries of ranges with hyphen)
+  
   // TPC
   int minTPCClusters = 10;         // discard tracks with less clusters
   int minTPCPadRow = 6;            // min TPC pad-row to account
