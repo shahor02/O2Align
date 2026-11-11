@@ -1648,9 +1648,9 @@ bool AlignmentSpec::fitGBLTrajectory(gbl::GblTrajectory& traj, float kfChi2Ndf, 
   }
   if (!ndf || chi2 / ndf > mParams->maxChi2Ndf) {
     if (gblStat.chi2Rej++ < 10) {
-      LOGP(error, "GBL fit exceeded red chi2 {} (ndf {})", ndf ? chi2 / ndf : -1., ndf);
+      LOGP(warn, "GBL fit exceeded red chi2 {} (ndf {})", ndf ? chi2 / ndf : -1., ndf);
       if (kfChi2Ndf > 0 && std::abs(kfChi2Ndf - 1) < 0.02) {
-        LOGP(error, "\tGBL is far away from good KF fit!!!!");
+        LOGP(warn, "\tGBL is far away from good KF fit!!!!");
       }
     }
     return false;
