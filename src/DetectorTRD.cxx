@@ -84,11 +84,8 @@ void DetectorTRD::initCalib()
     if (Params::Instance().applyXORTRD) {
       mTransformer->setApplyXOR();
     }
-    const char* prodType = std::getenv("ALIEN_JDL_LPMPRODUCTIONTYPE");
-    if (prodType && std::strcmp(prodType, "MC") == 0) {
-      // apply artificial pad shift in case non-ideal alignment is used to compensate for shift in current alignment from real data
-      mTransformer->setApplyShift(false);
-    }
+    // apply artificial pad shift in case non-ideal alignment is used to compensate for shift in current alignment from real data
+    mTransformer->setApplyShift(Params::Instance().applyTRDshift);
     mTransformer->init();
     mTransformer->setCalVdriftExB(mCalVdriftExB);
   }
@@ -177,6 +174,9 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   }
   const auto& trk = recoData->getTrack<o2::trd::TrackTRD>(gid);
   if (trk.getNtracklets() < params.minTRDTracklets) {
+    return false;
+  }
+  if (params.rejectTRDPileup && trk.hasPileUpInfo()) {
     return false;
   }
   auto prop = o2::base::PropagatorD::Instance();

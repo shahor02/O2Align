@@ -76,7 +76,9 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   float discardEdgePadDepth = 2.5; // discard clusters too close to the sector edge (in pad units)
 
   // TRD
+  bool rejectTRDPileup = true;    // reject TRD tracks with pile-up info (see o2::trd::TrackTRD::hasPileUpInfo())
   bool applyXORTRD = false;       // apply XOR in TRD tranfformer
+  bool applyTRDshift = false;     // apply artificial pad shift in TRD transformer to compensate for shift in current alignment from real data
   int minTRDTracklets = 3;        // min TRD tracklets to accept the track
   float TRDAngularPullNSigma = 2.f; // max |angular pull| (tracklet dy vs track snp) of a TRD tracklet to be accepted in the track fit, <=0: no cut
   float TRDCorrDVT = 0.f;         // correction to Vdrift*t (equivalent to a shift in X at which Y is evaluated)
