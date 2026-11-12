@@ -915,11 +915,20 @@ The maps are per-chip Gaussian means of the checkResid residuals, per half barre
       | Lr6 Module6 | −43 | −97 |
       | Lr3 Module3 | −36 | −32 |
 
-      The chips of these modules add another −18…−32 µm in TY. A slide along the ray is almost invisible to tracks from
-      the IP, and S4R both dropped the ray-mode equations and loosened the module translation priors from 30 to 100 µm
-      (`--prior`), so only those priors hold the mode. The tracks seeing it at other angles (tgλ ≈ 1.3, displaced z_vtx)
-      are a plausible cause of the 1.3–1.4 band. The cosmics evaluation (`reducedFit/EvalCmp`) should show whether it
-      costs anything.
+      The chips of these modules add another −18…−32 µm in TY. S4R dropped the ray-mode equations and loosened the
+      module translation priors from 30 to 100 µm (`--prior`).
+    - **The data, not the priors, hold the slides.**
+      - **Test:** S6R is S4RBis with the module translation priors back at 30 µm.
+      - **The slides barely change:** the Lr5 Module0 TZ RMS goes from 317 to 280 µm. That matches a data constraint of
+        about 10 µm per module DOF, against a 30 µm prior.
+      - **χ²:** pede +34.0k against S4RBis, of which +29.9k is the prior term. The track data pay only about +4k.
+      - **Residuals:** all within about 0.5 µm of S4RBis, including:
+        - the edge cure at |tgλ| > 1.6;
+        - the 1.3–1.4 band (Lr5 dz −5.6 / −3.9 µm in B0);
+        - the Lr5 structure at +41…+47 cm.
+      - **What this rules out:** prior softness. The band cannot be traced to a slide that tighter priors would remove.
+      - **Cosmics:** S4RBis is −248k against C1v21w3 and S5R costs +25k against S4RBis. But these are the cosmics the
+        fits used, so this is in-sample and not independent support.
 - **IB staves at the half-barrel boundaries (dY).** Weighted per-stave means over the 9 chips, C1v21w3.
   - The standard dY is flat everywhere, within ±1 µm.
   - IOB dY in B0 (562862, IB cluster vs OB sub-track extrapolation): last stave of each half barrel +17…+21 µm in all
