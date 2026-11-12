@@ -863,6 +863,63 @@ The maps are per-chip Gaussian means of the checkResid residuals, per half barre
     - It is the same in all 12 staves. A rigid end-chip rotation (chip RY is free) is not the lever.
     - A signed rφ DCA common to all azimuths is a track-direction effect, not a vertex-position error. The IB at its stave
       ends is displaced in rφ relative to the OB line, even in z.
+  - **IB z-stretch test (`reducedFit/IBzScale`, 11-11).** All IB chip TZ get += ε·z on C1v21w3, then checkResid. Details
+    are in its README.
+    - The dPar3 wave responds linearly, 11.4·10⁻⁵ per ε = 1.2·10⁻⁴. ε = −1.2·10⁻⁴ flattens B0 exactly and overshoots
+      B+ (−2.4·10⁻⁵). The zero is at ε ≈ −1.25·10⁻⁴ in B0 and −0.95·10⁻⁴ in B±.
+    - The stretch also builds a linear dPar1 (dz at R = 12 cm) vs Z of ±15–20 µm, where eps_0 is flat. It also adds
+      about 5 µm to the Lr3 edges and worsens dPar3 at |tgλ| > 1.4.
+    - So the wave is a direction mismatch that pivots near R ≈ 12 cm, not a stretch about z = 0. The vertex dz vs tgλ is
+      unaffected.
+    - The IB sub-track is anchored at the vertex, so no IB-only geometry can tilt it about R ≈ 12 cm. A geometric
+      candidate is therefore on the OB side: an OB radial displacement Δr_L ≈ δ·(r_L − 12 cm), with δ ≈ 1.2·10⁻⁴, so
+      ≈ 9–33 µm from Lr3 to Lr6. It is linear in r, so it leaves the OB-internal residuals unchanged, and the MS kink in
+      the IB–OB gap absorbs it in the full-track fit. Cosmics crossing both OB halves should constrain it.
+  - **IB end chips (`reducedFit/IBEdge`, on S4RBis, 11-12).** Only chip0/chip8 TX, RY and RZ are free, with the IB edge data.
+    - Lr0 dy at |z| > 12 cm and the vertex dy at the Z edges are about halved, and nothing else changes by more than 0.5 µm.
+    - The fitted TX is a ramp over the staves of each half barrel: the first stave ≈ 0, the last +7…+11 µm, the same at
+      both z ends and in all layers. It is not the uniform +6 µm that was expected.
+    - IBEdge2 also frees chip1/7 TX and RY. Chip1/7 take about 20% of the same ramp, which only shaves 0.25–0.35 µm off the
+      chip0/1 boundary step (pede −39k). So the deformation is confined to the end chips.
+    - Left in Lr0 is a +1.7 µm rise in the outer ~1 cm of chip0/8, at |z| = 13.1 cm: 1.7 ± 0.3 µm in B−, unchanged
+      by either fit. No rigid chip DOF describes it.
+    - Diagnostic (`reducedFit/IBEdge/diagEdge.C`, details in the IBEdge README): the rise is Lr0-only and
+      charge-independent. In the outer ~8 mm of chip0/8 it is proportional to the rφ incidence: dy vs snp slope
+      +13.9 ± 1.9 (+z) and +7.3 ± 2.1 µm (−z), against −0.6 in the bulk. B0 agrees.
+    - That is the signature of an out-of-plane displacement of the Lr0 chip ends, ≈ 7–14 µm, i.e. a curl. Chip TY + RX of
+      chip0/8 would approximate it. MC (`/data/devAlg/checkResidMCRef`) is still needed to exclude a cluster bias at the
+      chip end.
+  - **S4RBis (11-11): S4R with 3× the edge records at weight 20.** It is the same as S4R within about 1 µm in all
+    residuals. Its parameters correlate with S4R's at 0.92–0.998, and the differences are 5–15% of the moves from
+    C1v21w3, so the fit is not limited by statistics.
+    - What remains: the −tgλ side is only half cured (Lr5 at tgλ ≈ −1.9 is still −6…−11 µm).
+    - S4R and S4RBis build an odd-in-z Lr5 dz structure next to the stave ends: −4…−10 µm at z ≈ +37…+52 cm and +4…+6 µm
+      at the mirror position, which C1v21w3 does not have. It sits on Module1/5, which are free.
+    - S5R (built 11-12) is S4R with Module1/5 of Lr5/6 fixed, to test this.
+    - Result (11-12): S5R does not cure it. Same data as S4RBis: pede +464.5k, with 1 800 fewer parameters.
+      - The Lr5 dz at z = +41…+47 cm improves by only 1–1.6 µm: B0 −3.2 → −1.8, B+ −9.5 → −7.9, B− −3.3 → −1.9.
+      - The edges are as in S4RBis or slightly worse (B0 Lr5 at tgλ = −1.9: −7 → −18 µm).
+      - The IOB dPar3 at |tgλ| 1.0–1.4 moves back toward C1v21w3.
+    - The structure follows tgλ ≈ 1.3–1.4. There S4RBis is worse than C1v21w3 by about 3 µm in Lr5 and 1–1.5 µm in
+      Lr3, in all fields. Those tracks cross the inner part of the Lr3/Lr4 end modules (Module0/3, z ≈ 22–30 cm).
+      So the likely source is the rigid tilt of those modules: it fixes the far end (tgλ > 1.6) and pushes the near end
+      the other way.
+    - The end modules slid far, approximately along the projective ray from the IP: S4RBis − C1v21w3, module local
+      Y = −radial, Z = z. S5R is the same within about 10 µm.
+
+      | module | mean TY (µm) | mean TZ (µm) |
+      |---|---|---|
+      | Lr5 Module0 | −200 | +284 |
+      | Lr5 Module6 | −111 | −272 |
+      | Lr6 Module0 | −77 | +73 |
+      | Lr6 Module6 | −43 | −97 |
+      | Lr3 Module3 | −36 | −32 |
+
+      The chips of these modules add another −18…−32 µm in TY. A slide along the ray is almost invisible to tracks from
+      the IP, and S4R both dropped the ray-mode equations and loosened the module translation priors from 30 to 100 µm
+      (`--prior`), so only those priors hold the mode. The tracks seeing it at other angles (tgλ ≈ 1.3, displaced z_vtx)
+      are a plausible cause of the 1.3–1.4 band. The cosmics evaluation (`reducedFit/EvalCmp`) should show whether it
+      costs anything.
 - **IB staves at the half-barrel boundaries (dY).** Weighted per-stave means over the 9 chips, C1v21w3.
   - The standard dY is flat everywhere, within ±1 µm.
   - IOB dY in B0 (562862, IB cluster vs OB sub-track extrapolation): last stave of each half barrel +17…+21 µm in all

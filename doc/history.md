@@ -365,6 +365,18 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
     Boosting it with the bulk free (S3R) distorts the bulk. With only the OB stave ends free (S4R) it halves to removes the
     +tgλ edge sigmoid and most of the IOB edge kink. The central IOB dtgλ wave, the B+ vertex dz-vs-tgλ slope and the
     Lr0 |z| > 12 cm dY rise stay (`kink_cure.md` 6k).
+  - 11-11, the IB z-stretch on C1v21w3 (ε = −1.2·10⁻⁴) removes the central IOB dtgλ wave but builds a dz(R = 12 cm)
+    slope vs Z that the unstretched geometry does not have. The wave pivots near R ≈ 12 cm, so it is not an IB z-scale
+    about z = 0 (`kink_cure.md` 6k).
+  - 11-12, freeing only the IB end chips (chip0/8 TX, RY, RZ) on S4RBis with IB edge data halves the Lr0 dY rise at |z| > 12 cm
+    without degrading other residuals. The fitted rφ shift ramps over the staves of each half barrel, instead of being
+    uniform (`kink_cure.md` 6k).
+  - 11-12, freeing chips 1/7 too (IBEdge2) gains nothing. What remains at the Lr0 stave ends scales with the rφ incidence:
+    it is an out-of-plane displacement of the outer ~1 cm of the Lr0 end chips (≈ 7–14 µm), which TX/RY/RZ cannot
+    absorb (`kink_cure.md` 6k).
+  - 11-12, fixing the Lr5/6 Module1/5 (S5R) does not remove the Lr5 dz structure that S4R/S4RBis build at z ≈ +41…+47 cm,
+    and costs +464k. The structure sits at tgλ ≈ 1.3–1.4, where tracks cross the inner part of the Lr3/4 end modules, so
+    the edge correction itself, through the tilt of those modules, is the likely cause (`kink_cure.md` 6k).
 - v10n OB chip out-of-plane (TY) and longitudinal (TZ) corrections (11-07). They are carried unchanged into all our
   solutions, since OB chips are free only in TX, and many look unphysical (|TY|, |TZ| > 100 µm). All chips of a module share
   the same rotation, so only the chip translations scatter. Net chip displacements from the ideal geometry confirm that the
