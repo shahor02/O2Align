@@ -1355,9 +1355,12 @@ void Volume::setActiveCalibSlot(int slotID)
   mActiveCalibSlot = static_cast<size_t>(std::distance(mCalibLabels.begin(), it));
 }
 
-void Volume::writeParameters(std::ostream& os, const std::map<uint32_t, double>* startValues) const
+void Volume::writeParameters(std::ostream& os, const std::map<uint32_t, double>* startValues, std::set<uint32_t>* written) const
 {
-  auto start = [startValues](uint32_t label) {
+  auto start = [startValues, written](uint32_t label) {
+    if (written) {
+      written->insert(label);
+    }
     if (startValues) {
       const auto it = startValues->find(label);
       if (it != startValues->end()) {
@@ -1395,7 +1398,7 @@ void Volume::writeParameters(std::ostream& os, const std::map<uint32_t, double>*
     }
   }
   for (const auto& c : mChildren) {
-    c->writeParameters(os, startValues);
+    c->writeParameters(os, startValues, written);
   }
 }
 
@@ -1939,7 +1942,7 @@ bool Volume::MP2ROOT_Calib(const std::map<uint32_t, double>&, nlohmann::json&) c
   return false;
 }
 
-std::map<uint32_t, double> Volume::readMillepedeResults(const std::string& milleResPath)
+std::map<uint32_t, double> Volume::readMillepedeResults(const std::string& milleResPath, std::map<uint32_t, std::string>* comments)
 {
   // parse millepede.res: label fittedValue presigma [...]. Fixed parameters (presigma < 0) are kept
   // too: pede reports them at their preset value, which is a real correction when the steering fixed
@@ -1965,6 +1968,14 @@ std::map<uint32_t, double> Volume::readMillepedeResults(const std::string& mille
       continue;
     }
     labelToValue[label] = value;
+    if (comments) {
+      if (const auto pos = line.find('!'); pos != std::string::npos) {
+        const auto b = line.find_first_not_of(" \t", pos + 1);
+        if (b != std::string::npos) {
+          (*comments)[label] = line.substr(b);
+        }
+      }
+    }
     nFixed += presigma < 0.0;
     nFixedNonZero += presigma < 0.0 && value != 0.0;
   }

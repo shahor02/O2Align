@@ -18,6 +18,7 @@
 #include <ostream>
 #include <string>
 #include <map>
+#include <set>
 #include <unordered_map>
 #include <array>
 #include <limits>
@@ -74,7 +75,7 @@ class Volume
 
   static void applyDOFConfig(Volume* root, const std::string& jsonPath);
   /// parse millepede.res into label -> fitted value, fixed parameters included (at their preset value)
-  static std::map<uint32_t, double> readMillepedeResults(const std::string& milleResPath);
+  static std::map<uint32_t, double> readMillepedeResults(const std::string& milleResPath, std::map<uint32_t, std::string>* comments = nullptr);
   static void writeMillepedeResults(Volume* root, const std::map<uint32_t, double>& labelToValue, const std::string& outJsonPath);
 
   /// create the common root of the whole hierarchy: a fictitious volume with the identity L2G, whose
@@ -90,7 +91,8 @@ class Volume
   /// not override it; modeOpt: see ModeEquationOptions
   void writeRigidBodyConstraints(std::ostream& os, bool statWeighted = false, const ModeEquationOptions& modeOpt = {}) const;
   /// \param startValues optional label -> starting value of the parameter (e.g. from a previous millepede.res); 0 if absent
-  void writeParameters(std::ostream& os, const std::map<uint32_t, double>* startValues = nullptr) const;
+  /// \param written if given, receives the labels of all parameters written
+  void writeParameters(std::ostream& os, const std::map<uint32_t, double>* startValues = nullptr, std::set<uint32_t>* written = nullptr) const;
   void writeTree(std::ostream& os, int indent = 0) const;
 
   /// \name Global deformation-mode constraints

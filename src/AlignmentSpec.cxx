@@ -13,6 +13,7 @@
 #include <chrono>
 #include <filesystem>
 #include <format>
+#include <set>
 #include <fstream>
 #include <optional>
 #include <random>
@@ -1219,8 +1220,22 @@ void AlignmentSpec::writeMilleSteerFiles(bool statWeighted)
   mHierarchy->writeRigidBodyConstraints(cons, statWeighted, modeOpt);
   std::ofstream par(mParams->milleParamFile);
   if (!mParams->startFromMilleRes.empty()) {
-    const auto start = Volume::readMillepedeResults(mParams->startFromMilleRes);
-    mHierarchy->writeParameters(par, &start);
+    std::map<uint32_t, std::string> comments; // trailing '!' comments of the input millepede.res, if any
+    const auto start = Volume::readMillepedeResults(mParams->startFromMilleRes, &comments);
+    std::set<uint32_t> written;
+    mHierarchy->writeParameters(par, &start, &written);
+    // DOFs of the starting solution not parametrised by the current config: kept as fixed parameters at their
+    // starting values, so that the following pede run reports them in millepede.res (needed by MilleRes)
+    size_t nExtra = 0;
+    for (const auto& [label, value] : start) {
+      if (!written.count(label)) {
+        const auto cit = comments.find(label);
+        par << std::format("{:<10} {:>+15g} {:>+15g} ! F startFromMilleRes{}{}\n", label, value, -1.0,
+                           cit != comments.end() ? " " : "", cit != comments.end() ? cit->second : "");
+        ++nExtra;
+      }
+    }
+    LOGP(info, "{} parameters of {} not in the current DOF configuration are written as fixed", nExtra, mParams->startFromMilleRes);
   } else {
     mHierarchy->writeParameters(par);
   }
