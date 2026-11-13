@@ -1291,7 +1291,25 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
       xPlus(iPar) += h;
       xMinus(iPar) -= h;
       if (!propagate(xPlus) || !propagate(xMinus)) {
-        return false;
+        // a perturbed track may leave the propagation limits (maxSnp): at the 1st extrapolation the step is shrunk (down to minStep)
+        // and retried; at a later one the best estimate so far is kept
+        bool ok = false;
+        if (iExt == 0) {
+          for (int iShrink = 0; iShrink < 12 && !ok && h / mParams->ridderShrinkFac >= minStep; ++iShrink) {
+            h /= mParams->ridderShrinkFac;
+            xPlus = x0;
+            xMinus = x0;
+            xPlus(iPar) += h;
+            xMinus(iPar) -= h;
+            ok = propagate(xPlus) && propagate(xMinus);
+          }
+        }
+        if (!ok) {
+          if (iExt > 0) {
+            break; // bestDeriv holds the estimate of the previous extrapolations
+          }
+          return false;
+        }
       }
       cur.col(0) = (xPlus - xMinus) / (2.0 * h);
       if (!iExt) {
