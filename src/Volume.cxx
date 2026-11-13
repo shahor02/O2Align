@@ -1300,15 +1300,16 @@ bool Volume::writeModeEquation(std::ostream& os, const std::string& name, const 
 }
 
 // Local delta d^n of the volume from its fitted rigid-body parameters (step 1). Returns false if
-// the volume has no free rigid-body DOF or all its fitted values are 0 (labels absent from
-// labelToValue count as 0).
+// the volume has no rigid-body DOF set or all its values are 0 (labels absent from labelToValue
+// count as 0). Fixed DOFs count too: pede reports them at their preset value (startFromMilleRes),
+// which is a real correction.
 bool Volume::getFittedLocalDelta(const std::map<uint32_t, double>& labelToValue, TGeoHMatrix& delta) const
 {
   // RSTODO In principle, if the volume has no rigid-body DOF, it should not have any fitted parameters either.
   // So, in the alignment results writing session one could skip initializing the same RB DOFs just for this check,
   // instead, one can check isRigidBodyAllowed() and then loop as for (int i = 0; i < RigidBodyDOFSet::NDOF; ++i)
   const auto* rb = getRigidBody();
-  if (rb == nullptr || !rb->nFreeDOFs()) {
+  if (rb == nullptr) {
     return false;
   }
   std::array<double, RigidBodyDOFSet::NDOF> par{};
@@ -1876,7 +1877,7 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
   });
 }
 
-// The caller (writeMillepedeResults) only invokes this when getRigidBody() has free DOFs.
+// The caller (writeMillepedeResults) only invokes this when getRigidBody() has free DOFs or a fixed one at a non-zero value.
 bool Volume::MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const
 {
   auto rbArr = nlohmann::json::array();
@@ -1887,7 +1888,7 @@ bool Volume::MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, nlohmann
   return true;
 }
 
-// The caller (writeMillepedeResults) only invokes this when getCalib() has free DOFs.
+// The caller (writeMillepedeResults) only invokes this when getCalib() has free DOFs or a fixed one at a non-zero value.
 bool Volume::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const
 {
   auto slots = calibSlotsToJSON(labelToValue);
@@ -1913,10 +1914,10 @@ nlohmann::json Volume::calibSlotsToJSON(const std::map<uint32_t, double>& labelT
     }
     bool anyFitted = false;
     for (int i = 0; i < mCalib->nDOFs(); ++i) {
-      if (!mCalib->isFree(i)) {
-        continue;
-      }
       const auto it = labelToValue.find(lbl.raw(i));
+      if (!mCalib->isFree(i) && (it == labelToValue.end() || it->second == 0.)) {
+        continue; // a fixed DOF is written only when pede reports it at a non-zero (preset) value
+      }
       rec[mCalib->dofName(i)] = it != labelToValue.end() ? it->second : 0.0;
       anyFitted = anyFitted || it != labelToValue.end();
     }
@@ -1977,6 +1978,15 @@ void Volume::writeMillepedeResults(Volume* root, const std::map<uint32_t, double
 {
   using json = nlohmann::json;
 
+  // a DOF set with no free DOF is written too if pede reports one of its fixed DOFs at a non-zero (preset) value
+  auto anyNonZero = [&labelToValue](const DOFSet* set, const Label& lbl) {
+    for (int i = 0; i < set->nDOFs(); ++i) {
+      if (auto it = labelToValue.find(lbl.raw(i)); it != labelToValue.end() && it->second != 0.) {
+        return true;
+      }
+    }
+    return false;
+  };
   // collect results per volume that has RB or calib DOFs
   json output = json::array();
   root->traverse([&](Volume* vol) {
@@ -1986,10 +1996,10 @@ void Volume::writeMillepedeResults(Volume* root, const std::map<uint32_t, double
     entry["id"] = id;
 
     bool write = false;
-    if (vol->getRigidBody() && vol->getRigidBody()->nFreeDOFs()) {
+    if (const auto* rb = vol->getRigidBody(); rb && (rb->nFreeDOFs() || anyNonZero(rb, vol->getLabel()))) {
       write |= vol->MP2JSON_RB(labelToValue, entry);
     }
-    if (vol->getCalib() && vol->getCalib()->nFreeDOFs()) {
+    if (const auto* cal = vol->getCalib(); cal && (cal->nFreeDOFs() || std::any_of(vol->getCalibLabels().begin(), vol->getCalibLabels().end(), [&](const Label& l) { return anyNonZero(cal, l); }))) {
       write |= vol->MP2JSON_Calib(labelToValue, entry);
     }
 

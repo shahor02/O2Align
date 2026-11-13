@@ -54,6 +54,7 @@
 #include "DataFormatsCalibration/MeanVertexObject.h"
 #include "DetectorsVertexing/PVertexer.h"
 #include "ReconstructionDataFormats/PrimaryVertex.h"
+#include "CommonConstants/MathConstants.h"
 #include "ReconstructionDataFormats/VtxTrackIndex.h"
 #include "Steer/MCKinematicsReader.h"
 #include "CommonUtils/TreeStreamRedirector.h"
@@ -194,6 +195,15 @@ bool getMeasurementPrecision(const o2::BaseCluster<float>& cluster, Eigen::Matri
   }
   prec = cov.inverse();
   return true;
+}
+
+/// two frames at the same position (same alpha and X, e.g. with the ideal TPC map the clusters of one pad row on both sides of
+/// the central electrode, in the mirror sectors s and s+18): the 2nd is a further measurement on the GBL point of the 1st
+bool isSamePosition(double x1, double alpha1, double x2, double alpha2)
+{
+  constexpr double SamePointDX = 1e-5;
+  constexpr double SamePointDAlpha = 1e-6;
+  return std::abs(x1 - x2) < SamePointDX && std::abs(std::remainder(alpha1 - alpha2, o2::constants::math::TwoPI)) < SamePointDAlpha;
 }
 
 /// precision of the multiple-scattering kinks of the GBL local slopes, which are the ALICE (snp, tgl):
@@ -1147,7 +1157,12 @@ AlignmentSpec::PointGlobals AlignmentSpec::buildPointGlobals(const FrameInfoExt&
     globals.der.middleCols(curCol, nd) = calDer;
     curCol += nd;
   }
-  if (frame.zFromTrack) { // the Z "measurement" follows the track, whatever the alignment
+  if (frame.zFromTrack) {
+    // The Z "measurement" follows the track, whatever the alignment. The y still depends on the z of the measuring structure:
+    // a TRD tracklet is the y at the pad-row centre of tilted pads, y_meas = y_hit - tilt * (z_hit - z_row) + tilt * (z_trk - z_row)
+    // after the tilt correction, so a displacement that changes the z residual of the row by dz changes the y residual by -tilt * dz.
+    // Without the correction (track more than a pad length off) y does not depend on the row z: tiltDz = 0.
+    globals.der.row(0) -= frame.tiltDz * globals.der.row(1);
     globals.der.row(1).setZero();
   }
   if (!globals.labels.empty()) {
@@ -1489,10 +1504,23 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
   // sign of the energy-loss correction of the steps (Propagator signCorr): 0 = from the direction of x (outward = loss), for a track
   // from the vertex; a cosmic is followed in the time order of the muon (top leg first) through both parametrisations, every step a loss
   const int eLossSign = resTrack.invertAt >= 0 ? -1 : 0;
-  // the last valid slot: the step to it is split (its material on the mid point), the point itself carries no scatterer
+  // the slot of the last GBL point: the step to it is split (its material on the mid point), the point itself carries no scatterer.
+  // It is the last valid slot, or the 1st of the trailing valid slots at its position (further measurements on the same point),
+  // except across the inversion of a cosmic, where the frames are never merged
   int ipLast = np - 1;
   while (ipLast > ipStart && !resTrack.info[ipLast].isValid()) {
     --ipLast;
+  }
+  for (int ip = ipLast - 1; ip >= ipStart; --ip) {
+    const auto& prev = resTrack.info[ip];
+    if (!prev.isValid()) {
+      continue;
+    }
+    if ((resTrack.invertAt >= 0 && ip < resTrack.invertAt && ipLast >= resTrack.invertAt) ||
+        !isSamePosition(prev.x, prev.alpha, resTrack.info[ipLast].x, resTrack.info[ipLast].alpha)) {
+      break;
+    }
+    ipLast = ip;
   }
   auto wTrk = resTrack.track; // working copy, the seed must be preserved
   o2::track::TrackParD trkRef, *refLin = nullptr;
@@ -1513,6 +1541,8 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
   track::TrackLTIntegral lt;
   lt.setTimeNotNeeded();
   bool inverted = false; // cosmics: the parametrisation was inverted at resTrack.invertAt
+  float prevMsErr = 0.f;  // scattering angle on the previous GBL point (0: none)
+  TrackD prevTrk;         // track at the previous GBL point
   for (int ip = ipStart; ip < np; ++ip) {
     const auto& frame = resTrack.info[ip];
     if (!frame.isValid()) {
@@ -1520,9 +1550,12 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
     }
     gbl::Matrix5d err = gbl::Matrix5d::Identity(), jacALICE = gbl::Matrix5d::Identity(), jacGBL = gbl::Matrix5d::Identity();
     float msErr = 0.f;
-    if (!points.empty()) { // not the 1st accounted point: step to it
-      // a cosmic changes the direction of the parametrisation at the step from its top to its bottom leg
-      const bool invertHere = resTrack.invertAt >= 0 && !inverted && ip >= resTrack.invertAt;
+    // a cosmic changes the direction of the parametrisation at the step from its top to its bottom leg
+    const bool invertHere = !points.empty() && resTrack.invertAt >= 0 && !inverted && ip >= resTrack.invertAt;
+    // A frame at the position of the previous point is a further measurement on that point: a zero step has no transport jacobian
+    // GBL could interpolate with.
+    const bool samePoint = !points.empty() && !invertHere && isSamePosition(frame.x, frame.alpha, wTrk.getX(), wTrk.getAlpha());
+    if (!points.empty() && !samePoint) { // not the 1st accounted point: step to it
       // numerically calculates the transport jacobian from prev. point to this point
       // then we actually do the step to the point and accumulate the material
       auto stepTo = [&](double xTo, double alphaTo, float& msErrOut, bool invertFirst) -> bool {
@@ -1600,10 +1633,27 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
         return false;
       }
       inverted |= invertHere;
+      // A cosmic whose bottom leg has a single point: the junction step is also the last step. It is not split (the gap is the
+      // interior of the detector) and the last point carries no scatterer, so its material goes on the last top-leg point,
+      // combined with the scatterer already there; with only the first point before it, it is lost and counted.
+      if (lastPoint && invertHere && msErr > mParams->minMS) {
+        if (points.size() > 1) {
+          const double msTot = std::sqrt(double(prevMsErr) * prevMsErr + double(msErr) * msErr);
+          points.back().addScatterer(Eigen::Vector2d::Zero(), getScatteringPrecision(prevTrk, msTot));
+          lt.clearFast();
+          if (dbgPoints) {
+            auto dpIt = std::find_if(dbgPoints->rbegin(), dbgPoints->rend(), [](const DbgPoint& dp) { return !dp.isSamePoint(); });
+            dpIt->flags |= DbgPoint::HasKink;
+          }
+        } else {
+          ++gblStat.lastMSLost;
+        }
+      }
     }
 
     // wTrk is now in the measurment frame
-    gbl::GblPoint point(jacGBL);
+    gbl::GblPoint newPoint(jacGBL);
+    gbl::GblPoint& point = samePoint ? points.back() : newPoint;
     // global derivatives of the point (the vertex point has no alignable volume behind it), they also
     // serve to inject the misalignment
     PointGlobals globals;
@@ -1638,7 +1688,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       meas.phi = wTrk.getPhi();
       o2::math_utils::bringTo02Pid(meas.phi);
     }
-    const bool hasScatterer = msErr > mParams->minMS && ip < ipLast;
+    const bool hasScatterer = !samePoint && msErr > mParams->minMS && ip < ipLast;
     if (hasScatterer) {
       // the material crossed since the previous point is lumped into a thin scatterer at this one
       point.addScatterer(Eigen::Vector2d::Zero(), getScatteringPrecision(wTrk, msErr));
@@ -1684,7 +1734,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       dp.x = frame.x;
       dp.alpha = frame.alpha;
       dp.snp = wTrk.getSnp();
-      dp.flags = (addMeas ? DbgPoint::HasMeas : 0) | (hasScatterer ? DbgPoint::HasKink : 0) | (frame.isVertex() ? DbgPoint::IsVertex : 0) | (frame.isITSOverlap() ? DbgPoint::ITSOverlap : 0);
+      dp.flags = (addMeas ? DbgPoint::HasMeas : 0) | (hasScatterer ? DbgPoint::HasKink : 0) | (frame.isVertex() ? DbgPoint::IsVertex : 0) | (frame.isITSOverlap() ? DbgPoint::ITSOverlap : 0) | (samePoint ? DbgPoint::SamePoint : 0);
       if (addMeas) {
         dp.y = cluster.getY();
         dp.z = cluster.getZ();
@@ -1695,7 +1745,11 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
         dp.dzPre = res[1];
       }
     }
-    points.push_back(point);
+    if (!samePoint) {
+      points.push_back(point);
+      prevMsErr = hasScatterer ? msErr : 0.f;
+      prevTrk = wTrk;
+    }
     if (refLin) { // displace the reference to the measurement, as done in the KF refit
       refLin->setY(cluster.getY());
       refLin->setZ(cluster.getZ());
@@ -1992,15 +2046,20 @@ bool AlignmentSpec::selectForDebug()
 // GBL labels the points of the trajectory consecutively from 1, firstLabel is the label of points[0].
 void AlignmentSpec::fillDbgFitResults(gbl::GblTrajectory& traj, unsigned int firstLabel, std::vector<gbl::GblPoint>& points, std::vector<DbgPoint>& dbgPoints) const
 {
-  if (points.size() != dbgPoints.size()) {
-    LOGP(error, "Debug points ({}) and GBL points ({}) are out of sync", dbgPoints.size(), points.size());
+  const auto nGBLPoints = std::count_if(dbgPoints.begin(), dbgPoints.end(), [](const DbgPoint& dp) { return !dp.isSamePoint(); });
+  if (points.size() != static_cast<size_t>(nGBLPoints)) {
+    LOGP(error, "Debug points ({}) and GBL points ({}) are out of sync", nGBLPoints, points.size());
     return;
   }
   Eigen::VectorXd par, res(2), measErr(2), resErr(2), downW(2);
   Eigen::MatrixXd cov, trans;
+  size_t iGBL = 0; // a debug point with SamePoint is a further measurement on the GBL point of the previous one
   for (size_t i = 0; i < dbgPoints.size(); ++i) {
     auto& dp = dbgPoints[i];
-    const unsigned int label = firstLabel + i;
+    if (i > 0 && !dp.isSamePoint()) {
+      ++iGBL;
+    }
+    const unsigned int label = firstLabel + iGBL;
     if (dp.hasMeas() && !traj.getResults(label, par, cov)) {
       dp.dyFit = dp.dyPre - par[3];
       dp.dzFit = dp.dzPre - par[4];
@@ -2019,7 +2078,7 @@ void AlignmentSpec::fillDbgFitResults(gbl::GblTrajectory& traj, unsigned int fir
     }
     unsigned int nData = 0;
     if (dp.hasKink() && !traj.getScatResults(label, nData, res, measErr, resErr, downW) && nData == 2) {
-      points[i].getScatTransformation(trans);
+      points[iGBL].getScatTransformation(trans);
       const Eigen::Vector2d kink = -(trans.transpose() * res.head<2>()); // GBL gives measured (0) minus fitted kink
       dp.kinkY = kink[0];
       dp.kinkZ = kink[1];

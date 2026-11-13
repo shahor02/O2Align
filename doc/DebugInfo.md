@@ -62,14 +62,17 @@ One `DbgPoint` per **GBL point**, which is not the same as one per cluster:
   vertex position enters through the inner transformation;
 - when a step to a point spans a wide radial gap with a lot of material (the ITS-TPC transition, see `splitMSThreshold` and
   `splitMSStepMinDX`), an extra scatterer-only point is inserted at the midpoint. It has `det=-1`, only `x`, `alpha`, `snp` and
-  the kink fields are meaningful.
+  the kink fields are meaningful;
+- the exception: a cluster at the position (alpha and X) of the previous one, e.g. with the ideal TPC map the clusters of one
+  pad row on both sides of the central electrode, is a further measurement on the GBL point of that one. Its `DbgPoint` has
+  `SamePoint` and shares the GBL point (label, fitted state, kink) of the last preceding `DbgPoint` without `SamePoint`.
 
 | Member | Meaning |
 |---|---|
 | `det` | detector index of [Detector.h](../include/O2Align/Detector.h): 0 = PVT (the vertex), 1 = ITS, 2 = TPC, 3 = TRD, 4 = TOF; -1 for the scatterer-only points |
 | `sens` | sensor ID within the detector (the volume ID of the Millepede label), -1 for the vertex |
 | `lr` | detector-specific layer-like index (ITS layer, TPC pad row group, ...) |
-| `flags` | `HasMeas` (1): has a measurement; `HasKink` (2): has a scatterer, the kinks are defined; `IsVertex` (4): the primary vertex; `ITSOverlap` (8): the cluster is on an ITS overlap |
+| `flags` | `HasMeas` (1): has a measurement; `HasKink` (2): has a scatterer, the kinks are defined; `IsVertex` (4): the primary vertex; `ITSOverlap` (8): the cluster is on an ITS overlap; `SamePoint` (16): a further measurement on the GBL point of the previous entry |
 | `x`, `alpha` | position of the point in its tracking frame (`x` along the local radial direction) and the rotation angle of that frame |
 | `y`, `z` | the measured coordinates in the tracking frame (0 if no measurement) |
 | `sigY`, `sigZ` | cluster errors, including the extra errors (`extraClsErr*`) |

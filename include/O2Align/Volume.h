@@ -351,13 +351,14 @@ class Volume
   /// write the rigid-body block of the JSON output (result.json) for this volume, the fitted values
   /// as given in labelToValue. Generic over any
   /// RigidBodyDOFSet layout, hence implemented once in the base class. The caller
-  /// (writeMillepedeResults) only calls this when the volume has free rigid-body DOFs.
+  /// (writeMillepedeResults) only calls this when the volume has free rigid-body DOFs or a fixed one that
+  /// pede reports at a non-zero (preset) value.
   virtual bool MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const;
   /// local delta (LOC->LOC, l' = delta*l) built from the fitted rigid-body parameters of this volume.
-  /// Returns false if it has no free rigid-body DOF or all its fitted values are 0 (fixed parameters
-  /// are absent from labelToValue, hence count as 0).
+  /// Returns false if it has no rigid-body DOF set or all its values are 0 (labels absent from
+  /// labelToValue count as 0). Fixed DOFs count too: pede reports them at their preset value.
   bool getFittedLocalDelta(const std::map<uint32_t, double>& labelToValue, TGeoHMatrix& delta) const;
-  /// fitted value of a parameter, 0 if it was not fitted (fixed or absent from millepede.res)
+  /// value of a parameter in millepede.res (a fixed one at its preset value), 0 if it is absent
   static double getFittedValue(const std::map<uint32_t, double>& labelToValue, uint32_t rawLabel)
   {
     const auto it = labelToValue.find(rawLabel);
@@ -365,8 +366,9 @@ class Volume
   }
   /// write the calibration block of the closure-test JSON output for this volume. The base
   /// implementation writes, under "calib", the absolute fitted values of the free DOFs of every
-  /// calibration slot (see calibSlotsToJSON); a detector-specific layout needs an override. The caller only calls this when
-  /// the volume has free calibration DOFs.
+  /// calibration slot, and of the fixed ones that pede reports at a non-zero (preset) value (see calibSlotsToJSON);
+  /// a detector-specific layout needs an override. The caller only calls this when the volume has free calibration
+  /// DOFs or such a fixed one.
   virtual bool MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const;
 
   /// ROOT-output counterparts of MP2JSON_RB/MP2JSON_Calib, same signature, not yet implemented.

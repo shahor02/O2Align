@@ -48,7 +48,7 @@ class DetectorTRD final : public Detector
  private:
   bool trackletToTrackingFrame(const o2::trd::Tracklet64& trackletRaw, const o2::trd::CalibratedTracklet& trkltLoc, std::array<double, 3>& traXYZ, double& alpha) const;
   float trackletAngularPull(const o2::trd::Tracklet64& trackletRaw, const o2::trd::CalibratedTracklet& trkltLoc, const o2::track::TrackParD& trkParam) const;
-  FrameInfoExt makeTrackletPoint(const o2::trd::Tracklet64& trackletRaw, const std::array<double, 3>& traXYZ, double alpSens, const o2::track::TrackParD& trkParam) const;
+  FrameInfoExt makeTrackletPoint(const o2::trd::Tracklet64& trackletRaw, const std::array<double, 3>& traXYZ, double alpSens, const o2::track::TrackParCovD& trkParam) const;
 
   std::unique_ptr<o2::trd::TrackletTransformer> mTransformer; // created at the 1st prepareData, once the geometry is loaded
   const o2::trd::CalVdriftExB* mCalVdriftExB{nullptr};
