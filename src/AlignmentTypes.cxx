@@ -28,7 +28,7 @@ std::string FrameInfoExt::asString() const
   return std::format("[{}] Sensor={} Layer={} X={} Alpha={} y={} z={}", label.asString(), cluster.getSensorID(), lr, x, alpha, cluster.getY(), cluster.getZ());
 }
 
-bool Track::fitTrack(int frameStart, int frameStop, bool cropOnFailure, bool reset)
+bool Track::fitTrack(int frameStart, int frameStop, bool cropOnFailure, bool reset, int eLossSign)
 {
   const int nFrames = static_cast<int>(info.size());
   if (frameStart < 0 || frameStart >= nFrames || frameStop < 0 || frameStop >= nFrames) {
@@ -53,7 +53,7 @@ bool Track::fitTrack(int frameStart, int frameStop, bool cropOnFailure, bool res
     if (!frame.isValid()) { // invalid point
       continue;
     }
-    if (!prop->propagateToAlphaX(trFit, refLin, frame.alpha, frame.x, false, params.maxSnp, params.maxStep, 1, params.corrType)) {
+    if (!prop->propagateToAlphaX(trFit, refLin, frame.alpha, frame.x, false, params.maxSnp, params.maxStep, 1, params.corrType, nullptr, eLossSign)) {
       if (crop) {
         info.resize(frameStart);
       }

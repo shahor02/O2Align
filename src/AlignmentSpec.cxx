@@ -306,7 +306,7 @@ class AlignmentSpec final : public Task
   // method does not modify the original track
   // invertFirst: the track is inverted (TrackParCov::invert, the direction of the motion is reversed) before the propagation,
   // the jacobian then links the parameters in the original and in the inverted parametrisation
-  bool getTransportJacobian(const TrackD& track, double xTo, double alphaTo, gbl::Matrix5d& jac, gbl::Matrix5d& err, bool invertFirst = false);
+  bool getTransportJacobian(const TrackD& track, double xTo, double alphaTo, gbl::Matrix5d& jac, gbl::Matrix5d& err, bool invertFirst = false, int eLossSign = 0);
 
   // decide whether the step from the current state of `track` to `frame` should get an extra,
   // scatterer-only point inserted at its radius midpoint instead of lumping all crossed material
@@ -315,8 +315,8 @@ class AlignmentSpec final : public Task
   // point in the track's current (pre-step) tracking frame, radius being frame-independent.
   // lastPoint: the step to the last point of the trajectory, which cannot carry a scatterer: split whenever it crosses material, the mid
   // point in the pre-step frame or, if not reachable there, in the frame of `frame`; msFull (if not null) gets the scattering angle of
-  // the whole step whenever it is computed.
-  bool needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid, bool lastPoint = false, float* msFull = nullptr) const;
+  // the whole step whenever it is computed. eLossSign: as Propagator signCorr.
+  bool needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid, bool lastPoint = false, float* msFull = nullptr, int eLossSign = 0) const;
 
   // refit the primary vertex vtxOrig (reference ivref) with its contributors, each refitted with its
   // own ITS clusters independently of the tracks prepared for the alignment, the result is put to
@@ -640,15 +640,17 @@ bool AlignmentSpec::collectCosmicFrames(const o2::dataformats::TrackCosmicsExten
 // is the state at info[0]. refDown is the reference in the downward parametrisation, used as the seed.
 bool AlignmentSpec::fitCosmicLegs(Track& resTrack, const TrackD& refDown, int nTop, int nTot, std::string& why)
 {
-  // the bottom leg: outward in the downward parametrisation, then back inward, to its innermost point
+  // the bottom leg: outward in the downward parametrisation, then back inward, to its innermost point. The energy loss follows the time
+  // order of the muon (it comes from the top): lost along the bottom leg outward, regained going back inward and along the top leg
+  // upward (eLossSign of fitTrack; the Propagator's default takes the sign from the direction of x)
   resTrack.track = refDown;
-  if (!resTrack.fitTrack(nTop, nTot - 1, false, true) || !resTrack.fitTrack(nTot - 1, nTop, false, true)) {
+  if (!resTrack.fitTrack(nTop, nTot - 1, false, true, -1) || !resTrack.fitTrack(nTot - 1, nTop, false, true, +1)) {
     why = "KF fit of the bottom leg failed";
     return false;
   }
   // the top leg: upward, i.e. outward, to the highest point
   resTrack.track.invert();
-  if (!resTrack.fitTrack(nTop - 1, 0, false, false)) {
+  if (!resTrack.fitTrack(nTop - 1, 0, false, false, +1)) {
     why = "KF fit of the top leg failed";
     return false;
   }
@@ -1252,7 +1254,7 @@ bool AlignmentSpec::loadVolumeStatistics(const std::string& fname)
   return true;
 }
 
-bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double alphaTo, gbl::Matrix5d& jac, gbl::Matrix5d& err, bool invertFirst)
+bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double alphaTo, gbl::Matrix5d& jac, gbl::Matrix5d& err, bool invertFirst, int eLossSign)
 {
   auto prop = o2::base::PropagatorD::Instance();
   const auto minStep = std::sqrt(std::numeric_limits<double>::epsilon());
@@ -1270,7 +1272,7 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
       tmp.invert();
       ref.invert();
     }
-    if (!prop->propagateToAlphaX(tmp, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType)) {
+    if (!prop->propagateToAlphaX(tmp, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, nullptr, eLossSign)) {
       return false;
     }
     p = gbl::Vector5d(tmp.getParams());
@@ -1358,7 +1360,7 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
   return true;
 }
 
-bool AlignmentSpec::needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid, bool lastPoint, float* msFull) const
+bool AlignmentSpec::needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid, bool lastPoint, float* msFull, int eLossSign) const
 {
   // the last point: split whenever the step has a radial extent, a smaller gap than this is treated as no material
   constexpr double MinDRLastPoint = 0.1;
@@ -1366,7 +1368,7 @@ bool AlignmentSpec::needsSplitScatterer(const TrackD& track, const FrameInfoExt&
   TrackD trial = track;
   track::TrackLTIntegral ltTrial;
   ltTrial.setTimeNotNeeded();
-  if (!prop->propagateToAlphaX(trial, nullptr, frame.alpha, frame.x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &ltTrial)) {
+  if (!prop->propagateToAlphaX(trial, nullptr, frame.alpha, frame.x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &ltTrial, eLossSign)) {
     return false; // let the real propagation below fail and report it
   }
   const double rPrev = track.getR();
@@ -1479,6 +1481,9 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
     return false;
   }
   auto prop = o2::base::PropagatorD::Instance();
+  // sign of the energy-loss correction of the steps (Propagator signCorr): 0 = from the direction of x (outward = loss), for a track
+  // from the vertex; a cosmic is followed in the time order of the muon (top leg first) through both parametrisations, every step a loss
+  const int eLossSign = resTrack.invertAt >= 0 ? -1 : 0;
   // the last valid slot: the step to it is split (its material on the mid point), the point itself carries no scatterer
   int ipLast = np - 1;
   while (ipLast > ipStart && !resTrack.info[ipLast].isValid()) {
@@ -1516,7 +1521,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       // numerically calculates the transport jacobian from prev. point to this point
       // then we actually do the step to the point and accumulate the material
       auto stepTo = [&](double xTo, double alphaTo, float& msErrOut, bool invertFirst) -> bool {
-        if (!getTransportJacobian(wTrk, xTo, alphaTo, jacALICE, err, invertFirst)) {
+        if (!getTransportJacobian(wTrk, xTo, alphaTo, jacALICE, err, invertFirst, eLossSign)) {
           ++gblStat.failedProp;
           return false;
         }
@@ -1526,7 +1531,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
             refLin->invert();
           }
         }
-        if (!prop->propagateToAlphaX(wTrk, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt)) {
+        if (!prop->propagateToAlphaX(wTrk, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt, eLossSign)) {
           ++gblStat.failedProp;
           return false;
         }
@@ -1545,7 +1550,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       double alphaMid = 0.;
       const bool lastPoint = ip == ipLast;
       float msFull = 0.f;
-      bool split = !invertHere && needsSplitScatterer(wTrk, frame, xMid, alphaMid, lastPoint, &msFull); // not at the inversion: the gap there is the whole interior of the detector
+      bool split = !invertHere && needsSplitScatterer(wTrk, frame, xMid, alphaMid, lastPoint, &msFull, eLossSign); // not at the inversion: the gap there is the whole interior of the detector
       float msErr1 = 0.f;
       if (split && lastPoint) { // the mid step was checked to be reachable; should it still fail, the step is made unsplit
         const auto wTrkSave = wTrk;
