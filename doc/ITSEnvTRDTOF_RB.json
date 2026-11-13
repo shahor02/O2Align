@@ -4,7 +4,7 @@
   },
   {
     "match": "ITS",
-    "rigidBody": "all"
+    "rigidBody": "fixed"
   },
   {
     "match": "TRD/sm[0-9]+",
@@ -12,7 +12,7 @@
   },
   {
     "match": "TRD/sm[0-9]+/st[0-4]/pl[0-5]",
-    "rigidBody": "all"
+    "rigidBody": "fixed"
   },
   {
     "match": "TOF/sm[0-9]+",
@@ -20,6 +20,6 @@
   },
   {
     "match": "TOF/sm[0-9]+/strip[0-9]+",
-    "rigidBody": "all"
+    "rigidBody": "fixed"
   }
 ]

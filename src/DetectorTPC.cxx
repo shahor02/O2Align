@@ -267,7 +267,7 @@ bool DetectorTPC::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
   int npntCut = params.minTPCClusters;
   const int npoints = forEachSuperCluster(nextCluster, params.maxTPCRowsCombined, npntCut, [&](const SuperCluster& sc) {
     const auto pnt3D = sc.position();
-    if (!prop->propagateToAlphaX(trkParam, refLin, sc.alpha(), pnt3D[0], false, params.maxSnp, params.maxStep, 1, params.corrType)) {
+    if (!prop->propagateToAlphaX(trkParam, refLin, sc.alpha(), pnt3D[0], false, params.maxSnp, params.maxStep, 1, static_cast<o2::base::PropagatorD::MatCorrType>(params.corrType))) {
       return false;
     }
     const auto cov = superClusterCov(*mTPCParam, sc, pnt3D[2], trkParam.getSnp(), trkParam.getTgl());

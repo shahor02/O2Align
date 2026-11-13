@@ -1292,7 +1292,7 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
       tmp.invert();
       ref.invert();
     }
-    if (!prop->propagateToAlphaX(tmp, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, nullptr, eLossSign)) {
+    if (!prop->propagateToAlphaX(tmp, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, static_cast<o2::base::PropagatorD::MatCorrType>(mParams->corrType), nullptr, eLossSign)) {
       return false;
     }
     p = gbl::Vector5d(tmp.getParams());
@@ -1388,7 +1388,7 @@ bool AlignmentSpec::needsSplitScatterer(const TrackD& track, const FrameInfoExt&
   TrackD trial = track;
   track::TrackLTIntegral ltTrial;
   ltTrial.setTimeNotNeeded();
-  if (!prop->propagateToAlphaX(trial, nullptr, frame.alpha, frame.x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &ltTrial, eLossSign)) {
+  if (!prop->propagateToAlphaX(trial, nullptr, frame.alpha, frame.x, false, mParams->maxSnp, mParams->maxStep, 1, static_cast<o2::base::PropagatorD::MatCorrType>(mParams->corrType), &ltTrial, eLossSign)) {
     return false; // let the real propagation below fail and report it
   }
   const double rPrev = track.getR();
@@ -1551,7 +1551,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
             refLin->invert();
           }
         }
-        if (!prop->propagateToAlphaX(wTrk, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &lt, eLossSign)) {
+        if (!prop->propagateToAlphaX(wTrk, refLin, alphaTo, xTo, false, mParams->maxSnp, mParams->maxStep, 1, static_cast<o2::base::PropagatorD::MatCorrType>(mParams->corrType), &lt, eLossSign)) {
           ++gblStat.failedProp;
           return false;
         }

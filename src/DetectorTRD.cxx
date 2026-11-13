@@ -205,7 +205,7 @@ bool DetectorTRD::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       resTrack.info.resize(nPointsIni);
       return false;
     }
-    if (!prop->propagateToAlphaX(trkParam, refLin, alpSens, traXYZ[0], false, params.maxSnp, params.maxStep, 1, params.corrType)) {
+    if (!prop->propagateToAlphaX(trkParam, refLin, alpSens, traXYZ[0], false, params.maxSnp, params.maxStep, 1, static_cast<o2::base::PropagatorD::MatCorrType>(params.corrType))) {
       resTrack.info.resize(nPointsIni);
       return false;
     }

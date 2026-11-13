@@ -389,7 +389,7 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       if (!frameArr[i]) {
         continue;
       }
-      if (!prop->propagateToAlphaX(trFitOut, refLinOut, frameArr[i]->alpha, frameArr[i]->x, false, params.maxSnp, params.maxStep, 1, params.corrType)) {
+      if (!prop->propagateToAlphaX(trFitOut, refLinOut, frameArr[i]->alpha, frameArr[i]->x, false, params.maxSnp, params.maxStep, 1, static_cast<o2::base::PropagatorD::MatCorrType>(params.corrType))) {
         return false;
       }
       trkOutAt[i] = trFitOut;
@@ -410,7 +410,7 @@ bool DetectorITS::prepareTrack(o2::globaltracking::RecoContainer* recoData, cons
       if (!frameArr[i]) {
         continue;
       }
-      if (!prop->propagateToAlphaX(trFitInw, refLinInw, frameArr[i]->alpha, frameArr[i]->x, false, params.maxSnp, params.maxStep, 1, params.corrType)) {
+      if (!prop->propagateToAlphaX(trFitInw, refLinInw, frameArr[i]->alpha, frameArr[i]->x, false, params.maxSnp, params.maxStep, 1, static_cast<o2::base::PropagatorD::MatCorrType>(params.corrType))) {
         return false;
       }
       if (hasTrkOutAt[i] && frameArr[i]->cluster.getCount()) {

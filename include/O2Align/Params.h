@@ -91,7 +91,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   double maxSnp = 0.85;
   double maxStep = 2.0;
   // o2::base::PropagatorD::MatCorrType matCorrType = o2::base::PropagatorD::MatCorrType::USEMatCorrTGeo;
-  o2::base::PropagatorD::MatCorrType corrType = o2::base::PropagatorD::MatCorrType::USEMatCorrLUT;
+  int corrType = 2; // MatCorrType::USEMatCorrLUT=2, USEMatCorrTGeo=1, USEMatCorrNone=0
 
   // TPC drift calibration
   std::string VDTimeSlotsJson = ""; // json file with TPC drift calibration intervals in ms

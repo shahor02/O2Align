@@ -53,7 +53,7 @@ bool Track::fitTrack(int frameStart, int frameStop, bool cropOnFailure, bool res
     if (!frame.isValid()) { // invalid point
       continue;
     }
-    if (!prop->propagateToAlphaX(trFit, refLin, frame.alpha, frame.x, false, params.maxSnp, params.maxStep, 1, params.corrType, nullptr, eLossSign)) {
+    if (!prop->propagateToAlphaX(trFit, refLin, frame.alpha, frame.x, false, params.maxSnp, params.maxStep, 1, static_cast<o2::base::PropagatorD::MatCorrType>(params.corrType), nullptr, eLossSign)) {
       if (crop) {
         info.resize(frameStart);
       }
