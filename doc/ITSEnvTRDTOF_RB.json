@@ -1,0 +1,25 @@
+[
+  { "match": "PVT/meanVertex",
+    "calib": { "type": "meanvertex", "fixed": true } 
+  },
+  {
+    "match": "ITS",
+    "rigidBody": "all"
+  },
+  {
+    "match": "TRD/sm[0-9]+",
+    "rigidBody": "all"
+  },
+  {
+    "match": "TRD/sm[0-9]+/st[0-4]/pl[0-5]",
+    "rigidBody": "all"
+  },
+  {
+    "match": "TOF/sm[0-9]+",
+    "rigidBody": "all"
+  },
+  {
+    "match": "TOF/sm[0-9]+/strip[0-9]+",
+    "rigidBody": "all"
+  }
+]
