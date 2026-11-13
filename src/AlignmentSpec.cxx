@@ -233,10 +233,11 @@ class AlignmentSpec final : public Task
     double chi2Sum{0};       // sum of the chi2 of the accepted fits
     double lostWeightSum{0}; // sum of the lost weights of the accepted fits
     int ndfSum{0};           // sum of the ndf of the accepted fits
+    int lastMSLost{0};       // trajectories whose step to the last point could not be split: its material is not accounted
     void print(const std::string& prefix) const
     {
-      LOGP(info, "\t{} GBL SUMMARY: fitted {}, constr.failed {}, fit failed {}, chi2Ndf rej {}, prop.failed {} GBL Chi2/Ndf = {:.3f}, LostWeight = {:.3f}",
-           prefix, fit, construct, fitFail, chi2Rej, failedProp, ndfSum ? chi2Sum / ndfSum : -1., lostWeightSum);
+      LOGP(info, "\t{} GBL SUMMARY: fitted {}, constr.failed {}, fit failed {}, chi2Ndf rej {}, prop.failed {} GBL Chi2/Ndf = {:.3f}, LostWeight = {:.3f}, last-step MS lost {}",
+           prefix, fit, construct, fitFail, chi2Rej, failedProp, ndfSum ? chi2Sum / ndfSum : -1., lostWeightSum, lastMSLost);
     }
   };
 
@@ -312,7 +313,10 @@ class AlignmentSpec final : public Task
   // into a single thin scatterer at `frame` (see Params::splitMSThreshold/splitMSStepMinDX).
   // Runs only a cheap, jacobian-free trial propagation; on true, xMid/alphaMid locate the split
   // point in the track's current (pre-step) tracking frame, radius being frame-independent.
-  bool needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid) const;
+  // lastPoint: the step to the last point of the trajectory, which cannot carry a scatterer: split whenever it crosses material, the mid
+  // point in the pre-step frame or, if not reachable there, in the frame of `frame`; msFull (if not null) gets the scattering angle of
+  // the whole step whenever it is computed.
+  bool needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid, bool lastPoint = false, float* msFull = nullptr) const;
 
   // refit the primary vertex vtxOrig (reference ivref) with its contributors, each refitted with its
   // own ITS clusters independently of the tracks prepared for the alignment, the result is put to
@@ -1336,8 +1340,10 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
   return true;
 }
 
-bool AlignmentSpec::needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid) const
+bool AlignmentSpec::needsSplitScatterer(const TrackD& track, const FrameInfoExt& frame, double& xMid, double& alphaMid, bool lastPoint, float* msFull) const
 {
+  // the last point: split whenever the step has a radial extent, a smaller gap than this is treated as no material
+  constexpr double MinDRLastPoint = 0.1;
   auto prop = o2::base::PropagatorD::Instance();
   TrackD trial = track;
   track::TrackLTIntegral ltTrial;
@@ -1345,16 +1351,40 @@ bool AlignmentSpec::needsSplitScatterer(const TrackD& track, const FrameInfoExt&
   if (!prop->propagateToAlphaX(trial, nullptr, frame.alpha, frame.x, false, mParams->maxSnp, mParams->maxStep, 1, mParams->corrType, &ltTrial)) {
     return false; // let the real propagation below fail and report it
   }
-  const double rPrev = track.getR(), rNext = trial.getR();
-  if (std::abs(rNext - rPrev) <= mParams->splitMSStepMinDX) {
+  const double rPrev = track.getR();
+  const double rNext = trial.getR();
+  const double minDR = lastPoint ? MinDRLastPoint : mParams->splitMSStepMinDX;
+  if (std::abs(rNext - rPrev) <= minDR) {
     return false;
   }
   const float msErrTrial = its::math_utils::MSangle(trial.getPID().getMass(), trial.getP(), ltTrial.getX2X0());
-  if (msErrTrial <= mParams->splitMSThreshold) {
+  if (msFull) {
+    *msFull = msErrTrial;
+  }
+  const float minMSErr = lastPoint ? mParams->minMS : mParams->splitMSThreshold;
+  if (msErrTrial <= minMSErr) {
     return false;
   }
+  const double rMid = 0.5 * (rPrev + rNext);
   alphaMid = track.getAlpha(); // the split point stays in the pre-step tracking frame
-  return track.getXatLabR(0.5 * (rPrev + rNext), xMid, prop->getNominalBz());
+  if (!lastPoint) {
+    return track.getXatLabR(rMid, xMid, prop->getNominalBz());
+  }
+  // the last point: the mid point must be reachable, in the pre-step frame or else in the frame of `frame`
+  const auto reachable = [&](const TrackD& from, double alpha) {
+    TrackD probe = from;
+    return probe.getXatLabR(rMid, xMid, prop->getNominalBz()) &&
+           prop->propagateToAlphaX(probe, nullptr, alpha, xMid, false, mParams->maxSnp, mParams->maxStep, 1, o2::base::PropagatorD::MatCorrType::USEMatCorrNONE);
+  };
+  if (reachable(track, alphaMid)) {
+    return true;
+  }
+  TrackD rotated = track;
+  if (!rotated.rotateParam(frame.alpha)) {
+    return false;
+  }
+  alphaMid = frame.alpha;
+  return reachable(rotated, alphaMid);
 }
 
 bool AlignmentSpec::refitPV(const PVertex& vtxOrig, int ivref, PVertex& vtxRefit)
@@ -1431,6 +1461,11 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
     return false;
   }
   auto prop = o2::base::PropagatorD::Instance();
+  // the last valid slot: the step to it is split (its material on the mid point), the point itself carries no scatterer
+  int ipLast = np - 1;
+  while (ipLast > ipStart && !resTrack.info[ipLast].isValid()) {
+    --ipLast;
+  }
   auto wTrk = resTrack.track; // working copy, the seed must be preserved
   o2::track::TrackParD trkRef, *refLin = nullptr;
   if (mParams->useStableRef) {
@@ -1485,11 +1520,36 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       // transition) gets its scatterer split in two instead of lumping it all at `frame`: a single
       // scatterer there would have zero lever arm to `frame` but the full gap as lever arm to the
       // previous point, biasing the correlation GBL builds between the kink and the two offsets.
-      double xMid = 0., alphaMid = 0.;
-      if (!invertHere && needsSplitScatterer(wTrk, frame, xMid, alphaMid)) { // not at the inversion: the gap there is the whole interior of the detector
-        float msErr1 = 0.f;
+      // The step to the last point is split whenever it crosses material, with the scattering of the whole step on the mid point:
+      // none can be put at the last point itself (see hasScatterer below). If that is not possible the step is made unsplit and
+      // counted in GBLStat::lastMSLost.
+      double xMid = 0.;
+      double alphaMid = 0.;
+      const bool lastPoint = ip == ipLast;
+      float msFull = 0.f;
+      bool split = !invertHere && needsSplitScatterer(wTrk, frame, xMid, alphaMid, lastPoint, &msFull); // not at the inversion: the gap there is the whole interior of the detector
+      float msErr1 = 0.f;
+      if (split && lastPoint) { // the mid step was checked to be reachable; should it still fail, the step is made unsplit
+        const auto wTrkSave = wTrk;
+        const auto refSave = trkRef;
+        const auto ltSave = lt;
+        const int failedPropSave = gblStat.failedProp;
         if (!stepTo(xMid, alphaMid, msErr1, false)) {
-          return false;
+          wTrk = wTrkSave;
+          trkRef = refSave;
+          lt = ltSave;
+          gblStat.failedProp = failedPropSave;
+          split = false;
+        }
+      } else if (split && !stepTo(xMid, alphaMid, msErr1, false)) {
+        return false;
+      }
+      if (lastPoint && !split && msFull > mParams->minMS) {
+        ++gblStat.lastMSLost;
+      }
+      if (split) {
+        if (lastPoint) {
+          msErr1 = msFull;
         }
         // the mid point is pushed unconditionally so that the frame's point below always gets its
         // jacobian from the immediately preceding list point (this leg's, not the full prev->frame
@@ -1550,7 +1610,7 @@ bool AlignmentSpec::fillGBLPoints(Track& resTrack, int ipStart, bool skipFirstMe
       meas.phi = wTrk.getPhi();
       o2::math_utils::bringTo02Pid(meas.phi);
     }
-    const bool hasScatterer = msErr > mParams->minMS && ip < np - 1;
+    const bool hasScatterer = msErr > mParams->minMS && ip < ipLast;
     if (hasScatterer) {
       // the material crossed since the previous point is lumped into a thin scatterer at this one
       point.addScatterer(Eigen::Vector2d::Zero(), getScatteringPrecision(wTrk, msErr));
