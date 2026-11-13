@@ -1218,7 +1218,12 @@ void AlignmentSpec::writeMilleSteerFiles(bool statWeighted)
   modeOpt.relativeToGroupRoots = mParams->groupModesRelToRoots;
   mHierarchy->writeRigidBodyConstraints(cons, statWeighted, modeOpt);
   std::ofstream par(mParams->milleParamFile);
-  mHierarchy->writeParameters(par);
+  if (!mParams->startFromMilleRes.empty()) {
+    const auto start = Volume::readMillepedeResults(mParams->startFromMilleRes);
+    mHierarchy->writeParameters(par, &start);
+  } else {
+    mHierarchy->writeParameters(par);
+  }
 }
 
 bool AlignmentSpec::loadVolumeStatistics(const std::string& fname)

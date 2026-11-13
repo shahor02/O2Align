@@ -89,7 +89,8 @@ class Volume
   /// writeChildrenMeanConstraints) for every DOF of every volume whose own "weightedMean" clause did
   /// not override it; modeOpt: see ModeEquationOptions
   void writeRigidBodyConstraints(std::ostream& os, bool statWeighted = false, const ModeEquationOptions& modeOpt = {}) const;
-  void writeParameters(std::ostream& os) const;
+  /// \param startValues optional label -> starting value of the parameter (e.g. from a previous millepede.res); 0 if absent
+  void writeParameters(std::ostream& os, const std::map<uint32_t, double>* startValues = nullptr) const;
   void writeTree(std::ostream& os, int indent = 0) const;
 
   /// \name Global deformation-mode constraints

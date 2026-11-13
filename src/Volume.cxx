@@ -1355,8 +1355,17 @@ void Volume::setActiveCalibSlot(int slotID)
   mActiveCalibSlot = static_cast<size_t>(std::distance(mCalibLabels.begin(), it));
 }
 
-void Volume::writeParameters(std::ostream& os) const
+void Volume::writeParameters(std::ostream& os, const std::map<uint32_t, double>* startValues) const
 {
+  auto start = [startValues](uint32_t label) {
+    if (startValues) {
+      const auto it = startValues->find(label);
+      if (it != startValues->end()) {
+        return it->second;
+      }
+    }
+    return 0.0;
+  };
   if (isRoot()) {
     os << "Parameter\n";
   }
@@ -1364,7 +1373,7 @@ void Volume::writeParameters(std::ostream& os) const
     if (mRigidBody) {
       for (int iDOF = 0; iDOF < mRigidBody->nDOFs(); ++iDOF) {
         os << std::format("{:<10} {:>+15g} {:>+15g} ! {} {} ",
-                          mLabel.raw(iDOF), 0.0, (mRigidBody->isFree(iDOF) ? 0.0 : -1.0),
+                          mLabel.raw(iDOF), start(mLabel.raw(iDOF)), (mRigidBody->isFree(iDOF) ? 0.0 : -1.0),
                           (mRigidBody->isFree(iDOF) ? 'V' : 'F'), mRigidBody->dofName(iDOF))
            << mSymName << '\n';
       }
@@ -1374,7 +1383,7 @@ void Volume::writeParameters(std::ostream& os) const
       for (const auto& calibLbl : mCalibLabels) {
         for (int iDOF = 0; iDOF < mCalib->nDOFs(); ++iDOF) {
           os << std::format("{:<10} {:>+15g} {:>+15g} ! {} {:<6} ",
-                            calibLbl.raw(iDOF), 0.0, (mCalib->isFree(iDOF) ? 0.0 : -1.0),
+                            calibLbl.raw(iDOF), start(calibLbl.raw(iDOF)), (mCalib->isFree(iDOF) ? 0.0 : -1.0),
                             (mCalib->isFree(iDOF) ? 'V' : 'F'), mCalib->dofName(iDOF))
              << mSymName;
           if (mCalibLabels.size() > 1) {
@@ -1386,7 +1395,7 @@ void Volume::writeParameters(std::ostream& os) const
     }
   }
   for (const auto& c : mChildren) {
-    c->writeParameters(os);
+    c->writeParameters(os, startValues);
   }
 }
 

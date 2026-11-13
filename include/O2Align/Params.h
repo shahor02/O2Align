@@ -167,6 +167,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   std::string milleParamFile = "mp2param.txt";
   std::string milleTreeFile = "mp2tree.txt";
   std::string milleResFile = "millepede.res";
+  std::string startFromMilleRes{};  // MilleSteer: if not empty, millepede.res whose fitted values are written to mp2param.txt as starting values (free/fixed still follows dofConfigJson)
   std::string milleResOutJson = "result.json";
 
   // conversion of the fitted rigid-body corrections to o2::detectors::AlignParam (MilleRes stage)
