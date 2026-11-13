@@ -42,7 +42,7 @@ struct DbgPoint {
   float sigZ = 0.f;
   float sigYZ = 0.f; // cluster Y-Z covariance (cm^2)
   float snp = 0.f;   // track snp at the point
-  float dyPre = 0.f; // residuals wrt the linearization track, as fed to GBL (include the injected misalignment, if any)
+  float dyPre = 0.f; // residuals wrt the KF seed state at the reference point extrapolated to the point, as fed to GBL (include the injected misalignment, if any)
   float dzPre = 0.f;
   float dyFit = 0.f; // residuals wrt the GBL fit
   float dzFit = 0.f;

@@ -89,10 +89,12 @@ of the measured point; the lab `Z` is `z`. `hasMeas()` and `hasKink()` test the 
 
 **Residuals.** All residuals are *measurement minus track* in cm, in the tracking frame of the point.
 
-- `dyPre`, `dzPre` are relative to the *linearization track* of the GBL, which is propagated from point to point and, when
-  `useStableRef` is set (the default), displaced to each cluster after the point is accounted. They are therefore the residuals with
-  respect to the broken-line reference, they can be as large as mm (the RMS in the first tests was 0.9 mm in Y and 1.4 mm in Z) and they are
-  not track residuals in the usual sense. They are the input to the fit: if a misalignment is injected, it is included in them.
+- `dyPre`, `dzPre` are relative to the *seed track* of the GBL: the KF state at the reference point (the innermost point, from the
+  inward fit), extrapolated outward to the measurement plane of each point. The seed is not updated by the measurements along the way
+  (`useStableRef` only affects the reference used by the propagator to evaluate the material and the field along the steps). They
+  are therefore the residuals with respect to the extrapolation of the innermost state, not track residuals in the usual sense: they
+  grow with the lever arm and the extrapolation error (the RMS in the first tests was 0.9 mm in Y and 1.4 mm in Z for the ITS), and
+  can reach many cm at the large radii (e.g. TOF). They are the input to the fit: if a misalignment is injected, it is included in them.
 - `dyFit`, `dzFit` are the residuals with respect to the GBL-fitted track. They are *biased*: the point itself pulls the fit, so their
   RMS is below the cluster error (about 0.5 σ for ITS tracks with ~7 points), as for any residual to a fit that includes the point.
   Their mean as a function of position (sensor, phi, z, ...) is what shows the misalignment that the fit could not absorb.
@@ -101,6 +103,10 @@ of the measured point; the lab `Z` is `z`. `hasMeas()` and `hasKink()` test the 
   r_unb = V (V − C)⁻¹ r_fit, of covariance V (V − C)⁻¹ V = V + the covariance of the fit without the point. Their pulls
   `dyUnb/sigYUnb` should have unit RMS. They are the residuals to use for one-out studies (e.g. per sensor), as those of
   checkResid; for the tracks of a composed trajectory the fit left out of is that of the whole composed trajectory.
+  They are not fully equivalent to the one-out residuals of a Kalman fit: the GBL fit has the scatterers (kinks) as free parameters,
+  and if the misalignment is not absorbed by the alignment parameters, it can be partly compensated by non-zero (asymmetric) kinks.
+  Then `dyFit`, `dzFit` (and hence `dyUnb`, `dzUnb`) are biased towards zero, and the mean fitted kink is non-zero. A non-zero mean of
+  `kinkY/Z` or of `pullKinkY/Z` (as a function of the same variables) signals that the residuals under-estimate the misalignment.
 - Residuals of the same point in a composed trajectory belong to a fit with the common vertex of all its tracks.
 
 **Kinks.** The kink is the change of direction at the scatterer, which stands for the material crossed since the previous point

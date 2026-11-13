@@ -380,6 +380,9 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   - 11-12, restoring the 30 µm module translation priors (S6R) leaves the 0.1–0.3 mm slides of the OB end modules along
     the IP ray almost unchanged (−10%) and all residuals within 0.5 µm. The slides are held by the data (≈ 10 µm per DOF),
     not by prior softness. Pede pays +34k, almost all of it in the prior term (`kink_cure.md` 6k).
+  - 11-12, fixing the end-module translations at C1v21w3 (S7R) costs +1.17M, almost all in the track data, and loses
+    the last part of the edge cure (Lr5 dz at tgλ = 1.9: 4 → 16 µm in B0). The 1.3–1.4 band stays, so the slides are
+    needed and do not cause it. The cosmics agree: +152k against S4RBis (`kink_cure.md` 6k).
 - v10n OB chip out-of-plane (TY) and longitudinal (TZ) corrections (11-07). They are carried unchanged into all our
   solutions, since OB chips are free only in TX, and many look unphysical (|TY|, |TZ| > 100 µm). All chips of a module share
   the same rotation, so only the chip translations scatter. Net chip displacements from the ideal geometry confirm that the

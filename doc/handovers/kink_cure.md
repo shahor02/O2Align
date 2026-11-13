@@ -929,6 +929,15 @@ The maps are per-chip Gaussian means of the checkResid residuals, per half barre
       - **What this rules out:** prior softness. The band cannot be traced to a slide that tighter priors would remove.
       - **Cosmics:** S4RBis is −248k against C1v21w3 and S5R costs +25k against S4RBis. But these are the cosmics the
         fits used, so this is in-sample and not independent support.
+    - **The slides are needed, and they are not the cause of the band.**
+      - **Test:** S7R is S4RBis with the end-module TX/TY/TZ fixed at C1v21w3; their RX/RY and chips stay free.
+      - **χ²:** pede +1 173k against S4RBis, of which +36k is the prior term, while the chips and module RX grow to
+        compensate. The track data pay about +1.14M.
+      - **Edge cure:** mostly kept. At tgλ = 1.9, Lr5 dz is 15.7 µm in B0, against 4.4 for S4RBis and 46.3 for C1v21w3.
+        The IOB dPar3 gain at tgλ = −1.4 is lost.
+      - **Band at tgλ 1.3–1.4:** unchanged (Lr5 dz −5.8 / −3.2 µm in B0).
+      - **Cosmics (in-sample):** +152k against S4RBis with the cut, with 2.6k more rejected tracks, and +425k without the
+        cut. The cosmics need the slides too.
 - **IB staves at the half-barrel boundaries (dY).** Weighted per-stave means over the 9 chips, C1v21w3.
   - The standard dY is flat everywhere, within ±1 µm.
   - IOB dY in B0 (562862, IB cluster vs OB sub-track extrapolation): last stave of each half barrel +17…+21 µm in all
