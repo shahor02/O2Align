@@ -118,11 +118,12 @@ struct SuperCluster {
   explicit SuperCluster(const SelectedCluster& c) : sector(c.sector), firstRow(c.row) { add(c); }
   void add(const SelectedCluster& c)
   {
-    sumX += c.qTot * c.x;
-    sumY += c.qTot * c.y;
-    sumZ += c.qTot * c.z;
-    sumRow += c.qTot * c.row;
-    charge += c.qTot;
+    const float w = c.qTot > 0.f ? c.qTot : 1.f; // clusters stored w/o the charge: equal weights instead of a NaN position
+    sumX += w * c.x;
+    sumY += w * c.y;
+    sumZ += w * c.z;
+    sumRow += w * c.row;
+    charge += w;
     state |= c.state;
     ++nClusters;
   }
