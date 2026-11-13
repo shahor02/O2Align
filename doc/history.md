@@ -422,3 +422,33 @@ Summaries only; the full story is in `doc/handovers/handover_OB_22_10_26.md` and
   cosmics at weight 1. The gain shows in the checkResid widths and φ-uniformity of the OB dz (core σ −1…−3 µm, spread of
   the dz means vs φ halved), not in the layer-averaged means vs tgλ: the OB sigmoid is unchanged (its edges at Lr3/Lr6
   slightly worse). (`kink_cure.md` 6i.)
+
+## 2026-11-11 … 11-13: material before the last point, energy-loss sign of cosmics, jacobian step, charge-less clusters
+
+Context: PbPb cosmics with the field on (run 568041), TPC with TOF points at both ends, unbiased TOF residuals from the
+`gbltrack` debug tree. The TOF y pulls were large (⟨pull²⟩ 5.6), twice as large on the bottom leg as on the top one;
+cosmics with ITS points had ⟨pull²⟩ ≈ 1.4 with the same TOF hits.
+
+- **Material before the last point dropped.** The last point of a trajectory carries no scatterer (`hasScatterer`
+  requires `ip < np - 1`), and the step to it was split only above `splitMSThreshold` (5 mrad, i.e. low momenta), so
+  the material on the way to it was lost: for a TOF point the TPC outer wall, the TRD and the TOF. 97 % of the cosmics
+  had no scatterer between the last TPC point and the bottom TOF (the track error there 0.13 cm instead of 0.16 cm).
+  The step to the last valid point is now always split when it crosses material, the scattering of the whole step on
+  the mid point (in the pre-step frame, or in the frame of the last point if the mid point cannot be reached in the
+  first); if neither works the step stays unsplit and is counted (`last-step MS lost` in the GBL summary). This also
+  acts on collision tracks ending on TOF or TRD.
+- **Energy-loss sign of cosmics.** The Propagator takes the sign of the energy-loss correction from the direction of x
+  (outward = loss). The top leg of a cosmic is run in the upward parametrisation, so in the KF of the legs it lost
+  energy on the way up and in the GBL reference it regained it on the way down. `Track::fitTrack` takes the sign
+  (`eLossSign`); the KF of the legs loses energy outward along the bottom leg and regains it back inward and along the
+  top leg; every GBL step of a cosmic (time order, top first) is a loss. Collision tracks are unchanged. Bottom-leg TOF
+  ⟨pull²⟩ y at 2–5 GeV 5.7 → 5.0, GBL χ²/ndf 1.080 → 1.070.
+- **Transport jacobian.** The numerical derivative starts with a perturbation of ±0.05 in snp; at |snp| ≈ 0.85 the
+  perturbed track leaves maxSnp after the rotation to the next sector and the whole track was lost. The first step is
+  now shrunk (down to `minStep`) before giving up, and a failure at a later extrapolation keeps the best estimate so
+  far. Cosmics: propagation failures of the GBL stage 145 → 12 per 60 k TFs.
+- **TPC superclusters of clusters without the charge.** Clusters read with qTot = 0 (ClusterNative written before the
+  qTot → qTotPacked rename and read by a newer O2) gave a NaN supercluster position and no fit at all; they now get
+  equal weights.
+- Together, on one cosmics piece (TPC-TOF, ideal map, no selection): GBL fits 10 734 → 11 754, propagation failures
+  2106 → 992 (the reference with the charge fix only).

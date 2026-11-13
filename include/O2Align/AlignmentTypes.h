@@ -83,7 +83,8 @@ struct Track {
   /// reset: reset the seed covariance and zero `kfFit.chi2` before the fit, otherwise the fit
   ///        continues from the seed as is.
   /// cropOnFailure: on a failure of an outward fit drop the frames from the frameStart slot on.
-  bool fitTrack(int frameStart, int frameStop, bool cropOnFailure = false, bool reset = false);
+  // eLossSign: sign of the energy-loss correction (Propagator signCorr), 0 = from the direction of x (outward = loss), -1 loss, +1 gain
+  bool fitTrack(int frameStart, int frameStop, bool cropOnFailure = false, bool reset = false, int eLossSign = 0);
 
   /// Continue the KF fit outward, using the frames appended by the caller to `info` starting
   /// from the slot frameStart. The caller must append them in the outward direction. On failure
