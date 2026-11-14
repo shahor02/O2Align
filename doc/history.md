@@ -452,3 +452,35 @@ cosmics with ITS points had ⟨pull²⟩ ≈ 1.4 with the same TOF hits.
   equal weights.
 - Together, on one cosmics piece (TPC-TOF, ideal map, no selection): GBL fits 10 734 → 11 754, propagation failures
   2106 → 992 (the reference with the charge fix only).
+
+## 2026-11-13: TRD pad tilt, cosmics across the central electrode, fixed DOFs in MilleRes, single-point bottom leg
+
+Found in a code review of `ea32487`; each one checked on the laptop.
+
+- **TRD pad tilt.** `makeTrackletPoint` set the tilt correction to 0 when the track is within one pad length of the
+  pad-row centre, i.e. exactly where O2 (`GPUTRDTracker`, `TrackInterpolation`) applies it, and applied it only farther
+  away. The condition is now O2's: within one pad length of the row centre and with a track z error σz² < l²/12 (the
+  latter excludes 1 of 11 145 tracklets on a cosmics piece with the ideal map). The tilt-corrected y also depends on the z of the pad row, while the z row of the
+  derivatives is zeroed for these points (`zFromTrack`): the y row now gets `-tilt * (z row)` where the correction is
+  applied (`FrameInfoExt::tiltDz`). Checked by finite differences: the raw tracklet moved by a ±10 µm / ±10 µrad
+  correction of each DOF of the chamber and of the supermodule (as `MilleRes` applies it), the measurement redone; all
+  12 columns agree with the analytic ones at the track point (100 % of 1500 points within 1 %, TOF strip and
+  supermodule as well). Cosmics with TRD on a calibrated TPC (4 pieces, 162 cosmics with TRD): TRD y ⟨pull²⟩ per layer
+  1.35 / 1.22 / 0.88 / 1.35 / 1.62 / 1.13 → 1.23 / 1.15 / 0.82 / 1.29 / 1.60 / 1.13.
+- **Cosmics crossing the central electrode.** With the ideal TPC map, the clusters of one pad row on both sides of the
+  central electrode (sectors s and s + 18) have the same alpha and X. The zero step between them has an identity
+  jacobian, rejected as "Near jacobian idendity": the whole cosmic was dropped (≈ 85 per cosmics piece, exactly the
+  cosmics that link A and C). Such a frame is now a 2nd measurement on the previous GBL point (`DbgPoint::SamePoint`).
+  When such frames end the track, the last GBL point is the first of them: it gets the split of the last step and no
+  scatterer (GBL ignores a thin scatterer on the last point). One piece (TPC-TRD-TOF, ideal map): identity errors 83 → 0,
+  fits 11 523 → 11 617; 105 same-point measurements, none on the last frame.
+- **Fixed DOFs in MilleRes.** pede reports a fixed parameter at its preset value (`startFromMilleRes`), and
+  `readMillepedeResults` keeps it, but the writers required a free DOF: a restart with the parents fixed exported the
+  children only. Fixed DOFs with a non-zero value now go to `result.json`, the CCDB objects and the weak-mode
+  diagnostics; nothing changes without such values. Test (TRD supermodules fixed at TX = 0.05 cm, chambers free):
+  `result.json` 521 → 539 entries, the supermodules moved by 0.05 cm in the CCDB object, chambers unchanged.
+- **Single-point bottom leg of a cosmic.** The step between the legs is not split, and with one bottom-leg point it is
+  also the last step, whose point carries no scatterer: the interior material was lost (and not counted). It now goes
+  on the last top-leg point, combined with the scatterer there. Those cosmics (0.6 %): χ²/ndf 5.46 → 4.33, ⟨pull²⟩ of
+  the lone point 116 → 60.
+- All four together on that piece (w01_0, TPC-TRD-TOF, ideal map): 11 523 → 11 611 fits, identity errors 83 → 0.

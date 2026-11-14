@@ -106,7 +106,7 @@ data selection and DOF set.
 
 ## Reading the result
 
-- **`result.json`** (`AlignParams.milleResOutJson`): per volume with free DOFs, `fitted - control - injected` of the DOFs, i.e. zeros (within
+- **`result.json`** (`AlignParams.milleResOutJson`): per volume with free DOFs (or a fixed DOF that pede reports at a non-zero preset value, `startFromMilleRes`), `fitted - control - injected` of the DOFs, i.e. zeros (within
   errors) if the injected DOF is recovered. The ITS3 `matrix`/`inextensional` entries are in the same layout as before.
   The other output of the stage, `<DET>_alignment.root` (`AlignParams.algParamsOutFile`), is the alignment objects of the
   absolute fitted values, with nothing subtracted.

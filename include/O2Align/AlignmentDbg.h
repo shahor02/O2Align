@@ -28,7 +28,8 @@ struct DbgPoint {
     HasMeas = 0x1 << 0,   // the point carries a measurement
     HasKink = 0x1 << 1,   // the point carries a scatterer (the kinks are defined)
     IsVertex = 0x1 << 2,  // the point is the primary vertex
-    ITSOverlap = 0x1 << 3 // the point is on an ITS overlap
+    ITSOverlap = 0x1 << 3, // the point is on an ITS overlap
+    SamePoint = 0x1 << 4   // a further measurement on the GBL point of the previous debug point (same alpha and X)
   };
   int8_t det = -1;   // detector index (Detector::DetIdx, 0=PVT), -1 for the scatterer-only points
   int16_t sens = -1; // sensor ID within the detector
@@ -60,6 +61,7 @@ struct DbgPoint {
   float getLabR() const { return std::sqrt(x * x + y * y); }
   bool hasMeas() const { return flags & HasMeas; }
   bool hasKink() const { return flags & HasKink; }
+  bool isSamePoint() const { return flags & SamePoint; }
   ClassDefNV(DbgPoint, 2)
 };
 

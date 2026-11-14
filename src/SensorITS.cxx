@@ -56,7 +56,7 @@ void SensorITS::defineMatrixT2L()
   setT2LFromAlpha(getFlatChipAlpha(mL2G));
 }
 
-// The caller (Volume::writeMillepedeResults) only invokes this when getCalib() has free DOFs.
+// The caller (Volume::writeMillepedeResults) only invokes this when getCalib() has free DOFs or a fixed one at a non-zero value.
 // The values are those of labelToValue (any reference is subtracted from it by the caller).
 bool SensorITS::MP2JSON_Calib(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const
 {
