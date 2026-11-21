@@ -1,0 +1,10 @@
+[
+  { "match": ".*", "rigidBody": "fixed" },
+
+  { "match": "PVT/meanVertex", "calib": { "type": "meanvertex", "free": ["X", "Y", "Z", "SlopeX", "SlopeY"] } },
+
+  { "match": "ITS", "rigidBody": "fixed", "pinChildrenMeanNoCross": ["TX", "TY", "TZ", "RZ"] },
+
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]", "rigidBody": ["TX", "TY", "TZ", "RZ"] },
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.003], "TZ": [0.0, 0.003], "RZ": [0.0, 0.001] } }
+]

@@ -10,6 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(O2 REQUIRED)
+find_package(Eigen3 CONFIG REQUIRED)
 find_package(OpenMP)
 find_package(Mille CONFIG REQUIRED)
 
@@ -32,6 +33,7 @@ set(O2_ALIGN_PUBLIC_LIBRARIES
     O2::DetectorsVertexing
     nlohmann_json::nlohmann_json
     GBL::GBL
+    Eigen3::Eigen
     Mille2)
 
 add_library(O2Align SHARED
@@ -123,6 +125,9 @@ install(TARGETS O2exe-alignment-workflow O2exe-mille-replay
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY include/O2Align DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY macro/ DESTINATION ${CMAKE_INSTALL_DATADIR}/macro USE_SOURCE_PERMISSIONS)
+
+get_target_property(O2_ALIGN_EIGEN_INCLUDE_DIRS Eigen3::Eigen INTERFACE_INCLUDE_DIRECTORIES)
+string(REPLACE ";" ":" O2_ALIGN_EIGEN_INCLUDE_PATH "${O2_ALIGN_EIGEN_INCLUDE_DIRS}")
 
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/init.sh.in

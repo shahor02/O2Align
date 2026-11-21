@@ -859,3 +859,14 @@ Found in a code review of `ea32487`; each one checked on the laptop.
   initialisation (TGeo creates its per-thread volume data only once, in `SetMaxThreads`). The same 400 B+ TFs with
   `corrType=1 --nthreads 4` then reproduce the 1-thread recording exactly, with every OpenMP thread on its own TGeo slot and
   navigator. Which of the later initialisations invalidated the per-thread data was not isolated.
+
+## 2026-11-21: half-barrel-level change between pp LHC25ab 562837 and PbPb LHC25as 568664 (B+)
+
+- In checkResid, late − early is the same for best/IBEdge and V10n (double difference < 0.5 µm), flat in pT, and absent
+  for 564644 − 562837. So the ITS changed after 564644, independently of the alignment.
+- IB: the top/bottom halves moved relative to the vertex (vertex ty ∓3.3/+3.6 µm), with Lr1 moving against Lr0/Lr2. The
+  resulting ~1 µm IB sagitta changes the IB sub-track q/pT by ±0.05 GeV⁻¹, which explains the IB-OB degradation on p.9.
+  About 85 % of it is rigid per HB; the rest (~1 µm) is stave-level.
+- OB: Lr4 HB0 shows an apparent ty of −13 µm. The v21-type configs pin the OB HBs, so they cannot absorb it.
+- Added `doc/ITS_RB_HBonly.json` (per-layer HB TX/TY/TZ/RZ plus the mean vertex) for a realignment with the late data.
+  Details and tests are in [HBLevel_adjustment.md](HBLevel_adjustment.md).

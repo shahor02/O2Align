@@ -8,6 +8,15 @@ if [[ ":$ROOT_INCLUDE_PATH:" != *":@CMAKE_INSTALL_PREFIX@/include:"* ]]; then
     export ROOT_INCLUDE_PATH="${ROOT_INCLUDE_PATH:+$ROOT_INCLUDE_PATH:}@CMAKE_INSTALL_PREFIX@/include"
 fi
 
+# Public O2Align headers include Eigen; ROOT/ACLiC does not inherit CMake's include paths.
+IFS=: read -r -a _o2align_eigen_dirs <<< '@O2_ALIGN_EIGEN_INCLUDE_PATH@'
+for _o2align_eigen_dir in "${_o2align_eigen_dirs[@]}"; do
+    if [[ ":$ROOT_INCLUDE_PATH:" != *":$_o2align_eigen_dir:"* ]]; then
+        export ROOT_INCLUDE_PATH="${ROOT_INCLUDE_PATH:+$ROOT_INCLUDE_PATH:}$_o2align_eigen_dir"
+    fi
+done
+unset _o2align_eigen_dirs _o2align_eigen_dir
+
 # Add bin directory to PATH if not already present
 if [[ ":$PATH:" != *":@CMAKE_INSTALL_PREFIX@/bin:"* ]]; then
     export PATH="${PATH:+$PATH:}@CMAKE_INSTALL_PREFIX@/bin"
