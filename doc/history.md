@@ -859,6 +859,14 @@ Found in a code review of `ea32487`; each one checked on the laptop.
   initialisation (TGeo creates its per-thread volume data only once, in `SetMaxThreads`). The same 400 B+ TFs with
   `corrType=1 --nthreads 4` then reproduce the 1-thread recording exactly, with every OpenMP thread on its own TGeo slot and
   navigator. Which of the later initialisations invalidated the per-thread data was not isolated.
+- `solB1A4` redone on the LUT re-recording `coll_LutPt08ITSSEED` (+ `cosmHP4LUT`): pede rejects 5.0 % (590k / 11.8M) instead of 32 %.
+  Replay, reference → solution: B0 7.3 → 7.2 %, B+ 1.9 → 1.7 %, B− 2.1 → 2.0 %, cosmics 9.7/9.4 → 8.7/8.3 %. The residual
+  B0 noPV rejection (6.4 %) is the known soft-track multiple scattering. The TRD/TOF geometry is practically that of the TGeo
+  solution (layer rφ −0.15…−0.23 mrad, TOF −0.88 mrad, TRD tilt dx/dz +0.45, dy/dz −0.30 mrad, stacks within ~0.5 mm, sector
+  DOFs correlated 0.97–1.00), so the lost OB material had inflated χ² and rejections without moving the outer detectors.
+- The largest remaining pull is the TRD radial scale (`TRD_sect_TZ`, pinned via `pinChildrenMean`, and the per-stack chamber
+  TX): +1.9 mm B+, −1.0 mm B−, +1.1 mm B0, +5.7…+6.2 mm cosmics. Its field-odd part points to a TRD calibration (drift
+  velocity/t0, ExB) rather than to geometry.
 
 ## 2026-11-21: half-barrel-level change between pp LHC25ab 562837 and PbPb LHC25as 568664 (B+)
 
@@ -870,3 +878,17 @@ Found in a code review of `ea32487`; each one checked on the laptop.
 - OB: Lr4 HB0 shows an apparent ty of −13 µm. The v21-type configs pin the OB HBs, so they cannot absorb it.
 - Added `doc/ITS_RB_HBonly.json` (per-layer HB TX/TY/TZ/RZ plus the mean vertex) for a realignment with the late data.
   Details and tests are in [HBLevel_adjustment.md](HBLevel_adjustment.md).
+
+## 2026-11-21: MilleRes ignored the rigid-body corrections of volumes without a configured DOF set
+
+- `--output MilleRes,Regularize` on `solB1A4` without `dofConfigJson` produced the initial IBEdge TRD/TOF geometry,
+  regularized: `result.json` held only the mean vertex. `Volume::getFittedLocalDelta` (and the `result.json` writing)
+  required a `RigidBodyDOFSet`, which only the DOF configuration creates, so every rigid-body value of `millepede.res`
+  was silently dropped.
+- Fix: the values are looked up by label for every rigid-body alignable volume, configured or not. The same run then
+  places the TRD chambers and TOF strips as the unregularized `solB1A4` objects do on the ideal geometry
+  (≤ 4·10⁻¹⁰ cm TRD, 2·10⁻⁸ cm TOF), against up to 2.3 cm and 10 mrad before.
+- The internal closure check reports 5·10⁻⁵ cm for TOF, before and after the fix. Applied to the ideal geometry, the
+  output agrees with the input to 2·10⁻⁸ cm, so the deviation comes from the ideal TOF matrices derived from the loaded
+  IBEdge geometry (G^id = P^-1 G), which match the IBEdge TOF objects only to that level.
+

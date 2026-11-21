@@ -1300,21 +1300,20 @@ bool Volume::writeModeEquation(std::ostream& os, const std::string& name, const 
 }
 
 // Local delta d^n of the volume from its fitted rigid-body parameters (step 1). Returns false if
-// the volume has no rigid-body DOF set or all its values are 0 (labels absent from labelToValue
+// the volume is not rigid-body alignable or all its values are 0 (labels absent from labelToValue
 // count as 0). Fixed DOFs count too: pede reports them at their preset value (startFromMilleRes),
 // which is a real correction.
 bool Volume::getFittedLocalDelta(const std::map<uint32_t, double>& labelToValue, TGeoHMatrix& delta) const
 {
-  // RSTODO In principle, if the volume has no rigid-body DOF, it should not have any fitted parameters either.
-  // So, in the alignment results writing session one could skip initializing the same RB DOFs just for this check,
-  // instead, one can check isRigidBodyAllowed() and then loop as for (int i = 0; i < RigidBodyDOFSet::NDOF; ++i)
-  const auto* rb = getRigidBody();
-  if (rb == nullptr) {
+  // looked up by label whether or not the current DOF configuration gives the volume a RigidBodyDOFSet:
+  // the labels do not depend on the configuration, so converting a millepede.res does not need the
+  // dofConfigJson of the fit
+  if (!isRigidBodyAllowed()) {
     return false;
   }
   std::array<double, RigidBodyDOFSet::NDOF> par{};
   bool nonZero = false;
-  for (int i = 0; i < rb->nDOFs(); ++i) {
+  for (int i = 0; i < RigidBodyDOFSet::NDOF; ++i) {
     if (auto it = labelToValue.find(getLabel().raw(i)); it != labelToValue.end()) {
       par[i] = it->second;
       nonZero |= par[i] != 0.;
@@ -1880,11 +1879,11 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
   });
 }
 
-// The caller (writeMillepedeResults) only invokes this when getRigidBody() has free DOFs or a fixed one at a non-zero value.
+// The caller (writeMillepedeResults) only invokes this for a rigid-body alignable volume with free DOFs or a DOF at a non-zero value.
 bool Volume::MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const
 {
   auto rbArr = nlohmann::json::array();
-  for (int i = 0; i < getRigidBody()->nDOFs(); ++i) {
+  for (int i = 0; i < RigidBodyDOFSet::NDOF; ++i) {
     rbArr.push_back(getFittedValue(labelToValue, mLabel.raw(i)));
   }
   entry["rigidBody"] = rbArr;
@@ -1990,8 +1989,8 @@ void Volume::writeMillepedeResults(Volume* root, const std::map<uint32_t, double
   using json = nlohmann::json;
 
   // a DOF set with no free DOF is written too if pede reports one of its fixed DOFs at a non-zero (preset) value
-  auto anyNonZero = [&labelToValue](const DOFSet* set, const Label& lbl) {
-    for (int i = 0; i < set->nDOFs(); ++i) {
+  auto anyNonZero = [&labelToValue](int nDOFs, const Label& lbl) {
+    for (int i = 0; i < nDOFs; ++i) {
       if (auto it = labelToValue.find(lbl.raw(i)); it != labelToValue.end() && it->second != 0.) {
         return true;
       }
@@ -2007,10 +2006,11 @@ void Volume::writeMillepedeResults(Volume* root, const std::map<uint32_t, double
     entry["id"] = id;
 
     bool write = false;
-    if (const auto* rb = vol->getRigidBody(); rb && (rb->nFreeDOFs() || anyNonZero(rb, vol->getLabel()))) {
+    // the rigid-body values are found by label also for a volume without RigidBodyDOFSet in the current configuration
+    if (const auto* rb = vol->getRigidBody(); vol->isRigidBodyAllowed() && ((rb && rb->nFreeDOFs()) || anyNonZero(RigidBodyDOFSet::NDOF, vol->getLabel()))) {
       write |= vol->MP2JSON_RB(labelToValue, entry);
     }
-    if (const auto* cal = vol->getCalib(); cal && (cal->nFreeDOFs() || std::any_of(vol->getCalibLabels().begin(), vol->getCalibLabels().end(), [&](const Label& l) { return anyNonZero(cal, l); }))) {
+    if (const auto* cal = vol->getCalib(); cal && (cal->nFreeDOFs() || std::any_of(vol->getCalibLabels().begin(), vol->getCalibLabels().end(), [&](const Label& l) { return anyNonZero(cal->nDOFs(), l); }))) {
       write |= vol->MP2JSON_Calib(labelToValue, entry);
     }
 

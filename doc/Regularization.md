@@ -33,6 +33,9 @@ some levels.
 - `--output Regularize` without `MilleRes` regularizes the initial (CCDB) alignment itself. No
   `millepede.res` is needed.
 
+The rigid-body values of `millepede.res` are taken by label for every alignable volume, so `MilleRes` does not need the
+`dofConfigJson` of the fit.
+
 ```bash
 o2-dev-alignment-workflow -b --run --output Regularize --detectors ITS --disable-mc \
   --hbfutils-config hbfutils \

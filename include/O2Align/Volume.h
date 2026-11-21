@@ -353,11 +353,11 @@ class Volume
   /// write the rigid-body block of the JSON output (result.json) for this volume, the fitted values
   /// as given in labelToValue. Generic over any
   /// RigidBodyDOFSet layout, hence implemented once in the base class. The caller
-  /// (writeMillepedeResults) only calls this when the volume has free rigid-body DOFs or a fixed one that
-  /// pede reports at a non-zero (preset) value.
+  /// (writeMillepedeResults) only calls this for a rigid-body alignable volume having free rigid-body DOFs
+  /// or a DOF that pede reports at a non-zero value (also without RigidBodyDOFSet in the current configuration).
   virtual bool MP2JSON_RB(const std::map<uint32_t, double>& labelToValue, nlohmann::json& entry) const;
   /// local delta (LOC->LOC, l' = delta*l) built from the fitted rigid-body parameters of this volume.
-  /// Returns false if it has no rigid-body DOF set or all its values are 0 (labels absent from
+  /// Returns false if it is not rigid-body alignable or all its values are 0 (labels absent from
   /// labelToValue count as 0). Fixed DOFs count too: pede reports them at their preset value.
   bool getFittedLocalDelta(const std::map<uint32_t, double>& labelToValue, TGeoHMatrix& delta) const;
   /// value of a parameter in millepede.res (a fixed one at its preset value), 0 if it is absent
