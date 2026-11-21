@@ -1071,10 +1071,6 @@ void AlignmentSpec::initOnFirstTF()
   if (mITS) {
     o2::its::GeometryTGeo::Instance()->fillMatrixCache(o2::math_utils::bit2Mask(o2::math_utils::TransformType::T2L, o2::math_utils::TransformType::L2G, o2::math_utils::TransformType::T2G));
   }
-  if (mParams->corrType == static_cast<int>(o2::base::PropagatorD::MatCorrType::USEMatCorrTGeo) && mNThreads > 1) {
-    // per-thread TGeo navigators: mutex-free material queries from the OpenMP regions (serial call, geometry is loaded)
-    o2::base::GeometryManager::setMaxThreads(mNThreads);
-  }
   buildHierarchy();
   if (mITS) {
     if (!mParams->ITSSensRequest.empty()) {
@@ -1092,6 +1088,11 @@ void AlignmentSpec::initOnFirstTF()
   }  
   if (!mOutOpt[o2::alignrs::OutputOpt::MilleRes] && !mCosmicsExt) { // the vertexer is not used for cosmics
     initVertexer();
+  }
+  if (mParams->corrType == static_cast<int>(o2::base::PropagatorD::MatCorrType::USEMatCorrTGeo) && mNThreads > 1) {
+    // per-thread TGeo navigators: mutex-free material queries from the OpenMP regions. Serial call, done last,
+    // after every initialisation which touches the geometry (TGeo creates the per-thread data only once)
+    o2::base::GeometryManager::setMaxThreads(mNThreads);
   }
 }
 

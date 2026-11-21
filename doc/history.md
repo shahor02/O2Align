@@ -842,3 +842,20 @@ Found in a code review of `ea32487`; each one checked on the laptop.
   has −0.2 mrad. It matches the −2.1 mrad already in the TOF CCDB alignment.
 - The mean-vertex slopes fitted at IBEdge (−0.07, +0.03…−0.07 mrad relative to the recorded ones) are measured by the ITS.
   They follow the ITS (IB) axis and say nothing about the ITS tilt relative to the true beam.
+
+## 2026-11-21: TGeo material with per-thread navigators loses OB scattering in the workflow
+
+- `solB1A4` (`ITSEnvTRDTOFch4_RB.json`, `coll_TGEOPt08ITSSEED` + `cosmHP4LUT`): 32 % pede rejects. `o2-dev-mille-replay` gives the same
+  rejection at the recording reference (no solution) as with the solution (B± 34–36 % vs 32–35 %), so it is in the records.
+- Debug trees, single accepted tracks, B+: every recording with `corrType=1` made after e06a236 (`setMaxThreads` with `nthreads>1`)
+  has ITS χ² ≈ 0.8–1.0 per coordinate and kink χ² ≈ 1.1–1.5 per kink coordinate, against 0.25 / 0.55–0.8 for the LUT
+  (`collHPLUT`), and an OB unbiased track error of 15–18 µm against 24–29 µm. This includes the `coll_TGEOPt12*` test samples.
+- Same 400 B+ TFs recorded locally three times: `corrType=1 --nthreads 4` → OB track error 15–18 µm, 36–44 % of the tracks above
+  the 3σ χ² quantile; `corrType=1 --nthreads 1` → 24–29 µm, 7–10 %; `corrType=2 --nthreads 4` → identical to the serial TGeo.
+  A standalone `GeometryManager::meanMaterialBudget` test (aligned IBEdge geometry, 4 std::threads after `setMaxThreads`) agrees
+  with the serial result and with the LUT within 2 % per ITS layer, so the loss happens only in the workflow context.
+- The old `coll` recording (11-16, `corrType=1`, 4 threads) predates the O2 mutex-free change and is not affected in the same way.
+- Cure: `setMaxThreads` moved to the end of `AlignmentSpec::initOnFirstTF`, after `buildHierarchy()` and the TPC/TRD/vertexer
+  initialisation (TGeo creates its per-thread volume data only once, in `SetMaxThreads`). The same 400 B+ TFs with
+  `corrType=1 --nthreads 4` then reproduce the 1-thread recording exactly, with every OpenMP thread on its own TGeo slot and
+  navigator. Which of the later initialisations invalidated the per-thread data was not isolated.
