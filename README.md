@@ -29,8 +29,8 @@ Parameters of the alignment itself are set via `--configKeyValues "AlignParams.<
 | `--disable-root-input` | off | do not add the root-files input reader |
 | `--configKeyValues` | empty | semicolon-separated `key=value` list of `ConfigurableParam` settings (`AlignParams.*`, `pvertexer.*`, ...); applied after the built-in primary-vertex defaults, so it overrides them |
 
-The alignment device itself adds `--nthreads` (number of OpenMP threads of the track refit, default 1)
-and `--config-macro` (see [User configuration macro](#user-configuration-macro)).
+The alignment device itself adds `--nthreads` (number of OpenMP threads of the track refit and cosmic-leg
+junction Jacobians, default 1) and `--config-macro` (see [User configuration macro](#user-configuration-macro)).
 
 Options added by shared O2 helpers, not described here (use `--help full`): the HBF utils options
 (`--hbfutils-config`, ...), the TPC correction-map options (needed when `TPC` is among the

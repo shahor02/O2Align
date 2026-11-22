@@ -298,6 +298,8 @@ class AlignmentSpec final : public Task
   // fill resTrack with the points of the cosmic and the KF fit of them, the reference state is at the highest point
   bool prepareCosmicTrack(const o2::dataformats::TrackCosmicsExtended& cosm, Track& resTrack);
   bool collectCosmicFrames(const o2::dataformats::TrackCosmicsExtended& cosm, const std::array<const TrackD*, 2>& refLeg, std::array<std::vector<FrameInfoExt>, 2>& frames, DetID::mask_t& contributed, std::string& why);
+  bool getCosmicHitAvailability(const o2::dataformats::TrackCosmicsExtended& cosm, DetID::mask_t& available) const;
+  bool canFormDetCombination(DetID::mask_t available) const;
   bool fitCosmicLegs(Track& resTrack, const TrackD& refDown, int nTop, int nTot, std::string& why);
   void setCosmicTPCTransformation(const o2::dataformats::CosmicsTFInfo& tfInfo);
 
@@ -599,45 +601,104 @@ static float yLab(const FrameInfoExt& frame)
   return frame.x * std::sin(frame.alpha) + frame.cluster.getY() * std::cos(frame.alpha);
 }
 
-// Ask the detectors for the points of both legs, the references of the legs being used for the track dependent quantities. A detector
-// which has fewer measurements than required is dropped and the collection restarted without it, unless it is obligatory, in which
-// case the cosmic is lost (the reason is returned in `why`). `contributed` gets the detectors providing the points.
+// Raw hit counts bound the measurements a detector can provide, before decoding or propagation.
+// Both legs must have at least one hit from the enabled detectors.
+bool AlignmentSpec::getCosmicHitAvailability(const o2::dataformats::TrackCosmicsExtended& cosm, DetID::mask_t& available) const
+{
+  available.reset();
+  const auto enough = [](size_t n, const Detector* det) {
+    return n >= static_cast<size_t>(std::max(1, det->getMinCosmicMeasurements()));
+  };
+  if (mITS && enough(cosm.clITS.size(), mITS.get())) {
+    available.set(DetID::ITS);
+  }
+  if (mTPC && enough(cosm.clTPCBottom.size() + cosm.clTPCTop.size(), mTPC.get())) {
+    available.set(DetID::TPC);
+  }
+  if (mTRD && enough(cosm.trdTracklets.size(), mTRD.get())) {
+    available.set(DetID::TRD);
+  }
+  if (mTOF && enough(cosm.clTOF.size(), mTOF.get())) {
+    available.set(DetID::TOF);
+  }
+  unsigned legs = 0;
+  const auto addLegs = [&](const auto& hits) {
+    for (const auto& hit : hits) {
+      if (hit.leg < 2) {
+        legs |= 1u << hit.leg;
+      }
+    }
+  };
+  if (mITS) {
+    addLegs(cosm.clITS);
+  }
+  if (mTRD) {
+    addLegs(cosm.trdTracklets);
+  }
+  if (mTOF) {
+    addLegs(cosm.clTOF);
+  }
+  if (mTPC) {
+    if (!cosm.clTPCBottom.empty()) {
+      legs |= 1u;
+    }
+    if (!cosm.clTPCTop.empty()) {
+      legs |= 2u;
+    }
+  }
+  return legs == 3 && canFormDetCombination(available);
+}
+
+// An upper bound can include detectors that will later be dropped, so test for an allowed subset.
+// The final contribution still has to pass isAcceptedDetCombination's exact-mask check.
+bool AlignmentSpec::canFormDetCombination(DetID::mask_t available) const
+{
+  return mDetCombinations.empty() || std::any_of(mDetCombinations.begin(), mDetCombinations.end(), [&](auto required) {
+    return (available & required) == required;
+  });
+}
+
+// Collect both legs with track-dependent quantities evaluated from their references. Drop only the points
+// appended by an optional detector that falls below its minimum, and stop once no allowed combination is possible.
 bool AlignmentSpec::collectCosmicFrames(const o2::dataformats::TrackCosmicsExtended& cosm, const std::array<const TrackD*, 2>& refLeg, std::array<std::vector<FrameInfoExt>, 2>& frames, DetID::mask_t& contributed, std::string& why)
 {
-  std::vector<bool> disabled(mDetectors.size(), false);
+  frames[0].clear();
+  frames[1].clear();
+  contributed.reset();
+  DetID::mask_t remaining;
+  if (!getCosmicHitAvailability(cosm, remaining)) {
+    why = "raw hits cannot provide both legs and an accepted detector combination";
+    return false;
+  }
   for (auto* det : mDetectors) {
     if (det->getO2DetID() >= 0) {
       det->prepareCosmic(cosm);
     }
   }
-  for (bool repeat = true; repeat;) {
-    repeat = false;
-    frames[0].clear();
-    frames[1].clear();
-    contributed.reset();
-    for (size_t idet = 0; idet < mDetectors.size() && !repeat; ++idet) {
-      auto* det = mDetectors[idet];
-      const int detID = det->getO2DetID();
-      if (detID < 0 || disabled[idet]) {
-        continue;
+  for (auto* det : mDetectors) {
+    const int detID = det->getO2DetID();
+    if (detID < 0) {
+      continue;
+    }
+    const std::array<size_t, 2> sizes{frames[0].size(), frames[1].size()};
+    int nMeas = 0;
+    for (int leg = 0; leg < 2; ++leg) {
+      nMeas += det->prepareCosmicLeg(cosm, leg, *refLeg[leg], frames[leg]);
+    }
+    if (nMeas > 0 && nMeas < det->getMinCosmicMeasurements()) {
+      if (mObligatoryDets[detID]) {
+        why = fmt::format("obligatory {} has {} < {} measurements", det->getDetName(), nMeas, det->getMinCosmicMeasurements());
+        return false;
       }
-      int nMeas = 0;
-      for (int leg = 0; leg < 2; ++leg) {
-        nMeas += det->prepareCosmicLeg(cosm, leg, *refLeg[leg], frames[leg]);
-      }
-      if (nMeas == 0) { // nothing from this detector
-        continue;
-      }
-      if (nMeas < det->getMinCosmicMeasurements()) {
-        if (mObligatoryDets[detID]) {
-          why = fmt::format("obligatory {} has {} < {} measurements", det->getDetName(), nMeas, det->getMinCosmicMeasurements());
-          return false;
-        }
-        disabled[idet] = true;
-        repeat = true; // start over w/o this detector
-        continue;
-      }
+      frames[0].resize(sizes[0]);
+      frames[1].resize(sizes[1]);
+    } else if (nMeas > 0) {
       contributed.set(detID);
+    }
+    remaining.reset(detID);
+    if (!canFormDetCombination(contributed | remaining)) {
+      why = "remaining detectors cannot provide an accepted combination";
+      return false;
     }
   }
   return true;
@@ -1332,11 +1393,10 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
     return true;
   };
 
-  for (int iPar{0}; iPar < track::kNParams; ++iPar) {
+  const auto calculateColumn = [&](int iPar) -> bool {
     // step size
     double h = std::min(mParams->ridderMaxIniStep[iPar], std::max(minStep, std::abs(track.getParam(iPar)) * mParams->ridderRelIniStep[iPar]) * std::pow(mParams->ridderShrinkFac, mParams->ridderMaxExtrap / 2));
-    ;
-    // romberg tableu
+    // Romberg tableau
     Eigen::MatrixXd cur(track::kNParams, mParams->ridderMaxExtrap);
     Eigen::MatrixXd pre(track::kNParams, mParams->ridderMaxExtrap);
     double normErr = std::numeric_limits<double>::max();
@@ -1403,6 +1463,31 @@ bool AlignmentSpec::getTransportJacobian(const TrackD& track, double xTo, double
     }
     jac.col(iPar) = bestDeriv;
     err.col(iPar) = gbl::Vector5d::Constant(normErr);
+    return true;
+  };
+
+  bool parallel = false;
+#ifdef WITH_OPENMP
+  parallel = invertFirst && mNThreads > 1 && !omp_in_parallel();
+#endif
+  if (parallel) {
+    // Each column owns its Ridder workspace and track copies; its arithmetic stays sequential.
+    std::array<bool, track::kNParams> ok{};
+#ifdef WITH_OPENMP
+#pragma omp parallel for num_threads(mNThreads) schedule(static)
+#endif
+    for (int iPar = 0; iPar < track::kNParams; ++iPar) {
+      ok[iPar] = calculateColumn(iPar);
+    }
+    if (std::find(ok.begin(), ok.end(), false) != ok.end()) {
+      return false;
+    }
+  } else {
+    for (int iPar = 0; iPar < track::kNParams; ++iPar) {
+      if (!calculateColumn(iPar)) {
+        return false;
+      }
+    }
   }
 
   if (jac.isIdentity(1e-8)) {

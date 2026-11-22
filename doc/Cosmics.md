@@ -22,6 +22,10 @@ objects are queried for the current time.
 3. A detector contributes if the number of its measurements in both legs together reaches the minimum of the collision tracks
    (`minITSClsTrack`, `minTPCClusters`, `minTRDTracklets`). If an obligatory detector fails the cosmic is lost, otherwise the
    detector is dropped. The set of the contributing detectors must be accepted by `--detectors` (combinations, as for the collisions).
+   Raw hit counts and leg availability are checked before preparing the detectors. After each detector, collection stops if its
+   contribution and the remaining detectors cannot form an accepted combination. Dropping an optional detector removes only its
+   appended points; the other detectors are prepared once. These checks use upper bounds; the final detector mask must still match
+   an accepted combination exactly.
 4. KF fit as in `MatchCosmics::refitWinners`: a track parametrisation cannot describe the motion opposite to the X axis of the tracking
    frame, therefore the reference track is fitted downward (inverted) through the bottom leg, outward and back inward, then inverted
    again (`TrackParCov::invert`) and continued upward through the top leg. The reference state is at the highest point
@@ -30,5 +34,11 @@ objects are queried for the current time.
 5. GBL: the trajectory goes from the highest point down along the top leg (still in the upward parametrisation), the track is
    inverted at the step to the first bottom point (`fillGBLPoints`, the transport jacobian of this step includes the inversion,
    the scatterer of this step is not split) and continues along the bottom leg.
+
+With OpenMP and `--nthreads N`, the five numerical Jacobian columns at the top-to-bottom junction are calculated concurrently.
+Each column retains its sequential Ridder extrapolation, perturbations and stopping conditions. Other steps remain serial, and
+calls from an existing OpenMP parallel region use the serial calculation. TGeo material corrections use the per-thread navigators
+initialized for `N` threads. Each DPL lane is a separate process, so budget up to `N` threads per lane. For sparse cosmic input,
+`OMP_WAIT_POLICY=PASSIVE` lets idle workers sleep between junctions.
 
 Energy loss is propagated with the default sign (along the parametrisation), not along the flight as in `MatchCosmics`.

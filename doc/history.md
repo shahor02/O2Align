@@ -892,3 +892,20 @@ Found in a code review of `ea32487`; each one checked on the laptop.
   output agrees with the input to 2·10⁻⁸ cm, so the deviation comes from the ideal TOF matrices derived from the loaded
   IBEdge geometry (G^id = P^-1 G), which match the IBEdge TOF objects only to that level.
 
+## 2026-11-22: cosmic preparation and junction Jacobian performance
+
+- Profiling ITS/TRD/TOF cosmics with material LUT corrections found numerical transport Jacobians dominated GBL construction;
+  the leg junction consumed 57% of Jacobian time in 16% of calls. Parallelizing its five independent Ridder columns with OpenMP
+  gave about 2.9x faster junction calculations while preserving the recorded matrices, error estimates and Mille binaries bit for bit.
+  Parallel calls are disabled inside an existing OpenMP region; `--nthreads` sets the team size.
+- At `ridderEps=1e-8`, raw-hit availability checks and early exits after detector selection reduced point collection from 2.032 s
+  to 0.678 s (mean summed worker time over two runs each), and cosmic processing by about 22%. The 60,900-track sample used
+  3 lanes and 5 junction threads per lane. TOF preparation calls fell from 121,716 to 3,336; all 851 accepted tracks, recorded
+  fits, Jacobians and Mille binaries were unchanged. Removing collection restarts alone saved little: most restarts dropped ITS
+  before processing the other detectors.
+- Builds and benchmark installs were isolated from the shared installation used by concurrent jobs. The measurements cover
+  B=0 ITS/TRD/TOF cosmics with material LUT corrections; they do not establish performance for TPC or TGeo material corrections.
+- The production implementation was rebuilt in isolation and checked with 1 and 5 threads at `ridderEps=1e-8`: both LUT runs
+  reproduced the original serial control's Mille binaries on 60,900 tracks (851 accepted). A bounded TGeo check on 2,031 tracks
+  (38 accepted) also produced byte-identical Mille binaries with 1 and 5 threads.
+
