@@ -581,8 +581,8 @@ std::array<double, 2> medianMAD(std::vector<double>& vals)
 }
 
 /// range of a row of pads (one sector and layer, all stacks/slices and managers) from the bins with a successful fit:
-/// mean: +-(|median| + 4 MAD); sigma: [max(0, median - 4 MAD), median + 4 MAD]. Returns {0, 0} if there are no bins.
-std::array<float, 2> rowRange(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int isect, int ilr, int nCol, int iyz, bool isSigma)
+/// mean: +-(|median| + NMads* MAD); sigma: [max(0, median - NMads* MAD), median + Mads* MAD]. Returns {0, 0} if there are no bins.
+std::array<float, 2> rowRange(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int isect, int ilr, int nCol, int iyz, bool isSigma, float NMads = 6.f)
 {
   std::vector<double> vals;
   for (int ic = 0; ic < nCol; ++ic) {
@@ -593,15 +593,15 @@ std::array<float, 2> rowRange(const std::vector<std::unique_ptr<o2::HistoManager
   }
   const auto [med, mad] = medianMAD(vals);
   if (isSigma) {
-    return {(float)std::max(0., med - 4. * mad), (float)(med + 4. * mad)};
+    return {(float)std::max(0., med - NMads * mad), (float)(med + NMads * mad)};
   }
-  const float lim = std::abs(med) + 4. * mad;
+  const float lim = std::abs(med) + NMads * mad;
   return {-lim, lim};
 }
 
 /// common range of one type (iyz, isSigma) of the per-sector summaries of the layers [lrMin, lrMax], all columns and managers:
-/// mean: +-(|median| + 5 MAD), sigma: [0, |median| + 5 MAD]. Returns {0, 0} if there are no bins.
-std::array<float, 2> summaryRange(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int lrMin, int lrMax, int iyz, bool isSigma)
+/// mean: +-(|median| + Nmad MAD), sigma: [0, |median| + Nmad MAD]. Returns {0, 0} if there are no bins.
+std::array<float, 2> summaryRange(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int lrMin, int lrMax, int iyz, bool isSigma, float NMads=6.f)
 {
   std::vector<double> vals;
   for (int ilr = lrMin; ilr <= lrMax; ++ilr) {
@@ -613,7 +613,7 @@ std::array<float, 2> summaryRange(const std::vector<std::unique_ptr<o2::HistoMan
     return {0.f, 0.f};
   }
   const auto [med, mad] = medianMAD(vals);
-  const float lim = std::abs(med) + 5. * mad;
+  const float lim = std::abs(med) + NMads * mad;
   return {isSigma ? 0.f : -lim, lim};
 }
 
@@ -829,10 +829,10 @@ void drawOnPad(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int id
 /// maxMeanY, maxSigY, maxMeanZ, maxSigZ : fixed vertical ranges (cm), 0 = automatic: per row of a page (all stacks and managers)
 ///   median and MAD of the plotted bins, mean: +-(|median| + 4 MAD), sigma: [max(0, median - 4 MAD), median + 4 MAD];
 ///   for the summary pages the range is common to all the summaries of one type of TRD (resp. TOF), from all its layers, columns
-///   and managers: mean: +-(|median| + 5 MAD), sigma: [0, |median| + 5 MAD]
+///   and managers: mean: +-(|median| + 6 MAD), sigma: [0, |median| + 6 MAD]
 void drawTRDTOFResid(const char* cfgKeyValues = "", const char* pdfName = "trdTofResid.pdf", bool rerunPostProcess = false, float maxMeanY = 0.f,
                      float maxSigY = 0.f, float maxMeanZ = 0.f, float maxSigZ = 0.f, int sectMin = 0, int sectMax = 17, int minSliceStat = 3,
-                     int minEntriesFit = 100)
+                     int minEntriesFit = 100, float NMads = 6.)
 {
   using namespace trdtof;
   if (cfgKeyValues && cfgKeyValues[0]) {
@@ -964,8 +964,8 @@ void drawTRDTOFResid(const char* cfgKeyValues = "", const char* pdfName = "trdTo
   std::array<std::array<float, 2>, 4> sumRangeTRD{}, sumRangeTOF{};
   for (int ir = 0; ir < 4; ++ir) {
     const int iyz = ir / 2, isSigma = ir % 2;
-    sumRangeTRD[ir] = summaryRange(hmv, 0, NTRDLr - 1, iyz, isSigma);
-    sumRangeTOF[ir] = summaryRange(hmv, LrTOF, LrTOF, iyz, isSigma);
+    sumRangeTRD[ir] = summaryRange(hmv, 0, NTRDLr - 1, iyz, isSigma, NMads);
+    sumRangeTOF[ir] = summaryRange(hmv, LrTOF, LrTOF, iyz, isSigma, NMads);
     for (auto* rng : {&sumRangeTRD[ir], &sumRangeTOF[ir]}) {
       if (rowMax[ir] > 0.f) { // explicit fixed range overrides the median/MAD one
         *rng = {isSigma ? 0.f : -rowMax[ir], rowMax[ir]};
@@ -985,7 +985,7 @@ void drawTRDTOFResid(const char* cfgKeyValues = "", const char* pdfName = "trdTo
     bool legDrawn = false;
     for (int ir = 0; ir < 4; ++ir) {
       const int iyz = ir / 2, isSigma = ir % 2;
-      std::array<float, 2> yRange = rowRange(hmv, isect, ilr, nCol, iyz, isSigma);
+      std::array<float, 2> yRange = rowRange(hmv, isect, ilr, nCol, iyz, isSigma, NMads);
       if (rowMax[ir] > 0.f) { // explicit fixed range overrides the median/MAD one
         yRange = {isSigma ? 0.f : -rowMax[ir], rowMax[ir]};
       }
