@@ -170,3 +170,6 @@ or `dFit` residuals of the measured TRD and TOF points into an `o2::HistoManager
 and dZ vs the track `tgl`, with `FitSlicesY` mean/sigma histograms (IDs `Sect*10000 + Lr*1000 + St*100 + iYZ*10`, `+1` mean, `+2` sigma;
 Lr 0-5 TRD layer, 6 TOF). `trdTofResid(inp, out, geom, resType, ...)` books/fills/fits, `drawTRDTOFResid(cfgKeyValues, pdf)` superimposes
 several managers listed in the `checkresid.ext_*` keys, as `o2-check-resid-workfow --draw-external-only` does, one pdf page per sector and layer.
+A slice fit with its mean outside the fit window or an unphysical sigma is replaced by the profile mean and spread. The pdf starts with one page per
+TRD layer and one for TOF with the mean and sigma of dY and dZ vs sector (IDs `200000 + Lr*1000 + St*100 + iYZ*10`, `+1`/`+2`), one pad per TRD
+stack or TOF Z slice, with a vertical range common to all the summaries of the same type and detector.

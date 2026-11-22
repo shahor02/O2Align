@@ -15,15 +15,19 @@
 // (nTglBins bins between Zmin/X and Zmax/X of the chamber, X = nominal tracking X of the layer), per TOF sector and
 // Z slice (nTOFSlices equal slices of the strip centre Z, i.e. groups of whole strips) the same, the tgl range being
 // the Z limits of the slice divided by the strip radius. All the residuals are in cm. Only points with hasMeas() are used.
-// The TH2F are fitted with FitSlicesY (gaus in [-resRange, resRange]), the mean and sigma TH1 are kept in the manager.
+// The TH2F are fitted with FitSlicesY (gaus in [-resRange, resRange]), the mean and sigma TH1 are kept in the manager. A slice
+// whose fit has its mean outside the fit window, or a sigma not within (0, resRange], takes the profile mean and spread instead.
+// Per TRD layer and stack / TOF Z slice, the mean and sigma vs sector of the whole residual distribution of each chamber / sector
+// slice (gaussian fit with the same validity check, otherwise the mean and the standard deviation) are added as well.
 //
 // o2::HistoManager IDs:   Sect*10000 + Lr*1000 + St*100 + iYZ*10  (+1: mean, +2: sigma of the fitted slices)
 //   Sect 0:17, Lr 0:5 = TRD layer, 6 = TOF, St = TRD stack or TOF Z slice, iYZ 0 (Y) or 1 (Z).
+//   per-sector summaries: 200000 + Lr*1000 + St*100 + iYZ*10 (+1: mean, +2: sigma), 18 bins in sector.
 //
 // drawTRDTOFResid(): superimposes several such managers, the same way as `o2-check-resid-workfow --draw-external-only`
 // does it with the ext_hm_list, ext_leg_list, ext_color_list, ext_marker_list keys of CheckResidConfig (see
-// doc/reResidAll.sh). One pdf page per sector and layer: 4 rows (mean dY, sigma dY, mean dZ, sigma dZ), one column per
-// TRD stack or TOF Z slice.
+// doc/reResidAll.sh). First one page of per-sector summaries per TRD layer and one for TOF, then one page per sector and layer;
+// each page has 4 rows (mean dY, sigma dY, mean dZ, sigma dZ) and one column per TRD stack or TOF Z slice.
 //
 // Usage (O2 environment, libO2AlignRS and the O2Align headers findable, ROOT_INCLUDE_PATH):
 //   root -b -q 'trdTofResid.C+("debug_alg.root", "resTRDTOF_Unb_hman.root", "o2sim_geometry-aligned.root", 1)'
@@ -78,9 +82,12 @@ namespace trdtof
 
 constexpr int NSect = 18, NTRDLr = 6, NTRDSt = 5, LrTOF = 6, DetTRD = 3, DetTOF = 4;
 constexpr int NStripSM = o2::tof::Geo::NSTRIPXSECTOR;
+constexpr int MaxTOFSlices = 10;
+constexpr int SummaryBase = 200000; // IDs of the per-sector summaries, above those of the per-chamber histograms
 constexpr std::array<const char*, 3> ResTypeName{"Pre", "Unb", "Fit"};
 
 inline int histoID(int sect, int lr, int st, int iyz) { return sect * 10000 + lr * 1000 + st * 100 + iyz * 10; }
+inline int summaryID(int lr, int col, int iyz) { return SummaryBase + lr * 1000 + col * 100 + iyz * 10; }
 
 /// strips grouped in Z slices of the TOF sector, from the ideal geometry
 struct TOFSlices {
@@ -296,16 +303,128 @@ TH1* profileToTH1(TH2F* h2, bool sigma, const char* name)
   return h1;
 }
 
-/// mean/sigma of all the base 2D histograms of the manager, added with IDs +1/+2: FitSlicesY (gaus within the Y range of the
-/// histogram) if it has at least minEntriesFit entries, otherwise the profile converted to TH1D (mean and spread)
+/// a gaussian fit result is accepted if its mean is within the fit window [-rng, rng] and its sigma within (0, rng]
+inline bool isGoodGausFit(double mean, double meanErr, double sigma, double rng)
+{
+  return std::isfinite(mean) && std::isfinite(meanErr) && std::isfinite(sigma) && meanErr > 0. && std::abs(mean) <= rng && sigma > 0. && sigma <= rng;
+}
+
+/// FitSlicesY of h2 (gaus within the Y range of the histogram) into hmean / hsig; a fitted slice failing isGoodGausFit is replaced
+/// by its profile mean and spread (or cleared if the slice has fewer than 2 entries)
+void fitSlicesWithFallback(TH2F* h2, int minSliceStat, TH1*& hmean, TH1*& hsig)
+{
+  TObjArray arr;
+  arr.SetOwner(true);
+  const double rng = h2->GetYaxis()->GetXmax();
+  TF1 gs("gs", "gaus", -rng, rng);
+  h2->FitSlicesY(&gs, 0, -1, minSliceStat, "QNR", &arr);
+  hmean = (TH1*)arr.RemoveAt(1);
+  hsig = (TH1*)arr.RemoveAt(2);
+  arr.Delete();
+  if (!hmean || !hsig) {
+    return;
+  }
+  std::unique_ptr<TH1> pmean(profileToTH1(h2, false, Form("%s_pm", h2->GetName()))), psig(profileToTH1(h2, true, Form("%s_ps", h2->GetName())));
+  int nRepl = 0;
+  for (int ib = 1; ib <= hmean->GetNbinsX(); ++ib) {
+    const bool fitted = hmean->GetBinContent(ib) != 0. || hmean->GetBinError(ib) != 0.;
+    const double sig = std::abs(hsig->GetBinContent(ib));
+    if (!fitted || isGoodGausFit(hmean->GetBinContent(ib), hmean->GetBinError(ib), sig, rng)) {
+      hsig->SetBinContent(ib, sig);
+      continue;
+    }
+    hmean->SetBinContent(ib, pmean->GetBinContent(ib));
+    hmean->SetBinError(ib, pmean->GetBinError(ib));
+    hsig->SetBinContent(ib, psig->GetBinContent(ib));
+    hsig->SetBinError(ib, psig->GetBinError(ib));
+    nRepl++;
+  }
+  if (nRepl) {
+    printf("%s: %d failed slice fit(s) replaced by the profile\n", h2->GetName(), nRepl);
+  }
+}
+
+/// mean, sigma and their errors of the whole Y distribution of h2: gaussian fit within the Y range if it has at least minEntriesFit
+/// entries and the fit is good (isGoodGausFit), otherwise the mean and the standard deviation. False if fewer than 2 entries.
+bool fitWholeY(TH2F* h2, int minEntriesFit, std::array<double, 4>& res)
+{
+  std::unique_ptr<TH1D> proj(h2->ProjectionY(Form("%s_py", h2->GetName()), 1, h2->GetNbinsX()));
+  proj->SetDirectory(nullptr);
+  const double n = proj->GetEntries();
+  if (n < 2) {
+    return false;
+  }
+  const double rng = h2->GetYaxis()->GetXmax();
+  if (n >= minEntriesFit) {
+    TF1 gs("gsw", "gaus", -rng, rng);
+    gs.SetParameters(proj->GetMaximum(), proj->GetMean(), proj->GetStdDev());
+    if (proj->Fit(&gs, "QNR0") == 0) {
+      const double sig = std::abs(gs.GetParameter(2));
+      if (isGoodGausFit(gs.GetParameter(1), gs.GetParError(1), sig, rng)) {
+        res = {gs.GetParameter(1), gs.GetParError(1), sig, gs.GetParError(2)};
+        return true;
+      }
+    }
+  }
+  const double sd = proj->GetStdDev();
+  res = {proj->GetMean(), sd / std::sqrt(n), sd, sd / std::sqrt(2. * n)};
+  return true;
+}
+
+/// per TRD layer and stack / TOF Z slice and per Y/Z: mean and sigma vs sector of the whole residual distribution of each chamber /
+/// sector slice (fitWholeY), IDs summaryID(lr, col, iyz) + 1 (mean) / + 2 (sigma). Booked also if all sectors are empty.
+void makeSectorSummaries(o2::HistoManager& hm, int minEntriesFit)
+{
+  for (int ilr = 0; ilr <= LrTOF; ++ilr) {
+    const int nCol = ilr == LrTOF ? MaxTOFSlices : NTRDSt;
+    for (int ic = 0; ic < nCol; ++ic) {
+      // the TOF slices exist up to nTOFSlices of the filling; the tgl range of the slice is that of its dZ histograms
+      TH2F* h2ref[2] = {nullptr, nullptr};
+      for (int isect = 0; isect < NSect && !(h2ref[0] && h2ref[1]); ++isect) {
+        for (int iyz = 0; iyz < 2; ++iyz) {
+          if (!h2ref[iyz]) {
+            h2ref[iyz] = hm.getHisto2F(histoID(isect, ilr, ic, iyz));
+          }
+        }
+      }
+      if (ilr == LrTOF && !h2ref[0] && !h2ref[1]) {
+        continue;
+      }
+      for (int iyz = 0; iyz < 2; ++iyz) {
+        const std::string res = h2ref[iyz] ? std::string(h2ref[iyz]->GetName()).substr(std::string(h2ref[iyz]->GetName()).rfind('_') + 1) : (iyz ? "dZ" : "dY");
+        const std::string where = ilr == LrTOF ? (h2ref[1] ? fmt::format("TOF tg#lambda {:.2f}:{:.2f}", h2ref[1]->GetXaxis()->GetXmin(), h2ref[1]->GetXaxis()->GetXmax()) : fmt::format("TOF z{}", ic))
+                                               : fmt::format("TRD L{} st{}", ilr, ic);
+        const std::string base = ilr == LrTOF ? fmt::format("sumSect_tof_z{}_{}", ic, res) : fmt::format("sumSect_trd_l{}_st{}_{}", ilr, ic, res);
+        auto* hmean = new TH1D(Form("%s_1", base.c_str()), Form("%s;sector;<%s> (cm)", where.c_str(), res.c_str()), NSect, -0.5, NSect - 0.5);
+        auto* hsig = new TH1D(Form("%s_2", base.c_str()), Form("%s;sector;#sigma(%s) (cm)", where.c_str(), res.c_str()), NSect, -0.5, NSect - 0.5);
+        for (int isect = 0; isect < NSect; ++isect) {
+          auto* h2 = hm.getHisto2F(histoID(isect, ilr, ic, iyz));
+          std::array<double, 4> r{};
+          if (!h2 || !fitWholeY(h2, minEntriesFit, r)) {
+            continue;
+          }
+          hmean->SetBinContent(isect + 1, r[0]);
+          hmean->SetBinError(isect + 1, r[1]);
+          hsig->SetBinContent(isect + 1, r[2]);
+          hsig->SetBinError(isect + 1, r[3]);
+        }
+        const int id = summaryID(ilr, ic, iyz);
+        hm.addHisto(hmean, id + 1);
+        hm.addHisto(hsig, id + 2);
+      }
+    }
+  }
+}
+
+/// mean/sigma of all the base 2D histograms of the manager, added with IDs +1/+2: FitSlicesY with the profile fallback for the failed
+/// slices (fitSlicesWithFallback) if it has at least minEntriesFit entries, otherwise the profile converted to TH1D (mean and spread);
+/// then the per-sector summaries (makeSectorSummaries)
 void postProcessHistos(o2::HistoManager& hm, int minSliceStat, int minEntriesFit)
 {
   printf("Fitting histos\n");
-  TObjArray arr;
-  arr.SetOwner(true);
   for (int isect = 0; isect < NSect; ++isect) {
     for (int ilr = 0; ilr <= LrTOF; ++ilr) {
-      for (int ist = 0; ist < (ilr == LrTOF ? 10 : NTRDSt); ++ist) {
+      for (int ist = 0; ist < (ilr == LrTOF ? MaxTOFSlices : NTRDSt); ++ist) {
         for (int iyz = 0; iyz < 2; ++iyz) {
           const int id = histoID(isect, ilr, ist, iyz);
           auto* h2 = hm.getHisto2F(id);
@@ -317,12 +436,7 @@ void postProcessHistos(o2::HistoManager& hm, int minSliceStat, int minEntriesFit
             hmean = profileToTH1(h2, false, Form("%s_1", h2->GetName()));
             hsig = profileToTH1(h2, true, Form("%s_2", h2->GetName()));
           } else {
-            const double rng = h2->GetYaxis()->GetXmax();
-            TF1 gs("gs", "gaus", -rng, rng);
-            h2->FitSlicesY(&gs, 0, -1, minSliceStat, "QNR", &arr);
-            hmean = (TH1*)arr.RemoveAt(1);
-            hsig = (TH1*)arr.RemoveAt(2);
-            arr.Delete();
+            fitSlicesWithFallback(h2, minSliceStat, hmean, hsig);
           }
           if (hmean) {
             hmean->SetTitle(Form("<%s>", h2->GetTitle()));
@@ -340,6 +454,7 @@ void postProcessHistos(o2::HistoManager& hm, int minSliceStat, int minEntriesFit
       }
     }
   }
+  makeSectorSummaries(hm, minEntriesFit);
 }
 
 } // namespace trdtof
@@ -362,7 +477,7 @@ void trdTofResid(const char* inpName, const char* outName = "trdTofResid_hman.ro
                  float resRangeZ = 5, int minSliceStat = 3, int minEntriesFit = 100, bool onlyAccepted = true, long maxTracks = -1)
 {
   using namespace trdtof;
-  if (nTOFSlices < 1 || nTOFSlices > 10) {
+  if (nTOFSlices < 1 || nTOFSlices > MaxTOFSlices) {
     printf("nTOFSlices must be within 1:10\n");
     return;
   }
@@ -424,46 +539,223 @@ std::optional<int> parseColor(const std::string& token)
   return std::nullopt;
 }
 
+/// appends the contents of the bins with an error (i.e. a successful fit) of the histograms with the given ID of all the managers
+void collectFitted(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int id, std::vector<double>& vals)
+{
+  for (const auto& hm : hmv) {
+    auto* h = hm ? hm->getHisto(id) : nullptr;
+    if (!h) {
+      continue;
+    }
+    for (int ib = 1; ib <= h->GetNbinsX(); ++ib) {
+      if (h->GetBinError(ib) > 0.) {
+        vals.push_back(h->GetBinContent(ib));
+      }
+    }
+  }
+}
+
+/// median of v (reordered)
+double median(std::vector<double>& v)
+{
+  const size_t n = v.size() / 2;
+  std::nth_element(v.begin(), v.begin() + n, v.end());
+  double m = v[n];
+  if (v.size() % 2 == 0) {
+    m = 0.5 * (m + *std::max_element(v.begin(), v.begin() + n));
+  }
+  return m;
+}
+
+/// median and MAD of vals (reordered and overwritten), {0, 0} if empty
+std::array<double, 2> medianMAD(std::vector<double>& vals)
+{
+  if (vals.empty()) {
+    return {0., 0.};
+  }
+  const double med = median(vals);
+  for (auto& v : vals) {
+    v = std::abs(v - med);
+  }
+  return {med, median(vals)};
+}
+
 /// range of a row of pads (one sector and layer, all stacks/slices and managers) from the bins with a successful fit:
 /// mean: +-(|median| + 4 MAD); sigma: [max(0, median - 4 MAD), median + 4 MAD]. Returns {0, 0} if there are no bins.
 std::array<float, 2> rowRange(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int isect, int ilr, int nCol, int iyz, bool isSigma)
 {
   std::vector<double> vals;
   for (int ic = 0; ic < nCol; ++ic) {
-    for (const auto& hm : hmv) {
-      auto* h = hm ? hm->getHisto(histoID(isect, ilr, ic, iyz) + 1 + isSigma) : nullptr;
-      if (!h) {
-        continue;
-      }
-      for (int ib = 1; ib <= h->GetNbinsX(); ++ib) {
-        if (h->GetBinError(ib) > 0.) {
-          vals.push_back(h->GetBinContent(ib));
-        }
-      }
-    }
+    collectFitted(hmv, histoID(isect, ilr, ic, iyz) + 1 + isSigma, vals);
   }
   if (vals.empty()) {
     return {0.f, 0.f};
   }
-  auto median = [](std::vector<double>& v) {
-    const size_t n = v.size() / 2;
-    std::nth_element(v.begin(), v.begin() + n, v.end());
-    double m = v[n];
-    if (v.size() % 2 == 0) {
-      m = 0.5 * (m + *std::max_element(v.begin(), v.begin() + n));
-    }
-    return m;
-  };
-  const double med = median(vals);
-  for (auto& v : vals) {
-    v = std::abs(v - med);
-  }
-  const double mad = median(vals);
+  const auto [med, mad] = medianMAD(vals);
   if (isSigma) {
     return {(float)std::max(0., med - 4. * mad), (float)(med + 4. * mad)};
   }
   const float lim = std::abs(med) + 4. * mad;
   return {-lim, lim};
+}
+
+/// common range of one type (iyz, isSigma) of the per-sector summaries of the layers [lrMin, lrMax], all columns and managers:
+/// mean: +-(|median| + 5 MAD), sigma: [0, |median| + 5 MAD]. Returns {0, 0} if there are no bins.
+std::array<float, 2> summaryRange(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int lrMin, int lrMax, int iyz, bool isSigma)
+{
+  std::vector<double> vals;
+  for (int ilr = lrMin; ilr <= lrMax; ++ilr) {
+    for (int ic = 0; ic < MaxTOFSlices; ++ic) {
+      collectFitted(hmv, summaryID(ilr, ic, iyz) + 1 + isSigma, vals);
+    }
+  }
+  if (vals.empty()) {
+    return {0.f, 0.f};
+  }
+  const auto [med, mad] = medianMAD(vals);
+  const float lim = std::abs(med) + 5. * mad;
+  return {isSigma ? 0.f : -lim, lim};
+}
+
+/// graph of the bins of h with an error (i.e. a successful fit), shifted by dx
+TGraphErrors* fittedBinsGraph(const TH1* h, int color, int marker, double dx = 0.)
+{
+  auto* gr = new TGraphErrors();
+  for (int ib = 1; ib <= h->GetNbinsX(); ++ib) {
+    if (h->GetBinError(ib) > 0.) {
+      const int n = gr->GetN();
+      gr->SetPoint(n, h->GetBinCenter(ib) + dx, h->GetBinContent(ib));
+      gr->SetPointError(n, 0., h->GetBinError(ib));
+    }
+  }
+  gr->SetMarkerStyle(marker);
+  gr->SetMarkerSize(1.0);
+  gr->SetLineWidth(2);
+  gr->SetMarkerColor(color);
+  gr->SetLineColor(color);
+  return gr;
+}
+
+/// frame histogram (drawn empty, its line clipped away) with the binning, the titles and the vertical range [lo, hi]
+TH1F* makeFrame(const char* name, const char* title, int nb, double xmin, double xmax, const char* xtit, const char* ytit, float lo, float hi)
+{
+  auto* frame = new TH1F(name, title, nb, xmin, xmax);
+  frame->SetDirectory(nullptr);
+  frame->SetStats(false);
+  frame->SetXTitle(xtit);
+  frame->SetYTitle(ytit);
+  frame->SetMinimum(lo);
+  frame->SetMaximum(hi);
+  for (int ib = 1; ib <= nb; ++ib) {
+    frame->SetBinContent(ib, lo - 10. * (hi - lo));
+  }
+  frame->SetLineColorAlpha(kWhite, 0.);
+  return frame;
+}
+
+/// legend with one entry per loaded manager (owned by the current pad)
+TLegend* makeLegend(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, const std::vector<int>& colors, const std::vector<int>& markers,
+                    double x1, double y1, double x2, double y2, int nColumns)
+{
+  auto* lg = new TLegend(x1, y1, x2, y2);
+  lg->SetNColumns(std::max(1, nColumns));
+  lg->SetFillStyle(0);
+  lg->SetBorderSize(0);
+  for (size_t i = 0; i < hmv.size(); ++i) {
+    if (hmv[i]) {
+      auto* mk = new TGraph(); // legend marker
+      mk->SetMarkerStyle(markers[i]);
+      mk->SetMarkerColor(colors[i]);
+      mk->SetLineColor(colors[i]);
+      lg->AddEntry(mk, hmv[i]->GetName(), "lp")->SetTextColor(colors[i]);
+    }
+  }
+  return lg;
+}
+
+/// one page of per-sector summaries of layer ilr (TRD layer or TOF): 4 rows (mean dY, sigma dY, mean dZ, sigma dZ), one column per
+/// TRD stack / TOF Z slice, all drawn even if empty. The frames of a row abut and have the same width: only the leftmost pad has a
+/// left margin and the Y axis labels and title. ranges: vertical range of each row.
+void drawSummaryPage(TCanvas& canv, const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int ilr, int nCol, const std::array<std::array<float, 2>, 4>& ranges,
+                     const std::vector<int>& colors, const std::vector<int>& markers)
+{
+  constexpr double XL = 0.08, XR = 0.01, YT = 0.04, YB = 0.005; // canvas fractions: left (Y axis), right, top (header), bottom
+  constexpr double PadTop = 0.09, PadBot = 0.18;                // pad margins (fractions of the pad height)
+  constexpr int LabSize = 26, TitSize = 30;                     // pixels, font precision 3: the same on pads of different widths
+  canv.Clear();
+  canv.cd();
+  const double w = (1. - XL - XR) / nCol, h = (1. - YT - YB) / 4.;
+  auto* hdr = new TLatex(0.5, 1. - 0.45 * YT, ilr == LrTOF ? "TOF, per sector" : Form("TRD layer %d, per sector", ilr));
+  hdr->SetNDC();
+  hdr->SetTextFont(63);
+  hdr->SetTextSize(40);
+  hdr->SetTextAlign(22);
+  hdr->Draw();
+  canv.cd();
+  makeLegend(hmv, colors, markers, 0.70, 1. - 0.9 * YT, 1. - XR, 1. - 0.1 * YT, hmv.size())->Draw();
+  for (int ir = 0; ir < 4; ++ir) {
+    const int iyz = ir / 2, isSigma = ir % 2;
+    const auto [lo, hi] = ranges[ir];
+    for (int ic = 0; ic < nCol; ++ic) {
+      const double x1 = ic == 0 ? 0. : XL + ic * w, x2 = XL + (ic + 1) * w + (ic == nCol - 1 ? XR : 0.);
+      const double y2 = 1. - YT - ir * h, y1 = y2 - h;
+      canv.cd();
+      auto* pad = new TPad(Form("psum_%d_%d", ir, ic), "", x1, y1, x2, y2);
+      pad->SetLeftMargin(ic == 0 ? XL / (x2 - x1) : 0.);
+      pad->SetRightMargin(ic == nCol - 1 ? XR / (x2 - x1) : 0.);
+      pad->SetTopMargin(PadTop);
+      pad->SetBottomMargin(PadBot);
+      pad->SetFillStyle(4000);
+      pad->Draw();
+      pad->cd();
+      const int id = summaryID(ilr, ic, iyz) + 1 + isSigma;
+      const TH1* href = nullptr;
+      for (const auto& hm : hmv) {
+        if (!href && hm) {
+          href = hm->getHisto(id);
+        }
+      }
+      const std::string title = href ? href->GetTitle() : (ilr == LrTOF ? Form("TOF z%d", ic) : Form("TRD L%d st%d", ilr, ic));
+      const std::string ytit = href ? href->GetYaxis()->GetTitle() : (isSigma ? (iyz ? "#sigma(dZ) (cm)" : "#sigma(dY) (cm)") : (iyz ? "<dZ> (cm)" : "<dY> (cm)"));
+      auto* frame = makeFrame(Form("fsum_%d_%d_%d", ilr, ir, ic), "", NSect, -0.5, NSect - 0.5, "sector", ytit.c_str(), lo, hi);
+      for (auto* ax : {frame->GetXaxis(), frame->GetYaxis()}) {
+        ax->SetLabelFont(43);
+        ax->SetLabelSize(LabSize);
+        ax->SetTitleFont(43);
+        ax->SetTitleSize(TitSize);
+        ax->CenterTitle();
+      }
+      frame->GetXaxis()->SetTitleOffset(1.8);
+      frame->GetYaxis()->SetTitleOffset(2.8);
+      for (int isect = 0; isect < NSect; ++isect) { // integer sector labels at the bin centres, every 3rd one
+        frame->GetXaxis()->SetBinLabel(isect + 1, isect % 3 ? "" : Form("%d", isect));
+      }
+      frame->GetXaxis()->LabelsOption("h");
+      if (ic) { // the Y axis is labelled only on the leftmost pad
+        frame->GetYaxis()->SetLabelSize(0);
+        frame->GetYaxis()->SetTitleSize(0);
+      }
+      frame->Draw();
+      for (size_t i = 0; i < hmv.size(); ++i) {
+        auto* hs = hmv[i] ? hmv[i]->getHisto(id) : nullptr;
+        if (hs) {
+          auto* gr = fittedBinsGraph(hs, colors[i], markers[i], 0.25 * (i - 0.5 * (hmv.size() - 1)) / std::max<size_t>(1, hmv.size() - 1)); // managers side by side
+          if (gr->GetN()) {
+            gr->Draw("P");
+          }
+        }
+      }
+      pad->SetGrid();
+      const double lm = pad->GetLeftMargin(), rm = pad->GetRightMargin();
+      auto* tl = new TLatex(0.5 * (lm + 1. - rm), 1. - 0.5 * PadTop, title.c_str());
+      tl->SetNDC();
+      tl->SetTextFont(43);
+      tl->SetTextSize(TitSize);
+      tl->SetTextAlign(22);
+      tl->Draw();
+    }
+  }
+  canv.cd();
 }
 
 /// draws, superimposed, the histograms with the given ID of all the managers on the current pad, skipping the bins w/o a successful
@@ -473,37 +765,24 @@ void drawOnPad(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int id
 {
   drawn.assign(hmv.size(), nullptr);
   float vmin = 1e9, vmax = -1e9;
-  TH1* frame = nullptr;
+  const TH1* href = nullptr;
   for (size_t i = 0; i < hmv.size(); ++i) {
     auto* h = hmv[i] ? hmv[i]->getHisto(id) : nullptr;
     if (!h) {
       continue;
     }
-    auto* gr = new TGraphErrors();
+    drawn[i] = fittedBinsGraph(h, colors[i], markers[i]);
     for (int ib = 1; ib <= h->GetNbinsX(); ++ib) {
       if (h->GetBinError(ib) > 0.) {
-        const int n = gr->GetN();
-        gr->SetPoint(n, h->GetBinCenter(ib), h->GetBinContent(ib));
-        gr->SetPointError(n, 0., h->GetBinError(ib));
         vmin = std::min(vmin, (float)(h->GetBinContent(ib) - h->GetBinError(ib)));
         vmax = std::max(vmax, (float)(h->GetBinContent(ib) + h->GetBinError(ib)));
       }
     }
-    gr->SetMarkerStyle(markers[i]);
-    gr->SetMarkerSize(1.0);
-    gr->SetLineWidth(2);
-    gr->SetMarkerColor(colors[i]);
-    gr->SetLineColor(colors[i]);
-    drawn[i] = gr;
-    if (!frame) {
-      frame = new TH1F(Form("%s_frame", h->GetName()), h->GetTitle(), h->GetNbinsX(), h->GetXaxis()->GetXmin(), h->GetXaxis()->GetXmax());
-      frame->SetDirectory(nullptr);
-      frame->SetStats(false);
-      frame->SetXTitle(h->GetXaxis()->GetTitle());
-      frame->SetYTitle(h->GetYaxis()->GetTitle());
+    if (!href) {
+      href = h;
     }
   }
-  if (!frame) {
+  if (!href) {
     return;
   }
   float lo = vmin, hi = vmax;
@@ -518,11 +797,8 @@ void drawOnPad(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int id
     lo = isSigma ? 0.f : -1.f;
     hi = 1.f;
   }
-  frame->SetMinimum(lo);
-  frame->SetMaximum(hi);
-  for (int ib = 1; ib <= frame->GetNbinsX(); ++ib) { // empty frame whose line is clipped away
-    frame->SetBinContent(ib, lo - 10. * (hi - lo));
-  }
+  auto* frame = makeFrame(Form("%s_frame", href->GetName()), href->GetTitle(), href->GetNbinsX(), href->GetXaxis()->GetXmin(), href->GetXaxis()->GetXmax(),
+                          href->GetXaxis()->GetTitle(), href->GetYaxis()->GetTitle(), lo, hi);
   gPad->SetLeftMargin(0.2);
   gPad->SetBottomMargin(0.17);
   gPad->SetTopMargin(0.1);
@@ -533,7 +809,6 @@ void drawOnPad(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int id
   }
   frame->GetXaxis()->SetTitleOffset(1.1);
   frame->GetYaxis()->SetTitleOffset(1.5);
-  frame->SetLineColorAlpha(kWhite, 0.);
   frame->Draw();
   for (auto* gr : drawn) {
     if (gr && gr->GetN()) {
@@ -547,11 +822,14 @@ void drawOnPad(const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, int id
 /// Superimpose the HistoManagers listed in the CheckResidConfig keys ext_hm_list, ext_leg_list, ext_color_list, ext_marker_list
 /// (same format as in the --configKeyValues of o2-check-resid-workfow --draw-external-only, e.g. in doc/reResidAll.sh), written
 /// by trdTofResid, into pdfName: one page per sector and TRD layer / TOF, 4 rows (mean dY, sigma dY, mean dZ, sigma dZ) and
-/// one column per TRD stack / TOF Z slice.
+/// one column per TRD stack / TOF Z slice, preceded by one page of per-sector summaries per TRD layer and one for TOF, in the same
+/// layout, with abutting pads and all the pads drawn even if empty. Managers written without the summaries get them computed here.
 /// cfgKeyValues : "checkresid.ext_hm_list=a.root,b.root;checkresid.ext_leg_list=...;..." (empty: the keys are taken as they are)
 /// rerunPostProcess : refit/reconvert the 2D histograms of the loaded managers (minSliceStat, minEntriesFit as in trdTofResid)
 /// maxMeanY, maxSigY, maxMeanZ, maxSigZ : fixed vertical ranges (cm), 0 = automatic: per row of a page (all stacks and managers)
-///   median and MAD of the plotted bins, mean: +-(|median| + 4 MAD), sigma: [max(0, median - 4 MAD), median + 4 MAD]
+///   median and MAD of the plotted bins, mean: +-(|median| + 4 MAD), sigma: [max(0, median - 4 MAD), median + 4 MAD];
+///   for the summary pages the range is common to all the summaries of one type of TRD (resp. TOF), from all its layers, columns
+///   and managers: mean: +-(|median| + 5 MAD), sigma: [0, |median| + 5 MAD]
 void drawTRDTOFResid(const char* cfgKeyValues = "", const char* pdfName = "trdTofResid.pdf", bool rerunPostProcess = false, float maxMeanY = 0.f,
                      float maxSigY = 0.f, float maxMeanZ = 0.f, float maxSigZ = 0.f, int sectMin = 0, int sectMax = 17, int minSliceStat = 3,
                      int minEntriesFit = 100)
@@ -617,6 +895,8 @@ void drawTRDTOFResid(const char* cfgKeyValues = "", const char* pdfName = "trdTo
     }
     if (rerunPostProcess) {
       postProcessHistos(*hm, minSliceStat, minEntriesFit);
+    } else if (!hm->getHisto(summaryID(0, 0, 0) + 1)) { // written before the per-sector summaries existed
+      makeSectorSummaries(*hm, minEntriesFit);
     }
     hm->SetName(useLeg ? vecLegends[i].c_str() : hmNames[i].c_str());
     hmColor[i] = useColors && colors[i] >= 0 ? colors[i] : hcol[i % hcol.size()];
@@ -638,7 +918,7 @@ void drawTRDTOFResid(const char* cfgKeyValues = "", const char* pdfName = "trdTo
   for (int isect = sectMin; isect <= sectMax; ++isect) {
     for (int ilr = 0; ilr <= LrTOF; ++ilr) {
       int nCol = 0;
-      for (int ist = 0; ist < (ilr == LrTOF ? 10 : NTRDSt); ++ist) {
+      for (int ist = 0; ist < (ilr == LrTOF ? MaxTOFSlices : NTRDSt); ++ist) {
         for (const auto& hm : hmv) {
           if (hm && hm->getHisto(histoID(isect, ilr, ist, 0) + 1)) {
             nCol = ist + 1;
@@ -651,13 +931,53 @@ void drawTRDTOFResid(const char* cfgKeyValues = "", const char* pdfName = "trdTo
       }
     }
   }
-  if (pages.empty()) {
+  // per-sector summary pages: every TRD layer, TOF if any manager has its summaries; nCol as above
+  std::vector<std::array<int, 2>> sumPages;
+  for (int ilr = 0; ilr <= LrTOF; ++ilr) {
+    int nCol = 0;
+    for (int ic = 0; ic < (ilr == LrTOF ? MaxTOFSlices : NTRDSt); ++ic) {
+      for (const auto& hm : hmv) {
+        if (hm && hm->getHisto(summaryID(ilr, ic, 0) + 1)) {
+          nCol = ic + 1;
+        }
+      }
+    }
+    if (nCol) {
+      sumPages.push_back({ilr, ilr == LrTOF ? nCol : NTRDSt});
+    }
+  }
+  const int nPages = sumPages.size() + pages.size();
+  if (!nPages) {
     printf("No histograms to draw\n");
     return;
   }
   TCanvas canv("ctrdtof", "", 2000, 2600); // same aspect ratio as the ROOT pdf page (20x26), else the content is misplaced
   canv.SetCanvasSize(2000, 2600);              // the exact size, w/o it the pdf content is shifted
+  int iPage = 0;
+  auto printPage = [&]() {
+    const char* flag = iPage == 0 ? "(" : (iPage + 1 == nPages ? ")" : "");
+    canv.Print(nPages == 1 ? pdfName : Form("%s%s", pdfName, flag));
+    iPage++;
+  };
   const float rowMax[4] = {maxMeanY, maxSigY, maxMeanZ, maxSigZ};
+  // the same vertical range for all the summaries of one type of a detector (TRD layers / TOF)
+  std::array<std::array<float, 2>, 4> sumRangeTRD{}, sumRangeTOF{};
+  for (int ir = 0; ir < 4; ++ir) {
+    const int iyz = ir / 2, isSigma = ir % 2;
+    sumRangeTRD[ir] = summaryRange(hmv, 0, NTRDLr - 1, iyz, isSigma);
+    sumRangeTOF[ir] = summaryRange(hmv, LrTOF, LrTOF, iyz, isSigma);
+    for (auto* rng : {&sumRangeTRD[ir], &sumRangeTOF[ir]}) {
+      if (rowMax[ir] > 0.f) { // explicit fixed range overrides the median/MAD one
+        *rng = {isSigma ? 0.f : -rowMax[ir], rowMax[ir]};
+      } else if ((*rng)[1] <= (*rng)[0]) { // no fitted bin at all
+        *rng = {isSigma ? 0.f : -1.f, 1.f};
+      }
+    }
+  }
+  for (const auto& [ilr, nCol] : sumPages) {
+    drawSummaryPage(canv, hmv, ilr, nCol, ilr == LrTOF ? sumRangeTOF : sumRangeTRD, hmColor, hmMarker);
+    printPage();
+  }
   for (size_t ip = 0; ip < pages.size(); ++ip) {
     const auto [isect, ilr, nCol] = pages[ip];
     canv.Clear();
@@ -676,28 +996,14 @@ void drawTRDTOFResid(const char* cfgKeyValues = "", const char* pdfName = "trdTo
         if (legDrawn || std::none_of(drawn.begin(), drawn.end(), [](const TGraphErrors* g) { return g != nullptr; })) {
           continue;
         }
-        auto* lg = new TLegend(0.12, 0.13, 0.9, 0.13 + std::min(0.5f, nhm * 0.2f / 3.f)); // owned by the pad
-        lg->SetNColumns(std::max(1, int(std::round(nhm/2))));
-        lg->SetFillStyle(0);
-        lg->SetBorderSize(0);
-        for (int i = 0; i < nhm; ++i) {
-          if (hmv[i]) {
-            auto* mk = new TGraph(); // legend marker
-            mk->SetMarkerStyle(hmMarker[i]);
-            mk->SetMarkerColor(hmColor[i]);
-            mk->SetLineColor(hmColor[i]);
-            lg->AddEntry(mk, hmv[i]->GetName(), "lp")->SetTextColor(hmColor[i]);
-          }
-        }
+        auto* lg = makeLegend(hmv, hmColor, hmMarker, 0.12, 0.13, 0.9, 0.13 + std::min(0.5f, nhm * 0.2f / 3.f), std::round(nhm / 2));
         lg->Draw();
         legDrawn = true;
       }
     }
     canv.cd(0);
-    const char* flag = ip == 0 ? "(" : (ip + 1 == pages.size() ? ")" : "");
-    canv.Print(pages.size() == 1 ? pdfName : Form("%s%s", pdfName, flag));
+    printPage();
   }
-  const int nPages = pages.size();
   printf("Wrote %d pages to %s\n", nPages, pdfName);
 }
 
