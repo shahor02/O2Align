@@ -629,7 +629,7 @@ TGraphErrors* fittedBinsGraph(const TH1* h, int color, int marker, double dx = 0
     }
   }
   gr->SetMarkerStyle(marker);
-  gr->SetMarkerSize(1.0);
+  gr->SetMarkerSize(1.2);
   gr->SetLineWidth(2);
   gr->SetMarkerColor(color);
   gr->SetLineColor(color);

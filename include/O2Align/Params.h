@@ -139,7 +139,7 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   double ridderRelIniStep[5] = {0.01, 0.01, 0.02, 0.02, 0.02};
   double ridderMaxIniStep[5] = {0.1, 0.1, 0.05, 0.05, 0.05};
   double ridderShrinkFac = 2.0;
-  double ridderEps = 1e-16;
+  double ridderEps = 1e-8; //1e-16;
 
   // MillePede output
   // weight the hierarchical mean-of-children constraint (Volume::writeChildrenMeanConstraints) by each
