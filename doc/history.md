@@ -1052,3 +1052,26 @@ Found in a code review of `ea32487`; each one checked on the laptop.
       r(r − β): 2.7 µm per unit k in Lr3, 2.1 in Lr4.
   - The `v0R` reduced fit keeps the inner barrel fixed at v0 and pins the cell-level outer barrel values, so it would inherit
     both.
+- v2 direct correction (`/data0/devAlg/tests/sag/v2`):
+  - k is smoothed in t with a degree-4 polynomial per φ bin. The map really rises to k ≈ 13–19 at |t| ≈ 1.9 near 150–170°
+    and 330–350°, even in t.
+  - Inner barrel staves use k averaged with the track counts of the map.
+  - Replay noPV ⟨χ²/ndf⟩ (IBEdge / v0 / v2): B0 0.9195 / 0.9218 / 0.9207; B+ 1.0079 / 1.0134 / 1.0117;
+    B− 1.0088 / 1.0155 / 1.0135.
+  - Next: a reduced fit on v2 that also frees inner barrel stave TX, pinned by inner barrel rdphi ray cells (nT = 1).
+- `v2R` reduced-fit inputs (`/data0/devAlg/tests/sag/v2R`):
+  - Free: inner barrel stave TX, outer barrel module TX and RY, and the mean vertex.
+  - Pins: 192 outer barrel and 20 inner barrel `rdphi` ray cells, re-centred on v2. The inner barrel cells use one t cell
+    each, and `rSpanMin` 0.05 cm because 15° inner barrel cells often hold only two layers.
+  - Priors: TX 10 µm centred on v2, module RY 1 mrad.
+  - The 2-file pede test is full rank and feasible.
+- checkResid of `sag/v2` against IBEdge:
+  - Inner barrel: part of the v0 kinks is gone.
+  - Outer barrel: the dips in dy vs Z at Lr3 z ≈ 20 cm and Lr5 z ≈ 32 cm, and the Lr4 offset at z > 25 cm, are one
+    effect. They come from the step of the correction at the +z module boundaries (z ≈ 21 cm in Lr3/4, 31.5 cm in Lr5),
+    where k(t) rises steeply. The rays through the start of the Lr4 end module (z = 21–25 cm) cross Lr3 at 17–20 cm and Lr5
+    at 29–34 cm, exactly where the dips are.
+  - v3 (`/data0/devAlg/tests/sag/v3R`) fits TX and RY per outer barrel module to the chip-level field; `AlignParam` gives
+    Δx_loc = +RY·z_loc, RY in rad. The within-module misfit drops from 4.4 to 1.3 µm (Lr3).
+  - Replay noPV ⟨χ²/ndf⟩ for B+: IBEdge 1.0079, v2 1.0117, v3 1.0101.
+  - The `v3R` reduced-fit inputs supersede `v2R`.
