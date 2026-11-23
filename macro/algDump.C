@@ -13,37 +13,35 @@
 #include "DetectorsBase/GeometryManager.h"
 #include "CommonUtils/TreeStreamRedirector.h"
 #include "ITSMFTReconstruction/ChipMappingITS.h"
+#include "ITSMFTBase/SegmentationAlpide.h"
 #include "DetectorsCommonDataFormats/DetID.h"
 #include "DataFormatsTRD/Constants.h"
 #include "TRDBase/Geometry.h"
 #include "TOFBase/Geo.h"
 #include <TVector3.h>
+#include <stdexcept>
 #endif
 
 using DetID = o2::detectors::DetID;
 
-void algDump(const std::string& geom = "", const std::string& outname = "algdump.root")
+void algDump(const std::string& geom = "", const std::string& outname = "algdump.root", int NX = 5, int NZ = 3)
 {
+  if (NX <= 0 || NZ <= 0) {
+    throw std::invalid_argument("algDump: NX and NZ must be positive");
+  }
   o2::base::GeometryManager::loadGeometry(geom.c_str());
   o2::utils::TreeStreamRedirector outstream(outname.c_str(), "recreate");
   TGeoHMatrix* matAlg = nullptr;
   TGeoHMatrix matOrig;
   TVector3 pos0, pos;
   DetID det;
-  const char* axname[4] = {"x","y","z",""};
-  const float axbias[4] = {1., 1., 1., 0.};
-  const int axBiasID[4] = {0, 1, 2, -1};
-  
-  auto procSens = [](TGeoHMatrix& mat, int biasID = -1, float bias = 0.f) {
-    double loc[3] = {0., 0., 0.}, glo[3];
-    if (biasID >= 0) {
-      loc[biasID] = bias;
-    }
+  auto procSens = [](TGeoHMatrix& mat, double x = 0., double z = 0.) {
+    double loc[3] = {x, 0., z}, glo[3];
     mat.LocalToMaster(loc, glo);
     return TVector3(glo[0], glo[1], glo[2]);
   };
 
-  auto store = [&outstream, &det, &pos, &pos0](int lr, int sid, int sidLr, const char* outmod = 0) {
+  auto store = [&outstream, &det, &pos, &pos0](int lr, int sid, int sidLr, const char* outmod = "") {
     TString str = Form("gm%s", outmod);
     outstream << str.Data()
               << "det=" << det.getID() << "lr=" << lr << "sid=" << sid << "sidlr=" << sidLr << "pos0=" << pos0 << "pos=" << pos << "\n";
@@ -57,10 +55,18 @@ void algDump(const std::string& geom = "", const std::string& outname = "algdump
     int ic0 = ic - mpits.getFirstChipsOnLayer(lr);
     matAlg = o2::base::GeometryManager::getMatrix(det, ic);
     o2::base::GeometryManager::getOriginalMatrix(det, ic, matOrig);
-    for (int ax=0;ax<4;ax++) {
-      pos0 = procSens(matOrig, axBiasID[ax], axbias[ax]);
-      pos = procSens(*matAlg, axBiasID[ax], axbias[ax]);
-      store(lr, ic, ic0, axname[ax]);
+    pos0 = procSens(matOrig);
+    pos = procSens(*matAlg);
+    store(lr, ic, ic0);
+    // Sample cell centers so all mesh points stay inside the active matrix.
+    for (int ix = 0; ix < NX; ix++) {
+      const double x = ((ix + 0.5) / NX - 0.5) * o2::itsmft::SegmentationAlpide::ActiveMatrixSizeRows;
+      for (int iz = 0; iz < NZ; iz++) {
+        const double z = ((iz + 0.5) / NZ - 0.5) * o2::itsmft::SegmentationAlpide::ActiveMatrixSizeCols;
+        pos0 = procSens(matOrig, x, z);
+        pos = procSens(*matAlg, x, z);
+        store(lr, ic, ic0, "e");
+      }
     }
   }
 
@@ -76,11 +82,9 @@ void algDump(const std::string& geom = "", const std::string& outname = "algdump
       }
       matAlg = o2::base::GeometryManager::getMatrix(det, sid);
       o2::base::GeometryManager::getOriginalMatrix(det, sid, matOrig);
-      for (int ax=0;ax<4;ax++) {
-	pos0 = procSens(matOrig, axBiasID[ax], axbias[ax]);
-	pos = procSens(*matAlg, axBiasID[ax], axbias[ax]);
-	store(ilr, sid, ich, axname[ax]);
-      }
+      pos0 = procSens(matOrig);
+      pos = procSens(*matAlg);
+      store(ilr, sid, ich);
     }
   }
 
@@ -95,11 +99,9 @@ void algDump(const std::string& geom = "", const std::string& outname = "algdump
       }
       matAlg = o2::base::GeometryManager::getMatrix(det, cnt);
       o2::base::GeometryManager::getOriginalMatrix(det, cnt, matOrig);
-      for (int ax=0;ax<4;ax++) {
-	pos0 = procSens(matOrig, axBiasID[ax], axbias[ax]);
-	pos = procSens(*matAlg, axBiasID[ax], axbias[ax]);
-	store(0, cnt, cnt, axname[ax]);
-      }
+      pos0 = procSens(matOrig);
+      pos = procSens(*matAlg);
+      store(0, cnt, cnt);
     }
   }
   outstream.Close();
