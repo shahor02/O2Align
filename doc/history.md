@@ -909,3 +909,146 @@ Found in a code review of `ea32487`; each one checked on the laptop.
   reproduced the original serial control's Mille binaries on 60,900 tracks (851 accepted). A bounded TGeo check on 2,031 tracks
   (38 accepted) also produced byte-identical Mille binaries with 1 and 5 threads.
 
+
+## 2026-11-22: rφ ∝ r² sagitta of the best/IBEdge ITS in B=0 collisions and cosmics
+
+- The TRD/TOF `pre` residuals of `solB1A4` keep B0 apart from B±. Each B=0 track was refitted with ITS points only as
+  v = a + b·u + k·u·r (u along the track, v transverse, r the point radius), i.e. an rφ displacement k·r² on its ray;
+  k = 10⁻⁶ cm⁻¹ is a 1.7 µm sagitta over the ITS. B± tracks absorb k into q/pT (about 1.3·10⁻³ (GeV/c)⁻¹ at 0.5 T), so
+  only B0 and cosmics see it. Its B0 ITS seed extrapolation error, against the curved B± seed, predicts
+  dy(B0) − dy(B±) ≈ 1–1.5 mm·k at the TRD/TOF radii. The per-TRD-sector `pre` difference B0 − B+ of `solB1A4` follows the
+  10 % k(φ) map with correlation 0.92 and slope 0.9 mm per unit of k. B0 − B− behaves alike (correlation 0.91, slope 0.63)
+  with an extra +0.33 mm offset; B− was recorded later. The `unb` B0 − B+ difference (±0.1–0.2 mm) does not follow k.
+- 100 % debug of `Mille_IBEdgeS4R/coll_LutPt08ITSSEED` (B0 + B0Bis, 28.3M tracks with |tgl| < 1):
+  - k = 1.38 ± 0.02, or 1.18 ± 0.03 with outer-barrel points only.
+  - φ dependence: 2nd harmonic amplitude 1.9 with maxima near 170° and 350°; 1st harmonic 0.8 (1.65 for the outer barrel)
+    peaking near −15°. The maximum, 7.3, is at 350–360°.
+  - tgl dependence: k grows towards |tgl| → 1, with an odd part larger at positive tgl (3.1 at tgl 0.75…1 against 1.5 at
+    −1…−0.75). Tracks with |tgl| > 1 have larger k still: the mean is 1.92 with no tgl cut.
+  - B0 and B0Bis agree bin by bin.
+- Leave-one-layer-out residuals per stave and z, measured against a straight line through the other layers, show the r²
+  pattern. At φ ≈ 350° they are Lr0 +9, Lr1 +6, Lr2 +4, Lr3 −14, Lr4 −14, Lr5 0 and Lr6 +21 µm. The outer barrel staves
+  also show U shapes along z. Against a line plus k·u·r, every stave and z bin is within 1–2 µm, with a few Lr6 staves up
+  to 4.5 µm. So no single stave is displaced: the pattern is one smooth field over all layers, whose amplitude varies with
+  φ and z.
+- Cosmics, with the same cosmic data processed in both geometries:
+  - Fitting each half as a collision track (≥ 2 inner and ≥ 3 outer barrel hits; about 2k halves) reproduces the collision
+    k(φ) where cosmics are populated. For example, 140–160° gives 4.8/5.1 (2025/2026) against 4.2 in collisions.
+    280–320° is in tension.
+  - Over the whole cosmic, with a free top/bottom step, |d0| < 5 cm and the same runs: IBEdge k = −0.09 ± 0.16 (2025) and
+    −0.24 ± 0.15 (2026); v10n 1.10 ± 0.28 and −0.42 ± 0.32.
+  - The k spread between cosmics is 13 for IBEdge against 22–24 for v10n.
+  - In both geometries the step depends on the cosmic direction, from about −20 µm at 20–60° to +30…+40 µm at 140–160°.
+    It is the same in 2025 and 2026.
+- What tracks cannot fix, per ray direction (φ, tgl). An rφ displacement a(φ, tgl) + b(φ, tgl)·r that is linear in r leaves
+  every straight track from the origin straight.
+  - The free vertex of the composed multi-track PV records constrains a, up to a translation of the whole ITS.
+  - b(φ) is an azimuthal remap φ → φ + b(φ), the same at all radii. Nothing in the ITS stops it: collision tracks of any
+    field are close to radial, and sensor overlaps move together with their neighbours.
+  - A cosmic with d0 ≈ 0 joins the rays φ and φ+π. Its 2 line parameters, against 4 for the two rays, determine only
+    a(φ) + a(φ+π) (the step) and b(φ) − b(φ+π) (a kink at the centre). An even-harmonic b, with b(φ) = b(φ+π), stays free.
+  - Only cosmics with large d0, which cross the layers at different φ, or detectors outside the ITS are sensitive to b(φ).
+  - So a correction of the measured k(φ, tgl) by δrφ(L) = −k·r_L² + b·r_L is equivalent for every b. Which layers "carry"
+    the sagitta has to be fixed by a gauge choice (smallest displacement, or the hierarchical mean constraints), not by
+    the data.
+  - B± do not help either. Along a curved track the azimuth changes by Δφ ≈ r/(2R), at most about 3° at 0.5 GeV/c in
+    the ITS. So b(φ)·r reads as b(φ₀)·r, which goes into the direction, plus b′(φ₀)·r²/(2R), which goes into q/pT as a
+    scale factor 1 + b′(φ). Both charges and both field polarities scale the same way, so B0 + B+ + B− fix k (B0 sees it
+    as curvature, B± as a q/pT offset) but not b. Cosmics in field compare q/pT between φ and φ+π, where an even b has
+    the same b′. Only an external q/pT or direction reference fixes it: a mass peak versus φ, or TPC/TRD/TOF.
+- The top/bottom step of the cosmic fit (line + k·u·r + step) is not a compromise with B−:
+  - The ITS-only line of a collision track, extrapolated to r = 0 with the fitted beam subtracted (xb, yb ≈ −0.2, −1.9 mm),
+    measures the collision side of the same quantity: (d0(φ) + d0(φ+π))/2 = a(φ) + a(φ+π), the same combination the step
+    gives for a cosmic through the axis.
+  - This is within ±1 µm in B0 (562862) and B+ (562837). B− (564644) differs by up to −2 µm at 100–180°.
+  - The step depends on |d0|. Below 2 cm it is −0.3 ± 0.9 µm overall, with at most +12 ± 5 µm at 140–160°. At
+    |d0| = 5–20 cm it runs from −27 to +42 µm.
+  - A z-dependent rφ field c(φ)·z², which would make k rise with tgl² in collisions, predicts a step growing as z0².
+    The data reject it.
+  - Large-d0 cosmics cross the layers at different φ and are not radial, so the per-ray decomposition does not apply to
+    them. They are also the only ITS data sensitive to b(φ). The step at the same |d0| differs between the IBEdge and v10n
+    geometries by 15–26 µm in several φ bins, so it reacts to geometry differences that are invisible to collisions.
+- Geometry-only decomposition (scratch macro `geoK.C`):
+  - Method: the same chip-local points are placed with two ITS snapshots; the rφ part of the displacement is averaged per
+    fine (φ, t = z/r) cell and layer and fitted per cell as a + b·r + k·r².
+  - v10n → C1v21w3 accounts for all of it: Δk = +1.06, 2nd harmonic 1.41 at −15°, 4th harmonic 1.21. C1v21w3 → S4R and
+    S4R → IBEdge change k by ≤ 0.05 and the ray rotation by ≤ 2 µrad.
+  - Against the measured IBEdge map, Δk reproduces the 340–360° peak (7.1 of 7.1), most of the 140–170° peak, 1.4 of
+    the 2.05 2nd harmonic, the 4th harmonic and the rise at positive tgl. Cell by cell the correlation is 0.60, because the
+    geometry difference has stave-level structure that the track average smooths.
+  - Measured minus Δk predicts for v10n k = 0.4 on average, 1st harmonic 1.5 at −32° (peak at 300–320°), 2nd harmonic 0.7.
+    So v10n has its own, smaller sagitta. Still to be checked with v10n B0 data.
+  - The displacement behind Δk: the outer barrel moved in rφ relative to the inner barrel. Its 2nd harmonic is 10–14 µm
+    (phase 47–61°) and its 1st harmonic grows from 4 µm (Lr3) to 13 µm (Lr6), with up to −34 µm at Lr3, 340°. The inner
+    barrel moved by ≤ 2.6 µm.
+  - In the `rayModes` sense (mean of dv/r, inner and outer barrel weighted equally), the same step moved the ray rotation
+    by +40 µrad on average (+70 µrad inner barrel, 0 outer barrel), 2nd harmonic 30–50 µrad and 3rd harmonic up to
+    70 µrad. Over tgl it varies from 10 to 60 µrad, which is 30–180 µm at the TRD/TOF radii. That is the size of the b
+    ambiguity between the two geometries.
+  - The MC `o2sim_geometry.root` (no physical nodes) differs from both aligned geometries by mm and mrad, so it is not
+    usable as an ideal reference.
+- Replay of the IBEdge ITS-only Mille data (`Mille_IBEdgeS4R/*_ITS`, recorded at IBEdge, no solution applied):
+  - Setup: one group per stave on TX, 192 groups. The modes were built with `_groupH.txt`:
+    - sagitta modes δrφ = −k·r·(r − 16.3 cm), harmonics n ≤ 2;
+    - ray rotations rφ ∝ r, harmonics n ≤ 2.
+  - Hu of a mode is Σ J²·Hu, since every hit row belongs to one stave.
+  - In collisions the sagitta modes are as degenerate as the ray rotations: Hp/Hu ≈ 1–5·10⁻⁴ for both. The B0 records
+    carry multiple-scattering kinks with the errors of `meanPtB0` = 0.45 GeV/c (about 2–3 mrad per layer). These absorb
+    a µm-level sagitta, which needs kinks of about 0.1 mrad. Cosmics reach Hp/Hu ≈ 2.5–6·10⁻³ for k, against 8·10⁻⁵ for
+    the global rotation.
+  - The requested sagitta removal (K0, joint K + rotation fit) differs between datasets:
+    - B0 0.82 ± 0.02 (B0Bis 0.83). The debug-tree straight-line medians give 1.38.
+    - B+ 2.35 ± 0.03 and B− 0.01 ± 0.03, opposite for the two polarities.
+    - Cosmics 0.27 / 0.34 (2025 / 2026).
+    - The harmonics and the single-mode fit of the B0 map do not agree with each other either.
+  - In the Mille model the sagitta is therefore a quasi-weak mode. Systematic pulls far below their statistical errors
+    set it, among them the field-odd B+/B− split. That is how C1v21w3 could build it. A correction fit must not leave
+    it to pede.
+- Direct sagitta correction relative to the IBEdge recording (scratch `mkSagCorr.py`):
+  - Correction: δrφ = −k(φ, t)·r·(r − β), from the B0 map at |tgl| < 2, 36 × 16 cells, 1-2-1 smoothed. Applied as inner
+    barrel stave TX and outer barrel module TX, since the `_ITS` recording has no chip DOFs.
+  - β = ⟨r⟩_OB = 33.2 cm keeps the outer barrel ray rotation, and so the B0 straight-line directions; corrections stay
+    within −34…+36 µm. The combined gauge, β = 18.3 cm, reaches −115 µm at the Lr6 ends.
+  - Self-check over the |tgl| < 1 cells: Δk = −1.40 against −1.45, correlation 0.96.
+  - Replay on the ITS-only Mille data: the correction raises ⟨χ²/ndf⟩ for B0 (+0.25 %), B± (+0.6 %) and cosmics (+1.1 %);
+    the combined gauge raises it about half as much.
+  - Scanning the B0 replay with the correction scaled by λ = −1, 0, 0.5, 1 gives a χ² that is nearly quadratic in λ,
+    with its minimum at λ ≈ −0.07. The cost therefore comes from parts of the correction the tracks do see. A likely
+    source is the module granularity: an Lr3/4 module spans Δt ≈ 1, an Lr5/6 module Δt ≈ 0.5, so the layers sample k(t)
+    differently. The weak sagitta part itself is cheap. The Mille χ² cannot validate the correction; a B0 debug pass with
+    the corrected geometry can.
+  - Doubled cosmics: the half-cosmic k(φ) follows the collision map except at 300–340°, where cosmics are about 2.5 lower,
+    and at 120–140° (3.1 against 1.6).
+- B0 debug with the corrected geometries (`/data0/devAlg/tests/sag/v0` from `millepede_sagCorr.res`, `v1` from the
+  combined-gauge `_comb.res`; 5.9M B0 tracks, compared with the same run in IBEdge):
+  - The sagitta is removed. k changes from 1.36 ± 0.04 to 0.07 ± 0.05, and every harmonic is ≤ 0.25 (2nd harmonic 1.90 →
+    0.21). The tgl columns are flat within ±0.4. Residual structure is left at stave scale: +2.3 at 350–360° next to −1.5 at
+    0–10°, and +1.4 / −1.1 at 170–190°. With outer-barrel points only, a 1st harmonic of 1.0 remains: the curvature within
+    the outer barrel is not purely the r² shape of the full ITS.
+  - Leave-one-layer-out against a straight line, rms of the stave medians: Lr0 3.5 → 0.8, Lr3 5.4 → 1.2, Lr6 6.5 → 2.0 µm.
+  - Against line + k, the outer barrel z profiles get worse: z rms 0.6 → 2.3 / 2.0 µm (Lr3/4) in v0, 0.9/1.3 → 3.8/4.6 µm
+    (Lr5/6) in v1. The median per-track χ² rises by 0.2–0.4 % (B0) and 0.4–0.8 % (B±). This is the module-granularity
+    cost the replay predicted.
+- Reduced-fit inputs on top of v0 in `/data0/devAlg/tests/sag/v0R` (see its README):
+  - Free: outer barrel module TX and RY, and the mean vertex. The inner barrel is fixed at v0.
+  - Pins: 192 outer-barrel-only `rdphi` ray-mode cell equations, re-centred on v0. With the inner barrel fixed, they hold
+    both b and k per cell.
+  - Priors: module TX 10 µm centred on v0, module RY 1 mrad.
+  - In a 2-file pede test, without the TX priors the Lr5/6 end modules drifted by 13–16 µm rms; with them, by 3–5 µm.
+- checkResid of `sag/v0` against IBEdge (runs 562862 B0, 562837 B+, 564644 B−; per-sensor mean dy from the res trees,
+  grouped into inner barrel staves and outer barrel modules):
+  - B0 improves where the sagitta was: in Lr4 the module rms drops from 1.6 to 1.0 µm, and the change is −0.89 correlated
+    with the applied correction.
+  - B± get worse:
+    - inner barrel stave rms 0.2–0.3 → 0.3–1.6 µm, most in Lr2;
+    - Lr4 module rms 1.0 → 2.2 µm, with +5…+7 µm on stave 12 of both half-barrels;
+    - outer barrel chips: the change grows with |z|/r, from about 1 µm rms at |t| < 0.5 to 2–3.6 µm at |t| > 1.
+  - B+ and B− changes correlate at 0.93–1.00 per volume, so this is geometry, not statistics or field. A pure k r² + b r
+    field would be invisible to B± tracks, so the changes are the parts of the correction that are neither.
+  - Two sources:
+    - Rigid inner barrel staves received k averaged over their chip positions, mostly at |t| > 1 where k is large, through
+      the large gauge lever (r − β ≈ −30 cm, 1.15 µm per unit k in Lr2). The tracks through them mostly have |tgl| < 1.
+    - Outer barrel modules got module-averaged k and the noisy high-|t| cells (errors 0.5–1.5), amplified by
+      r(r − β): 2.7 µm per unit k in Lr3, 2.1 in Lr4.
+  - The `v0R` reduced fit keeps the inner barrel fixed at v0 and pins the cell-level outer barrel values, so it would inherit
+    both.
