@@ -1075,3 +1075,159 @@ Found in a code review of `ea32487`; each one checked on the laptop.
     Δx_loc = +RY·z_loc, RY in rad. The within-module misfit drops from 4.4 to 1.3 µm (Lr3).
   - Replay noPV ⟨χ²/ndf⟩ for B+: IBEdge 1.0079, v2 1.0117, v3 1.0101.
   - The `v3R` reduced-fit inputs supersede `v2R`.
+- checkResid of `sag/v3R` (v3 + reduced fit) against v10n, v2 and IBEdge:
+  - The outer barrel module-boundary dips of v2 are gone.
+  - The inner barrel jumps are as in v2. IB−OB par0 at 12 cm dips by up to −50 µm in B+ and B− (not B0) at φ ≈ 2.1, 2.7,
+    5.3 and 5.85. par2 and the field-odd par4 (±0.06) dip at the same φ. Vertex and Lr2 dy also jump there.
+  - Cause: the IB sub-track is a parabola through the vertex and Lr0–Lr2, fitted with free curvature only for B≠0. Its
+    extrapolation to 12 cm magnifies a non-collinearity of the rigid IB stave corrections by about 30.
+    - Each layer's stave takes the field at its own φ (30°, 22.5° and 18° pitch). Where k(φ) varies, the three layers
+      are not on one parabola for a given track.
+    - Predicting Δpar0 from the v3R stave TX alone gives corr 0.73 with the measured B± change, slope 0.65.
+    - It is the stave-boundary sawtooth of the n=2 itself, not only the steep peaks. Keeping n ≤ 2 of k on the IB still
+      leaves 13–24 µm rms; n ≤ 1 leaves about 6 µm.
+  - Why pede did not remove it:
+    - The 15° IB rdphi cells pin the IB rotation pattern to its start value. For example, one cell holds only Lr0
+      stave 3 and Lr2 stave 6.
+    - In full-track fits the non-collinearity is a sub-µm misfit (model: 0.5 µm rms). Pede moved the IB staves by
+      ≤ 0.5 µm.
+  - Tuning the IB stave TX to cancel Δpar0 for one vertex resolution is not robust. An optimum for σ_PV = 15 µm gives
+    84 µm rms at σ_PV = 60 µm.
+  - Gauge-invariant model of a straight-track field (`/data0/devAlg/tests/sag/v4/model.py`):
+    - Hybrid gauge: n ≤ 1 of k with β = ⟨r⟩_OB, n ≥ 2 with β = Σr²/Σr over the IB chips (3.45 cm), so the IB gets only
+      n ≤ 1.
+    - IB−OB par0 mismatch: v3-like 17–27 µm rms, hybrid 6 µm rms, independent of σ_PV.
+    - Vertex DCA change rms: 1.7 µm (v3-like) vs 1.3 µm (hybrid). Lr2 leave-one-out rms: 0.9 vs 0.5 µm.
+    - The cost is in the outer barrel:
+      - Lr5/6 drφ rms grows from 2–10 µm to 24–42 µm, max 100–150 µm, with an outer barrel ray rotation change of
+        44–60 µrad rms at n ≥ 2. ITS tracks cannot see it.
+      - k left after correction: ±0.37–0.43 vs ±0.26.
+      - Full-track visible misfit: 0.65–0.7 µm vs 0.5 µm.
+  - Extra rigid DOFs of the IB staves to carry the φ-gradient of the field across the stave (model `sag/v4/radial.py`,
+    `rz.py`, `rz2.py`):
+    - Radial shift: needs 3.4/4.8/6.1 µm rms (Lr0/1/2, max 15 µm). It brings IB−OB par0 to about 6 µm, but adds a
+      dz-vs-tgl slope of the same size per stave. IBEdge has 0.4–0.7 µm per unit tgl, not correlated with it, so dz
+      would get 5–10× worse.
+    - Stave RZ (17° tilt, dz = RZ·x·tgl, odd across the stave): needs 0.40–0.46 mrad rms (max 1.2). It halves IB−OB par0
+      (16 → 8 µm rms). The dz-vs-x·tgl pattern of IBEdge is 0.10–0.17 mrad-equivalent and not correlated with it,
+      leaving 0.37–0.48, so dz would get about 3× worse.
+    - Both would make dz worse, so the IB stays as in v3/v3R.
+- TRD/TOF test of the v4 ray rotation, using the `solB1A4` `pre` residuals:
+  - Setup: the ITS is at IBEdge, and the TRD/TOF were aligned with B0 + cosmics. The GBL seed is the ITS-only inward refit,
+    so `pre` at TRD/TOF is the ITS-only extrapolation.
+  - Per track, the seed response to the v3 and v4 corrections was extrapolated to each TRD/TOF point: a line for B0, a
+    parabola for B±.
+  - Maps: 18 sectors × 4 tgl bins, TRD and TOF.
+  - χ²/ndf of the `pre` map, with per-sector constants removed (IBEdge / v3 / v4):
+
+    | field | TRD | TOF |
+    |---|---|---|
+    | B0 | 20.0 / 20.3 / 22.2 | 17.0 / 17.1 / 17.9 |
+    | B+ | 22.9 / 9.3 / 7.8 | 8.3 / 3.6 / 2.9 |
+    | B− | 43.5 / 18.2 / 16.3 | 18.2 / 10.5 / 9.6 |
+
+  - The B0 − B+ gap rms (TRD/TOF) goes from 2.2–2.5 mm (IBEdge) to 1.0 mm (v3) or 0.95 mm (v4).
+  - Splitting v4 − v3 into its IB and OB parts: B± want the OB part with a coefficient of 0.9–1.7 (±0.1–0.25). B0 TRD
+    wants −1.5 ± 0.3; B0 TOF wants 0.4–1.2 ± 0.4.
+    - For B± the OB part is a rotation of the OB relative to the IB, which an ITS-only seed with free curvature turns into
+      curvature.
+    - In B0, v3 does not move the line seed (OB gauge). v4 moves it by an n=2 of about 0.2 mm, close to opposite to the
+      0.9 mm n=2 that B0 `pre` already has with the k phase.
+  - The B0 preference is partly circular: the TRD/TOF were aligned with B0 against IBEdge.
+- checkResid of `sag/v4` (direct correction, no reduced fit) against IBEdge. Fitted means of dy vs Z, run 562837 (B+)
+  unless marked otherwise:
+  - The IB dy-vs-φ jumps of v3R are almost gone, as the gauge model predicted.
+  - At +z in the OB, B0 and B± move by the same amount:
+    - Lr4 z > 25 cm: B0 goes from +3…+6 µm (IBEdge, the sagitta) to −2…0; B+ and B− go from about 0 to −4…−7 µm.
+    - Lr5 near z ≈ 60 cm: B0 changes by −4…−8.5 µm, B− by −0.4…−8 µm.
+    - The −z side is unchanged.
+  - v0 and v2 (OB gauge, no reduced fit) already had the same B± dip at Lr4 z > 25 cm (−5…−10 µm), so it does not come
+    from the gauge.
+  - v3R has no B± dip, but at high +z it also keeps the IBEdge B0 residual: Lr4 +3…+5 µm, Lr5 +5…+11 µm. Its reduced
+    fit traded the high-tgl sagitta removal back for B±.
+  - The v4 snapshot reproduces the intended chip field: rφ difference from the model 1–3 µm rms, with no mean offset.
+    The module TX/RY misfit does not correlate with the B± change (|corr| < 0.2).
+  - The PV z does not matter: in Lr4 at z > 20 cm the B+ change is the same for any PV z.
+  - The straight-ray model without multiple scattering (`sag/v4/model.py`) predicts a B± leave-one-out change ≤ 1 µm in
+    Lr3–5 at any tgl. The model is therefore incomplete at high tgl. A likely reason is that multiple scattering makes
+    the Kalman interpolation local, so B± also see a local r² field.
+  - B0 debug of IBEdge: k with OB points only follows k from all points at every tgl, for example 4.2 / 5.7 at
+    tgl 1.25 / 1.75 against 1.8 / 2.0 at −1.25 / −1.75. So B0 sees the high +tgl k as curvature inside the OB.
+  - Open question: at high +tgl, B0 asks for a correction that B± reject. Either that part of the B0 k is not geometry,
+    or B± see it differently. It does not depend on the gauge.
+- `sag/v4t` (`/data0/devAlg/tests/sag/v4t`): v4 with the smoothed k map frozen in t beyond |t| = 0.9. It tests whether
+  the v4 B± OB +z dip comes from the high-|t| map. Maximum OB |TX| drops from 47/43/113/150 to 22/27/67/94 µm
+  (Lr3–6). Per-sensor tables for v3, v4, v4t, v5 (NLO = −1) and v5t are in `sag/v4t/chiptab.txt`.
+- Cosmic top/bottom step against the corrections (`sag/tools/cosm`):
+  - Method: `cosmResp.C` fits each cosmic with line + k·u·r + step, as `sagITS2.C` mode 1. It also gives the linear
+    response of the step to each per-sensor rφ table. `ana.py` and `ana2.py` take medians over 9 φ × 4 |d0| cells.
+  - Validation: the response to the IBEdge → v10n chip-level geometry difference predicts the observed
+    v10n − IBEdge step difference with coefficient 1.27 ± 0.11 (χ²/ndf 5.7 → 1.6). The v10n cosmics are a different
+    selection of the 2025 runs.
+  - Applying the corrections makes the IBEdge step worse in both years. χ²/ndf of the cell medians:
+
+    | year | observed | v3 | v4 | v4t | v5 | v5t |
+    |---|---|---|---|---|---|---|
+    | 2025 | 17.2 | 21.3 | 29.4 | 27.0 | 26.6 | 25.9 |
+    | 2026 | 25.8 | 27.5 | 38.6 | 38.3 | 37.6 | 37.3 |
+
+  - The fitted coefficient of the observed step on the predicted removal is 0.09 ± 0.07 / 0.34 ± 0.07 for v3, and
+    −1.4 to −3.7 (± 0.1–0.16) for the gauges that rotate the OB.
+  - So the large-d0 step is not the B0 sagitta in any gauge. Its φ pattern anti-correlates with the response of the
+    v4/v5 OB rotation, and the cosmics disfavour that rotation. v3 is close to neutral.
+  - Two-component fits (v3 + (X − v3)) give unstable coefficients of −1 to −3.7 for both components, so they do not
+    isolate a preferred b.
+- Cosmic top/bottom step for near-vertical cosmics (φ mod 180° in 70–110°), IBEdge, 2025 / 2026 (`sag/tools/cosm/cosmOB.C`):
+  - Fit line + k·u·r + step, all points:
+    - |d0| < 2 cm, IB hits in both halves: step 0 ± 1 µm and k ≈ 0 ± 0.3. Collisions at these φ also give k ≈ 0.
+    - |d0| = 5–12 cm, OB only by geometry: step −5…−17 µm. At |d0| = 12–20 cm it is −3…−8 µm.
+    - OB-only tracks at |d0| < 2 cm (no IB hit): −2…−8 µm, ± 7 µm each.
+  - Without the IB, step and k are degenerate. For OB points u·r ≈ sign(u)·const, so the k-free step equals the
+    line + step (no k) step plus 6.3–8 µm per unit k, with correlation 0.99.
+  - The line + step fit (no k) with OB points only:
+    - |step| ≤ 2 µm at every |d0|, with one exception: d0 = −12…−5 cm gives −7 / −3 µm (2025 / 2026), while
+      +5…+12 cm stays at ≈ 0.
+    - Tracks that do have IB hits in both halves, refitted without them: 0.3 ± 2 µm.
+  - So the large-d0 step of the earlier entries is mostly the fitted cosmic k: −0.8 ± 0.2 / −1.2 ± 0.16 for vertical
+    OB-only cosmics at |d0| = 5–20 cm. It is not an IB-related half-barrel offset.
+  - The cosmic Task A test of the corrections used that same k-free step, so what it tested is essentially the OB-only
+    cosmic sagitta.
+- checkResid of `sag/v4t` against IBEdge, v3R and v4. Fitted means; rms over the bins:
+
+  | quantity | IBEdge | v3R | v4 | v4t |
+  |---|---|---|---|---|
+  | Lr2 dy vs φ, rms B+ / B− | 1.20 / 1.58 | 2.07 / 2.63 | 1.34 / 1.89 | 1.27 / 1.81 µm |
+  | IB−OB par0 vs φ, rms B+ / B− | 8.5 / 11.7 | 20.3 / 23.4 | 9.5 / 13.6 | 8.9 / 12.9 µm |
+  | Lr4 dy vs Z, rms B+ / B− | 1.1 / 1.2 | 1.2 / 0.9 | 3.4 / 3.5 | 2.1 / 2.3 µm |
+  | Lr4 dy vs Z, rms B0 | 2.8 | 1.7 | 1.2 | 1.1 µm |
+
+  - The IB stays at the IBEdge level.
+  - Most of the B± OB +z dip of v4 is gone. What remains:
+    - Lr4 at z ≈ 25–30 cm: −2…−4 µm in B+ and B− alike.
+    - Lr4 vs tgl: −4…−5 µm at tgl ≈ 1.8–2 (v4: −8…−9).
+    - Lr5, last z bin, B+: −10.6 µm (IBEdge −7.1, v4 −14.6).
+  - As expected, B0 keeps the sagitta beyond the freeze point at the far +z ends:
+    - Lr5 near z ≈ 65 cm: +11.4 µm (IBEdge +12.3, v4 +3.8).
+    - Lr4, last bin: +2.6 µm (IBEdge +6.4).
+  - So the B0/B± disagreement is confined to tgl ≳ 1 on the +z side.
+- Replay noPV ⟨χ²/ndf⟩ on the IBEdge `_ITS` Mille data:
+
+  | | IBEdge | v3 | v3R | v4 | v4t |
+  |---|---|---|---|---|---|
+  | B0 | 0.91954 | 0.92055 | 0.92022 | 0.91989 | 0.91982 |
+  | B+ | 1.00792 | 1.01014 | 1.00889 | 1.00956 | 1.00885 |
+  | B− | 1.00879 | 1.01179 | 1.01070 | 1.01088 | 1.01009 |
+
+  - v4t, with no reduced fit, is the cheapest correction in every dataset. Against IBEdge it costs +0.03 % (B0),
+    +0.09 % (B+) and +0.15 % (B−); v3R costs +0.07 %, +0.10 % and +0.22 %.
+- TRD/TOF `pre` test with the v4t table (`solB1A4`, same method as for v3/v4):
+  - χ²/ndf with per-sector constants removed, TRD / TOF:
+
+    | field | v4 | v4t |
+    |---|---|---|
+    | B0 | 22.2 / 17.9 | 22.1 / 17.9 |
+    | B+ | 7.9 / 2.9 | 7.5 / 2.8 |
+    | B− | 16.3 / 10.2 | 17.0 / 10.3 |
+
+  - B0 − B+ gap rms: 968 / 906 µm, against 976 / 943 (v4) and 1005 / 987 (v3).
+  - Freezing k beyond |t| = 0.9 costs nothing at TRD/TOF.
