@@ -17,6 +17,7 @@
 #include <array>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "O2Align/Label.h"
 
@@ -49,6 +50,7 @@ struct ProcessingStats : public TObject {
   std::map<int, uint32_t> nTrcByLabel;       // number of tracks accepted by GBL fit, indexed by the int label of the volume they belong to
   std::map<int, std::string> labelToSymName; // optional symbolic name of the volume corresponding to the int label
   std::map<std::string, int> symNameToLabel; // optional int label of the volume corresponding to the symbolic name
+  std::map<int, std::vector<double>> mvPriorBySlot; // calibration slot ID -> mean-vertex prior (X,Y,Z,SlopeX,SlopeY, mvbias included) the fitted corrections of that slot are relative to
 
   Long64_t Merge(TCollection* collection);
 
@@ -56,7 +58,7 @@ struct ProcessingStats : public TObject {
   TH1F createStatHisto(const std::string& pattern) const;
   void Print(Option_t* option = "") const override;
 
-  ClassDefOverride(ProcessingStats, 4);
+  ClassDefOverride(ProcessingStats, 5);
 };
 } // namespace o2::alignrs
 

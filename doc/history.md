@@ -1311,3 +1311,12 @@ Found in a code review of `ea32487`; each one checked on the laptop.
   ITS want a different OB direction from the one their own extrapolation to TRD/TOF wants. That is either a
   non-geometric ITS effect at high tgl (multiple scattering or incidence, see the `model.py` caveat of the 2026-11-23
   review), or a TRD/TOF geometry that absorbed the old ITS direction.
+
+## 2026-11-24: absolute mean vertex in the `MilleRes` output
+- The fitted `PVT/meanVertex` values of `solPbHBA0v2b` (X, Y = +19.0, +9.5 µm) looked inconsistent with the
+  vertices refitted by checkResid with the same geometry (−0.0055, −0.1939 cm). They are corrections to the slot prior,
+  the CCDB `MeanVertexObject` plus `mvbias` (−0.0074, −0.1949, −0.0341). Prior + correction = (−0.00551, −0.19399,
+  −0.219), which agrees with checkResid to < 0.5 µm in X/Y. The prior was only in the `MilleData` log.
+- The `MilleData` run now stores the prior of every slot in its `ProcessingStats` (`mvPriorBySlot`, class version 5).
+  `AlignParams.mvPriorStatFile` at `MilleRes` adds `reference` and `absolute` per slot to `result.json` and logs them
+  (see the Mean Vertex section of `DOFConfig_rules.md`).

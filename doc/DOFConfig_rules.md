@@ -29,6 +29,17 @@ independent of the others — any subset may be free while the rest stay fixed, 
 grouping. A fixed DOF still enters the fit at its current prior value (from the `MeanVertexObject`
 delivered by the CCDB for the active calibration slot), it is simply not adjusted.
 
+The fitted values in `millepede.res` (and under `calib` of `result.json`) are corrections to the prior
+of their slot: the `MeanVertexObject` valid at the 1st TF of the slot, `mvbias` (`O2_DPL_MVBIAS`) of the
+`MilleData` run included. That run records the prior of every slot in its `ProcessingStats` file
+(`AlignParams.statFile`, `mvPriorBySlot`). Passing that file to the `MilleRes` stage as
+`AlignParams.mvPriorStatFile` adds to every slot of `result.json` the `reference` (the prior) and the
+`absolute` mean vertex (prior + correction), and logs them as
+`Mean vertex slot N prior + correction = absolute: ...`. The `absolute` values are those to compare with
+a vertex fit done with the aligned geometry (e.g. the `pvUsed` tree of checkResid). `ProcessingStats`
+files written before this was added have no priors; then the prior is only in the `MilleData` log
+(`Mean vertex prior for time slot N: ...`, printed with the bias included).
+
 Enable all 5 with:
 
 ```json

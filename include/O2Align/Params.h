@@ -171,6 +171,10 @@ struct Params : public o2::conf::ConfigurableParamHelper<Params> {
   std::string milleResFile = "millepede.res";
   std::string startFromMilleRes{};  // MilleSteer: if not empty, millepede.res whose fitted values are written to mp2param.txt as starting values (free/fixed still follows dofConfigJson)
   std::string milleResOutJson = "result.json";
+  // MilleRes: ProcessingStats file (statFile) of the MilleData run whose mp2data were fitted. The fitted mean-vertex
+  // values are corrections to the prior of their slot recorded there; with it, milleResOutJson also gets the prior and
+  // the absolute mean vertex of every slot
+  std::string mvPriorStatFile = "";
 
   // conversion of the fitted rigid-body corrections to o2::detectors::AlignParam (MilleRes stage)
   std::string algParamsOutFile = "alignment.root"; // if not empty, write the combined alignment of each detector to <DET>_<algParamsOutFile>, to be applied to the ideal geometry

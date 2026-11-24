@@ -1932,6 +1932,18 @@ nlohmann::json Volume::calibSlotsToJSON(const std::map<uint32_t, double>& labelT
       rec[mCalib->dofName(i)] = it != labelToValue.end() ? it->second : 0.0;
       anyFitted = anyFitted || it != labelToValue.end();
     }
+    if (const auto* ref = getCalibReference(slotID); anyFitted && ref) {
+      if (ref->size() != static_cast<size_t>(mCalib->nDOFs())) {
+        LOGP(fatal, "{} calibration reference of slot {} has {} values for {} DOFs", mSymName, slotID, ref->size(), mCalib->nDOFs());
+      }
+      nlohmann::json refRec, absRec;
+      for (int i = 0; i < mCalib->nDOFs(); ++i) {
+        refRec[mCalib->dofName(i)] = (*ref)[i];
+        absRec[mCalib->dofName(i)] = (*ref)[i] + getFittedValue(labelToValue, lbl.raw(i));
+      }
+      rec["reference"] = std::move(refRec);
+      rec["absolute"] = std::move(absRec);
+    }
     if (anyFitted) {
       slotArr.push_back(std::move(rec));
     }

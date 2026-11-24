@@ -315,6 +315,12 @@ class AlignmentSpec final : public Task
   // false (nothing is set) if the file or the object inside it can't be read.
   bool loadVolumeStatistics(const std::string& fname);
 
+  // ProcessData: keep in the ProcessingStats the mean-vertex prior of the active calibration slot
+  void recordMeanVertexPrior();
+  // MilleRes: give the mean-vertex volume the priors of its slots recorded in Params::mvPriorStatFile
+  // and report prior, fitted correction and absolute value of every slot
+  void loadMeanVertexPriors(const std::map<uint32_t, double>& fitted);
+
   // calculate the transport jacobian for points FROM and TO numerically via ridder's method
   // this assumes the track is already at point FROM and will be extrapolated to TO's x (xTo)
   // method does not modify the original track
@@ -1107,6 +1113,53 @@ void AlignmentSpec::updateTimeDependentParams(ProcessingContext& pc)
   }
   for (auto* det : mDetectors) {
     det->setTimeStamp(mTimeStamp, !mOutOpt[o2::alignrs::OutputOpt::MilleData]);
+  }
+  if (mOutOpt[o2::alignrs::OutputOpt::ProcessData]) {
+    recordMeanVertexPrior();
+  }
+}
+
+void AlignmentSpec::recordMeanVertexPrior()
+{
+  if (!mPVT->getTopVolume()) {
+    return;
+  }
+  // the prior is frozen for the whole slot (DetectorPVT::onSlotChange), the 1st TF of the slot records it
+  const auto& mv = mPVT->getMeanVertexPrior();
+  mProcessingStats.mvPriorBySlot.try_emplace(mPVT->getSlotID(), std::vector<double>{mv.getX(), mv.getY(), mv.getZ(), mv.getSlopeX(), mv.getSlopeY()});
+}
+
+void AlignmentSpec::loadMeanVertexPriors(const std::map<uint32_t, double>& fitted)
+{
+  auto* vtx = mPVT->getTopVolume();
+  if (!vtx || !vtx->getCalib() || mParams->mvPriorStatFile.empty()) {
+    return;
+  }
+  TFile statIn(mParams->mvPriorStatFile.c_str());
+  const auto* stats = statIn.IsZombie() ? nullptr : statIn.Get<o2::alignrs::ProcessingStats>("ProcessingStats");
+  if (!stats) {
+    LOGP(error, "No ProcessingStats in mvPriorStatFile '{}', the absolute mean vertex is not reported", mParams->mvPriorStatFile);
+    return;
+  }
+  if (stats->mvPriorBySlot.empty()) {
+    LOGP(warn, "mvPriorStatFile '{}' has no mean-vertex priors (written before they were recorded?)", mParams->mvPriorStatFile);
+    return;
+  }
+  const auto* dofs = vtx->getCalib();
+  for (const auto& lbl : vtx->getCalibLabels()) {
+    const int slotID = static_cast<int>(lbl.id());
+    const auto it = stats->mvPriorBySlot.find(slotID);
+    if (it == stats->mvPriorBySlot.end()) {
+      LOGP(warn, "mvPriorStatFile '{}' has no mean-vertex prior for slot {}", mParams->mvPriorStatFile, slotID);
+      continue;
+    }
+    vtx->setCalibReference(slotID, it->second);
+    std::string rep;
+    for (int i = 0; i < dofs->nDOFs(); ++i) {
+      const double corr = Volume::getFittedValue(fitted, lbl.raw(i));
+      rep += fmt::format(" {}: {:+.6g} {:+.6g} = {:+.6g}", dofs->dofName(i), it->second[i], corr, it->second[i] + corr);
+    }
+    LOGP(info, "Mean vertex slot {} prior + correction = absolute:{}", slotID, rep);
   }
 }
 
@@ -2517,6 +2570,7 @@ void AlignmentSpec::endOfStream(EndOfStreamContext& /*ec*/)
         if (!mParams->misAlgRefMilleRes.empty() && !mMisalignment) {
           LOGP(warn, "AlignParams.misAlgRefMilleRes is ignored without AlignParams.misAlgJson");
         }
+        loadMeanVertexPriors(fitted);
         if (mMisalignment) { // closure test: the result is the one relative to the injection
           const auto relative = subtractInjected(fitted);
           Volume::writeMillepedeResults(mHierarchy.get(), relative, mParams->milleResOutJson);

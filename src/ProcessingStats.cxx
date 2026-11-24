@@ -67,6 +67,12 @@ Long64_t ProcessingStats::Merge(TCollection* collection)
     }
     labelToSymName.insert(other->labelToSymName.begin(), other->labelToSymName.end());
     symNameToLabel.insert(other->symNameToLabel.begin(), other->symNameToLabel.end());
+    for (const auto& [slotID, prior] : other->mvPriorBySlot) {
+      const auto [it, inserted] = mvPriorBySlot.try_emplace(slotID, prior);
+      if (!inserted && it->second != prior) {
+        LOGP(warn, "Merging ProcessingStats: the lanes used different mean-vertex priors for slot {}, keeping the first one", slotID);
+      }
+    }
     ++nMerged;
   }
   return nMerged;

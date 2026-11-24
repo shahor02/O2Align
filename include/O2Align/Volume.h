@@ -315,6 +315,14 @@ class Volume
   const Label& getActiveCalibLabel() const { return mCalibLabels[mActiveCalibSlot]; }
   /// calibration labels of all the declared slots, for the steering file output
   const std::vector<Label>& getCalibLabels() const { return mCalibLabels; }
+  /// values of all the calibration DOFs of a slot which the fitted ones are corrections to (e.g. the mean-vertex prior):
+  /// when set, the result output of the slot also gets them and their sum with the fitted values
+  void setCalibReference(int slotID, std::vector<double> ref) { mCalibReference[slotID] = std::move(ref); }
+  const std::vector<double>* getCalibReference(int slotID) const
+  {
+    const auto it = mCalibReference.find(slotID);
+    return it != mCalibReference.end() ? &it->second : nullptr;
+  }
   ///@}
   void setPseudo(bool p) noexcept { mIsPseudo = p; }
   bool isPseudo() const noexcept { return mIsPseudo; }
@@ -406,7 +414,8 @@ class Volume
   /// set mT2L for the standard ALICE tracking frame, i.e. the global one rotated by alpha around Z
   void setT2LFromAlpha(double alpha) { mT2L = computeT2L(alpha); }
   /// one record per calibration slot with at least one fitted DOF: the slot ID and validity (if the
-  /// slots were declared) and the absolute fitted values of the free DOFs, by DOF name
+  /// slots were declared) and the absolute fitted values of the free DOFs, by DOF name. If the slot has a
+  /// reference (setCalibReference), also "reference" and "absolute" (reference + fitted) for all DOFs
   nlohmann::json calibSlotsToJSON(const std::map<uint32_t, double>& labelToValue) const;
 
  private:
@@ -560,6 +569,7 @@ class Volume
   std::vector<Label> mCalibLabels{};                              // calibration label per time slot, filled with the slot 0 in the ctor
   size_t mActiveCalibSlot{0};                                     // index in mCalibLabels of the slot being processed
   const TimeSlotsSet* mCalibSlots{nullptr};                       //! calibration slots, if declared; not owned
+  std::map<int, std::vector<double>> mCalibReference;             //! per slot ID, see setCalibReference
 
   Volume* setParent(Ptr c)
   {

@@ -27,6 +27,7 @@
 #pragma link C++ class std::map < int, unsigned int> + ;
 #pragma link C++ class std::map < int, std::string> + ;
 #pragma link C++ class std::map < std::string, int> + ;
+#pragma link C++ class std::map < int, std::vector < double>> + ;
 
 #pragma link C++ class o2::alignrs::Measurement + ;
 #pragma link C++ class o2::alignrs::FrameInfoExt + ;
