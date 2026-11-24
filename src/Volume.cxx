@@ -573,6 +573,15 @@ bool Volume::globalModeField(int mode, int phase, const double* pos, double* u, 
       // walk stops at the nearest free descendants)
       u[phase] = 1.;
       break;
+    case Volume::Sagitta:
+      // u = r^2*phiHat = (-y*r, x*r, 0): the rphi offset of every point grows as r^2, i.e. the curvature
+      // of every track changes by the same amount whatever its charge. With B != 0 it is absorbed by
+      // the 1/pt of the track; only B = 0 data (no curvature parameter) or an external momentum
+      // reference constrain it. curl_z = (1/r) d(r*r^2)/dr = 3r, hence om = 1.5*r*zHat
+      u[0] = -y * r;
+      u[1] = x * r;
+      om[2] = 1.5 * r;
+      break;
     default:
       return false;
   }
@@ -622,7 +631,7 @@ std::string Volume::globalEqName(int eq)
 const char* Volume::globalModeName(int mode)
 {
   static constexpr const char* names[NGlobalModes] = {"radialScaling", "zScaling", "curl", "twist", "elliptical", "bowing", "radialHarmonic", "tangentialHarmonic", "globalTilt",
-                                                      "radialPolar", "tangentialPolar", "longitudinalPolar", "globalShift"};
+                                                      "radialPolar", "tangentialPolar", "longitudinalPolar", "globalShift", "sagitta"};
   return (mode >= 0 && mode < NGlobalModes) ? names[mode] : "?";
 }
 
@@ -1716,7 +1725,7 @@ std::array<bool, Volume::NGlobalEq> Volume::parseGlobalModeList(const nlohmann::
       LOGP(fatal,
            "Unknown global mode '{}' in the {} rule '{}'. Allowed are the mode names radialScaling, zScaling, curl, twist, "
            "elliptical, bowing, radialHarmonic, tangentialHarmonic, globalTilt, radialPolar, tangentialPolar, "
-           "longitudinalPolar, globalShift, a single harmonic order (e.g. radialHarmonic3) or a single equation "
+           "longitudinalPolar, globalShift, sagitta, a single harmonic order (e.g. radialHarmonic3) or a single equation "
            "(e.g. elliptical_cos2phi, globalTilt_y, globalShift_x, radialPolar_r0t1)",
            name, clause, pattern);
     }

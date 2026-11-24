@@ -65,12 +65,14 @@ std::vector<SensorDisplacement> computeSensorDisplacements(Volume* root, const s
 ///  radialPolar_r<p>t<k> (5)          dr = eps*r^p*t^k                        (p,k) = (0,0),(0,1),(0,2),(1,1),(1,2)
 ///  tangentialPolar_r<p>t<k> (5)      r*dphi = eps*r^p*t^k                    same (p,k)
 ///  longitudinalPolar_r<p>t<k> (4)    dz = eps*r^p*t^k                        (0,1),(0,2),(1,0),(1,2)
+///  globalShift (3: _x, _y, _z)       rigid translation along global X / Y / Z
+///  sagitta (1)                       r*dphi = eps*r^2                        same curvature change for all tracks; absorbed by 1/pt (B!=0)
 ///
 /// The polar families are the fields depending on the polar angle: a track from the vertex is at z = r*t
 /// at radius r, so r*f(t) is absorbed by its phi/tgLambda/curvature (null directions whatever the vertex
 /// does), f(t) only by d0/z0 (broken by the vertex). Their duplicates of other modes are left out. The
 /// modes with a handle only on DOFs distributed in z (zScaling, bowing, polar families) are not
-/// observable from stave-level DOFs, all centred at z = 0. In total Volume::NGlobalEq = 42 columns. The
+/// observable from stave-level DOFs, all centred at z = 0. In total Volume::NGlobalEq = 43 columns. The
 /// globalShift columns duplicate the rigid shift of the fit, like curl and globalTilt its rotation, so
 /// their B amplitudes carry no information; they exist for the "groupModes" constraints.
 ///

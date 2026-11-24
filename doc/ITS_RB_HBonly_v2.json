@@ -1,0 +1,18 @@
+[
+  { "match": ".*", "rigidBody": "fixed" },
+
+  { "match": "PVT/meanVertex", "calib": { "type": "meanvertex", "free": ["X", "Y", "Z", "SlopeX", "SlopeY"] } },
+
+  { "match": "ITS", "rigidBody": "fixed", "pinChildrenMeanNoCross": ["TX", "TY", "TZ"] },
+
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]", "rigidBody": ["TX", "TY", "TZ", "RZ"] },
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.003], "TZ": [0.0, 0.003], "RZ": [0.0, 0.0001] } },
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]", "globalModes": ["radialHarmonic1", "tangentialHarmonic1"] },
+  { "match": "ITS/ITSULayer0/ITSUHalfBarrel[0-1]", "groupModes": { "group": "Lr0", "modes": ["curl"] } },
+  { "match": "ITS/ITSULayer1/ITSUHalfBarrel[0-1]", "groupModes": { "group": "Lr1", "modes": ["curl"] } },
+  { "match": "ITS/ITSULayer2/ITSUHalfBarrel[0-1]", "groupModes": { "group": "Lr2", "modes": ["curl"] } },
+  { "match": "ITS/ITSULayer3/ITSUHalfBarrel[0-1]", "groupModes": { "group": "Lr3", "modes": ["curl"] } },
+  { "match": "ITS/ITSULayer4/ITSUHalfBarrel[0-1]", "groupModes": { "group": "Lr4", "modes": ["curl"] } },
+  { "match": "ITS/ITSULayer5/ITSUHalfBarrel[0-1]", "groupModes": { "group": "Lr5", "modes": ["curl"] } },
+  { "match": "ITS/ITSULayer6/ITSUHalfBarrel[0-1]", "groupModes": { "group": "Lr6", "modes": ["curl"] } }
+]

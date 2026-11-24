@@ -25,7 +25,7 @@ present in a fitted result, with or without the constraints, and `macro/drawWeak
 
 Cylindrical coordinates (r, φ, z), t = z/r (the tgλ of a track from the vertex), ε the amplitude.
 The definitions are in `Volume::GlobalMode` ([Volume.h](../include/O2Align/Volume.h)); there are
-`Volume::NGlobalEq` = 39 equations in total.
+`Volume::NGlobalEq` = 43 equations in total.
 
 | mode (equations) | displacement field | meaning |
 |---|---|---|
@@ -41,6 +41,8 @@ The definitions are in `Volume::GlobalMode` ([Volume.h](../include/O2Align/Volum
 | `radialPolar_r<p>t<k>` (5) | Δr = ε·r<sup>p</sup>·t<sup>k</sup>, (p,k) = (0,0), (0,1), (0,2), (1,1), (1,2) | depends on the polar angle |
 | `tangentialPolar_r<p>t<k>` (5) | rΔφ = ε·r<sup>p</sup>·t<sup>k</sup>, same (p,k) | |
 | `longitudinalPolar_r<p>t<k>` (4) | Δz = ε·r<sup>p</sup>·t<sup>k</sup>, (0,1), (0,2), (1,0), (1,2) | (1,0) is the telescope mode Δz = ε·r |
+| `globalShift` (`_x`, `_y`, `_z`) | rigid translation along global X, Y, Z | duplicates the rigid shift of the fit; exists for `groupModes` |
+| `sagitta` (1) | rΔφ = ε·r² | the same curvature change for every track, whatever its charge; absorbed by 1/p<sub>T</sub> (B≠0), seen only by B=0 data or an external momentum reference |
 
 The polar families: a track from the vertex is at z ≈ r·t at radius r, so a field r·f(t) (p=1) is absorbed
 by the track's φ, tgλ or curvature whatever the vertex does, while f(t) (p=0) shifts d0/z0 and is broken
@@ -82,7 +84,7 @@ Two numbers per branch and mode, deliberately independent:
   displacement power explained by each mode (after the rigid part), the RMS before/after removing the
   rigid part and the modes, and the mode-to-mode correlation matrix.
 
-Caveats: the columns are not orthogonal (`curl` and `globalTilt` duplicate the rigid rotation, several
+Caveats: the columns are not orthogonal (`curl` and `globalTilt` duplicate the rigid rotation, `globalShift` the rigid shift, several
 modes overlap on a limited set of sensors), so the fit is rank-deficient by construction (the rank is
 logged and stored in the JSON) and neighbouring amplitudes can be correlated: check the correlation
 matrix before reading a single bar. Singular values below 1e-3 of the largest are truncated

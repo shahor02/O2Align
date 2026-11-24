@@ -1231,3 +1231,22 @@ Found in a code review of `ea32487`; each one checked on the laptop.
 
   - B0 − B+ gap rms: 968 / 906 µm, against 976 / 943 (v4) and 1005 / 987 (v3).
   - Freezing k beyond |t| = 0.9 costs nothing at TRD/TOF.
+
+## 2026-11-24: the PbPb HB-only fit `solPbHBA0` took the helix family d + a·r + c·r²; `sagitta` global mode
+- `ITS_RB_HBonly.json` on the PbPb mp2data (568664) improved the IB structures but shifted the baselines: Vtx −9 µm,
+  Lr3 −8.5, Lr4 +11.6, IB-OB par0 about −55 µm and par4 +0.11 GeV⁻¹, against IBEdge on the same run.
+- The 14 HB RZ give a layer-averaged rφ = d + a·r + c·r² (residuals < 0.5 µm), with d = +10.9 µm, a = 12.8 µrad and
+  c = −0.109 µm/cm² (k = −10.9 in the units of the 2026-11-22 sagitta entry, against +1.38 measured with B0). This is a
+  reparametrisation of every helix. The refitted PV cannot follow d, which produces the vertex and IB-OB shifts.
+- `WeakModesDiag` could not show it: `curl` duplicates the rigid rotation and the basis had no r² term, so the sagitta
+  appeared as `tangentialPolar_r0t0` = +94 µm and `r0t2` = −139 µm. Added the `sagitta` mode (rΔφ = ε·r²,
+  `Volume::GlobalMode`, last, so the earlier equation indices are unchanged). The rerun gives `sagitta` = −174 µm at
+  39.7 cm and `tangentialPolar_r0t0` = +10.5 µm, and the rms after the modes drops from 8.1 to 1.5 µm.
+- Mille replay: removing the family costs Δχ² ≈ 27.8k on the records without a vertex. The vertex records, only 5.4k of
+  1.9M with `maxTracksPerMultiTrackPV=6`, oppose it by 1.1k. The driver is a change of dy with incidence between pp
+  562837 and PbPb 568664: in the IB, k = −2.9/−4.1/−4.3 µm per unit tanα. It is the same for both charges and for all
+  cluster sizes, i.e. like a 3–4 µm radial offset of the IB measurement planes. HB DOFs reach it only through the stave
+  plane rotation that comes with a layer RZ, and the cheapest rφ translation that comes with it is the helix family.
+- Configs `ITS_RB_HBonly_v2.json` (per-layer curl groups, `groupModesRelToRoots=false`) and `ITS_RB_HBonly_v2b.json`
+  (`tangentialPolar_r0t0` + `sagitta` + ITS RZ pin), both with harmonic-1 modes and a 0.1 mrad RZ prior. Details in
+  [HBLevel_adjustment.md](HBLevel_adjustment.md#result-of-stage-1-solpbhba0-and-the-weak-mode-constraints).

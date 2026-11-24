@@ -266,6 +266,9 @@ std::array<double, NCols> modeScales(const std::vector<SensorDisp>& sensors)
       case Volume::Bowing:
         sc[c] = zMax * zMax;
         break;
+      case Volume::Sagitta:
+        sc[c] = rMax * rMax;
+        break;
       case Volume::GlobalTilt: // a rigid rotation: the displacement is the angle times the lever arm
         sc[c] = std::max(rMax, zMax);
         break;

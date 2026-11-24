@@ -155,3 +155,82 @@ How to run it:
 - This assumes stave TX is the rφ direction, as it is for the chips; check that against the jacobian before running.
 - With the HBs free, the automatic stave-mean constraints keep the split between HB and stave defined.
 - Running stage 1 first tells whether the edge effect is a single stave or the half-shell deforming.
+
+## Result of stage 1 (`solPbHBA0`) and the weak-mode constraints
+Fit: `/data0/devAlg/tests/solPbHBA0`, [ITS_RB_HBonly.json](ITS_RB_HBonly.json) on the PbPb mp2data of
+`Mille_Pb_MP2/IBEdgeS4R` (568664, `useMultiTrackPVConstraint=2`, `maxTracksPerMultiTrackPV=6`), checkResid on 568664.
+
+### The solution is one radial family
+- The HB TX/TY are a few µm. The RZ carry the solution: r·RZ is about +10 µm on Lr0–Lr2 (both HBs), then −29, −51,
+  −113 and −153 µm on Lr3–Lr6.
+- Layer-averaged, rφ(r) = d + a·r + c·r² with residuals below 0.5 µm on all 7 layers:
+  - d = +10.9 µm, a constant tangential offset: every track's d0 changes by d, which only the vertex sees;
+  - a = 12.8 µrad, a global rotation (gauge);
+  - c = −0.109 µm/cm², a sagitta: Δ(q/pT) ≈ −0.015 GeV⁻¹ for both charges. In the units of the 2026-11-22 history
+    entry this is k = −10.9, against the B0-measured IBEdge sagitta of +1.38.
+- `drawHBShift.C` (`3dview.png`) shows exactly this: the OB HB0 move by +16…+91 µm in x and the HB1 by the opposite,
+  growing with r. It is a rotation pattern, not an IB vs OB translation.
+- `weakModes.pdf` misattributes it. Its `curl` (17.8 % of the power) duplicates the rigid rotation. With no r² term in
+  the basis, the sagitta appears as `tangentialPolar_r0t0` = +94 µm and `tangentialPolar_r0t2` = −139 µm. The `sagitta`
+  mode (rΔφ = ε·r²) has been added to `Volume::GlobalMode` for this. Rerunning `WeakModesDiag` on the solution with it
+  gives `sagitta` = −174 µm at 39.7 cm (c = −0.110 µm/cm²), `tangentialPolar_r0t0` = +10.5 µm and a curl of 3.8 µm. The
+  rms after the modes drops from 8.1 to 1.5 µm.
+
+### Effect on the residuals (new − IBEdge, both on 568664)
+| Vtx | Lr0 | Lr1 | Lr2 | Lr3 | Lr4 | Lr5 | Lr6 | IB-OB par0 | IB-OB par4 |
+|---|---|---|---|---|---|---|---|---|---|
+| −9.0 | +0.4 | −0.7 | +2.3 | −8.5 | +11.6 | +6.0 | +2.2 | −52…−64 | +0.11 GeV⁻¹ |
+
+(µm; constant term of the dy vs φ fit.)
+- The refitted PV cannot follow a tangential offset common to all tracks. The vertex residual moves by −d, flat in pT
+  and tgl, and pulls the IB sub-track. Hence the IB-OB jump and the layer-dependent leakage: Lr3 is −11 µm at
+  pT < 1 and about 0 at pT > 2.
+- The small structures did improve. Against the early data, the dy-vs-φ rms is 0.9/0.7/1.5 µm on Lr0/1/2 (before the
+  refit 1.5/1.7/2.2), and the Lr4 HB0 cos term is −0.4 µm (before −3.8).
+
+### Why pede took it: a change of dy with incidence
+- Mille replay of the solution on the same data, with the profiled Hessian of the 14 HB RZ projected on d, a and c:
+  - Removing d, a and c costs Δχ² = +27.8k on the records without a vertex (σ_d = 0.10 µm, σ_c = 0.0015 µm/cm²).
+  - The vertex records gain 1.1k from it and alone would want d ≈ 4 µm. They are 5.4k of 1.9M records.
+  - So the family is not a null direction of these data.
+- The reason is that a layer RZ also rotates every stave plane, which changes dy with the crossing point on the stave,
+  i.e. with incidence. The res trees show such a change, fitted as dy = c0 + k·tanα with tanα from `points.snp`:
+
+  | | Lr0 | Lr1 | Lr2 | Lr3 | Lr4 | Lr5 | Lr6 |
+  |---|---|---|---|---|---|---|---|
+  | late − early k (µm) | −2.9 | −4.1 | −4.3 | −4…−6 | +5±2 | −4±4 | +20…+30 |
+  | solPbHBA0 − early k (µm) | −1.4 | −1.6 | −0.4 | +0.7 | | | |
+
+  - It is the same for both charges and for cluster sizes 1–2, 3–4 and 5+ (cluster-size fractions are unchanged too),
+    so it looks geometric rather than a cluster-position effect.
+  - In the IB it is what a radial (normal) offset of about 3–4 µm of the stave measurement planes would produce. It is
+    not linear: Lr1 rises from −0.4 to +1.6 µm at snp ≈ 0.11, then falls back to 0 at 0.39.
+  - The OB tanα range is only ±0.13.
+- HB DOFs can absorb such a change only through RZ, and any rφ translation outside the helix-null family is expensive.
+  The solution therefore lands exactly in d + a·r + c·r².
+
+### Constraints
+Two variants, both checked by regenerating `mp2con.txt` (`--output MilleSteer`) on the IBEdge geometry.
+
+**[ITS_RB_HBonly_v2.json](ITS_RB_HBonly_v2.json): the rotation of every layer is pinned.** Run it with
+`AlignParams.groupModesRelToRoots=false`; otherwise the curl, being a free rigid motion of the group volumes, is skipped.
+- The ITS has no layer volume, so the pin is a named `groupModes` curl group per layer (`Lr0` … `Lr6`) over its two
+  HBs. Each equation is the layer's rotation about the beam axis: the HB RZ plus a small TX term, since the HB origin
+  is off the axis.
+- This removes d, a, c and the other 4 layer rotations, keeping only the HB0−HB1 RZ difference per layer.
+  - The late − early layer rotations are only 2–4 µm on Lr3–Lr5.
+  - With B+ data only, the sagitta must stay at its IBEdge value, since only B0 data constrain it.
+  - RZ leaves the `ITS` pin, which the 7 layer equations already contain.
+- `globalModes: ["radialHarmonic1", "tangentialHarmonic1"]` on the HBs removes the transverse shift ∝ r. It is near-null
+  for tracks from the vertex, and was 3–4.5 µm at 40 cm in solPbHBA0 (IB TX about +1.6, OB about −1 µm).
+- The RZ prior is tightened from 1 to 0.1 mrad. The old prior allowed 150 µm at Lr6.
+
+**[ITS_RB_HBonly_v2b.json](ITS_RB_HBonly_v2b.json): only the helix family is constrained.** It keeps the `ITS` RZ pin
+(a) and adds `globalModes: ["tangentialPolar_r0t0", "sagitta"]` (d and c) to the harmonic-1 modes. The 4 other layer
+rotations stay free. A rotation pattern outside the helix family is measured by the rφ translation it implies, so it
+can absorb little of the incidence change.
+
+With these constraints the IB incidence slope stays in the residuals. To absorb it, free the IB staves along their
+normal (stave local Y for ITS volumes; check against the jacobian), leaving the mean over each layer free, since a
+uniform radial offset is seen through incidence. Before that, check whether the slope follows individual staves or is
+common to all of them.

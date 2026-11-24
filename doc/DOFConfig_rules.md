@@ -298,6 +298,7 @@ vanish:
 | `tangentialPolar` | rΔφ = ε·r^p·t^k, same (p,k) | **5** |
 | `longitudinalPolar` | Δz = ε·r^p·t^k, (p,k) ∈ {(0,1),(0,2),(1,0),(1,2)} | **4** |
 | `globalShift`   | rigid translation along the global X, Y, Z axis (`globalShift_x/_y/_z`) | **3** |
+| `sagitta`       | rΔφ = ε·r² (the same curvature change for every track, whatever its charge) | 1 |
 
 The two harmonic families are the generic form of the azimuthal modes, with the amplitude explicitly
 proportional to r (the weak modes of the ITS have an ε = amplitude/r coherent across the independently
@@ -388,6 +389,16 @@ guards `Volume::NGlobalEq` against going out of step.
 detector the top-level pins remove it already; it exists for the `groupModes` clause below. In
 `WeakModesDiag` its B amplitude duplicates the rigid shift of the fit (like `curl` and `globalTilt` the
 rigid rotation) and carries no information.
+
+`sagitta` (rΔφ = ε·r²) changes the curvature of every track by the same amount, whatever its charge. With
+B ≠ 0 the track's 1/p<sub>T</sub> absorbs it, so only B = 0 data (no curvature parameter) or an external
+momentum reference constrain it. Together with `curl` (rΔφ = ε·r) and `tangentialPolar_r0t0` (rΔφ = ε, a
+d0 shift that only the vertex sees) it spans rΔφ = d + a·r + c·r², a reparametrisation of the helix of every
+track. A fit of B ≠ 0 data alone, with few vertex-constrained records, must therefore constrain all three. One
+way is `globalModes: ["tangentialPolar_r0t0", "sagitta"]` plus the top-level `RZ` pin. When the half barrels are
+the only free ITS volumes, the other is one named `groupModes` `curl` group per layer over its two half barrels;
+this pins every layer rotation and needs `AlignParams.groupModesRelToRoots=false`, since the curl of a free half
+barrel is its own rigid motion. Examples: `doc/ITS_RB_HBonly_v2b.json` and `doc/ITS_RB_HBonly_v2.json`.
 
 ### Per-group mode equations: `groupModes`
 

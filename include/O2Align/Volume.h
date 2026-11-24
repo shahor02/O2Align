@@ -121,6 +121,7 @@ class Volume
     TangentialPolar,    ///< r*dphi = eps*r^p*t^k
     LongitudinalPolar,  ///< dz     = eps*r^p*t^k
     GlobalShift,        ///< rigid translation along the global X / Y / Z axis: THREE equations
+    Sagitta,            ///< r*dphi = eps*r^2 : charge-independent change of the track curvature (B != 0)
     NGlobalModes
   };
   /// highest azimuthal order of the RadialHarmonic / TangentialHarmonic families
@@ -190,7 +191,8 @@ class Volume
   /// constexpr member function may not be called in a constant expression inside its own class body
   /// (rootcling rejects it); the static_assert right after the class checks the two agree.
   static constexpr int NGlobalEq = 5 /* the one-equation modes */ + 2 /* Elliptical */ + 2 /* GlobalTilt */ + 2 * (2 * GlobalHarmonicLMax) +
-                                   3 * 2 * (GlobalPolarKMax + 1) - 4 /* polar families minus their duplicates */ + 3 /* GlobalShift */;
+                                   3 * 2 * (GlobalPolarKMax + 1) - 4 /* polar families minus their duplicates */ + 3 /* GlobalShift */ +
+                                   1 /* Sagitta */;
   static constexpr int globalEqIndex(int mode, int phase) { return globalEqFirst(mode) + phase; }
   static int globalEqMode(int eq);
   static int globalEqPhase(int eq);
