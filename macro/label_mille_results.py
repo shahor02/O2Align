@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add comments from an mp2params.txt file to Millepede results."""
+"""Add comments from an mp2param.txt file to Millepede results."""
 
 import argparse
 from pathlib import Path
@@ -47,7 +47,7 @@ def main() -> None:
     )
     parser.add_argument("results", nargs="?", default="millepede.res")
     parser.add_argument(
-        "parameters", nargs="?", default="mp2params.txt",
+        "parameters", nargs="?", default="mp2param.txt",
         help="MP2 parameters file (default: %(default)s)",
     )
     args = parser.parse_args()

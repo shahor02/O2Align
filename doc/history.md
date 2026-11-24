@@ -1250,3 +1250,64 @@ Found in a code review of `ea32487`; each one checked on the laptop.
 - Configs `ITS_RB_HBonly_v2.json` (per-layer curl groups, `groupModesRelToRoots=false`) and `ITS_RB_HBonly_v2b.json`
   (`tangentialPolar_r0t0` + `sagitta` + ITS RZ pin), both with harmonic-1 modes and a 0.1 mrad RZ prior. Details in
   [HBLevel_adjustment.md](HBLevel_adjustment.md#result-of-stage-1-solpbhba0-and-the-weak-mode-constraints).
+
+## 2026-11-24: reduced fit v4tR on top of v4t: better ITS residuals, worse TRD/TOF extrapolation
+- `sag/v4tR`: IB fixed at v4t; free: OB module TX + RY and the mean vertex. 192 OB-only `rdphi` ray pins
+  (24 φ × 8 t, re-centred on v4t), TX 10 µm and RY 1 mrad priors centred on v4t. Data B0, B0Bis, B+, B+Bis, MINRES-QLP.
+  The modules move by 2.4–4.5 µm rms in TX (up to 40 µm on Lr6 end modules) and 0.03 mrad in RY.
+- checkResid, rms over bins (µm), B0 / B+ / B−:
+
+  | | IBEdge | v3R | v4t | v4tR |
+  |---|---|---|---|---|
+  | Lr2 dy-φ | 0.84 / 1.20 / 1.58 | 1.47 / 2.07 / 2.63 | 0.92 / 1.27 / 1.81 | 0.92 / 1.27 / 1.82 |
+  | IB−OB par0-φ | 5.2 / 8.5 / 11.7 | 6.5 / 20.3 / 23.4 | 5.6 / 8.9 / 12.9 | 4.8 / 8.6 / 13.3 |
+  | Lr4 dy-Z | 2.82 / 1.12 / 1.20 | 1.73 / 1.24 / 0.92 | 1.09 / 2.14 / 2.26 | 1.59 / 1.02 / 1.31 |
+  | Lr4 dy-tgl | 2.82 / 1.06 / 1.13 | 1.95 / 1.23 / 0.81 | 1.40 / 2.18 / 2.26 | 1.83 / 0.97 / 1.23 |
+
+  - The IB stays clean, and the B± Lr4 +z dip of v4t is gone (Lr4 at z ≈ 25–30 cm: B+ −0.4…−1.0 µm, against −2.7…−4.3).
+  - B0 gets back about 60 % of the high +tgl sagitta: Lr4 dy at tgl 1.0–1.6 is 1.4–3.9 µm (IBEdge 3.5–5.6, v4t
+    0.4–2.1). Lr5 at z ≈ 65 cm is 12.4 µm, as in IBEdge.
+- Replay, noPV ⟨χ²/ndf⟩ B0 / B+ / B−: v4tR 0.91959 / 1.00834 / 1.00983, against v4t 0.91982 / 1.00885 / 1.01009 and
+  IBEdge 0.91954 / 1.00792 / 1.00879. It is the best correction inside the ITS in every field, B− included.
+- TRD/TOF `pre` (solB1A4), χ²/ndf with per-sector constants removed, TRD / TOF. v3R is evaluated for the first time;
+  the earlier tests used the v3 table:
+
+  | field | IBEdge | v3 | v3R | v4t | v4tR |
+  |---|---|---|---|---|---|
+  | B0 | 20.1 / 17.0 | 20.3 / 17.1 | 20.1 / 17.0 | 22.1 / 17.9 | 22.1 / 17.8 |
+  | B+ | 24.3 / 8.3 | 9.4 / 3.6 | 22.1 / 8.1 | 7.5 / 2.8 | 12.5 / 4.6 |
+  | B− | 43.5 / 18.7 | 18.2 / 11.1 | 43.6 / 18.6 | 17.0 / 10.3 | 29.1 / 14.9 |
+
+  - B0 − B+ gap rms, TRD / TOF: IBEdge 2225 / 2491, v3 1005 / 987, v3R 1606 / 1745, v4t 968 / 906, v4tR 1225 / 1341 µm.
+  - **The reduced fit (v3R) gives back most of the TRD/TOF gain of v3; v4tR gives back about a third of that of v4t.**
+    B+ is in both fits, so ITS-internal B+ data and the B+ TRD/TOF extrapolation disagree.
+- Geometry, chip by chip, from the built geometries (`geoChip.C`):
+  - Per (φ, t) cell over the OB chips, the r² term of v4tR − v4t does not undo that of v4t. Its regression on v4t is
+    +0.1…+0.37.
+  - The OB line (a + b·r per cell) extrapolated to r = 380 cm changes by 75–140 µm rms over φ, uncorrelated with v4t,
+    whose own change is 250–600 µm. That is the size of the TRD/TOF loss.
+  - The OB `rdphi` cells pin only the mean angular displacement Σ d/r per cell, not the OB slope b. The slope b sets the
+    OB track direction at TRD/TOF, and the ITS data determine it with far less precision than the TRD/TOF lever arm
+    needs.
+- Note: `geoChip.C` writes the OB chips in the order of the TGeo physical-node list, not in the sensor-ID order of the
+  chip tables. Join the two by position, never by row.
+
+## 2026-11-24: v4tR2 (OB slope pinned per cell): TRD/TOF at the v4t level; the B± Lr4 +z dip is the same mode
+- `sag/v4tR2`: as v4tR, but the OB `rdphi` ray pins are split at r = 30 cm (Lr3–4 and Lr5–6 separately,
+  `ITS_RB_sagRed3.json`, 384 equations). Per (φ, t) cell they fix the mean ray rotation and the OB slope at v4t.
+  Module TX moves 0.75 / 0.91 µm rms on Lr3 / Lr4 and 3.2 / 3.6 µm on Lr5 / Lr6.
+- Replay, noPV ⟨χ²/ndf⟩ B0 / B+ / B−: v4tR2 0.91963 / 1.00849 / 1.00992, between v4tR (0.91959 / 1.00834 / 1.00983)
+  and v4t (0.91982 / 1.00885 / 1.01009).
+- TRD/TOF `pre`, χ²/ndf TRD / TOF: B0 22.1 / 17.8, B+ 7.7 / 2.8, B− 17.3 / 10.6. The B0 − B+ gap rms is 964 / 902 µm.
+  This is the v4t level (B+ 7.5 / 2.8, gap 968 / 906), where v4tR had B+ 12.5 / 4.6 and a gap of 1225 / 1341.
+- checkResid:
+  - The IB is unchanged.
+  - B0 improves on v4t: Lr3 dy-Z rms 1.28 (v4t 1.54), Lr5 dy-tgl 3.62 (4.02). The high +tgl B0 sagitta stays
+    removed: Lr4 dy at tgl 1.0–1.6 is 0.7–2.4 µm.
+  - The B± Lr4 +z dip is back at the v4t size: B+ −2.1…−3.8 µm at z ≈ 25–30 cm, Lr4 dy-Z rms 1.85 / 2.05.
+    Lr5 dy-Z in B± gets slightly worse (2.44 / 2.47, v4t 2.09 / 2.42).
+- **Conclusion:** the B± Lr4 +z dip and the TRD/TOF extrapolation are carried by the same degree of freedom, the
+  per-cell OB slope. Removing the dip inside the ITS (v4tR) costs a third of the TRD/TOF gain. The B± tracks inside the
+  ITS want a different OB direction from the one their own extrapolation to TRD/TOF wants. That is either a
+  non-geometric ITS effect at high tgl (multiple scattering or incidence, see the `model.py` caveat of the 2026-11-23
+  review), or a TRD/TOF geometry that absorbed the old ITS direction.
