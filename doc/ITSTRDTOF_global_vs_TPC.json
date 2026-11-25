@@ -1,0 +1,14 @@
+{
+  "#comment1": "Relative alignment of ITS, TRD and TOF wrt the TPC: the TPC is the reference (position fixed, only its drift calibration free), ITS, TRD and TOF move each as a single rigid body (all 6 DOFs of the detector top volume, in the lab frame for the TRD/TOF envelopes, nothing free below).",
+  "rules": [
+    { "match": "TPC_envelope", "calib": { "type": "tpcvdrift" } },
+    { "match": "TPC/sec[0-9]+", "rigidBody": "fixed" },
+
+    { "match": "ITS", "rigidBody": "all" },
+    { "match": "TRD_envelope", "rigidBody": "all" },
+    { "match": "TOF_envelope", "rigidBody": "all" },
+
+    { "#comment2": "mean vertex free: its position and slopes relative to the ITS are measured, the TPC anchors the common frame",
+      "match": "PVT/meanVertex", "calib": { "type": "meanvertex" } }
+  ]
+}

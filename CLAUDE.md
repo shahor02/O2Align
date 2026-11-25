@@ -103,9 +103,10 @@ Conventions that are easy to violate:
   sensor nor virtual would therefore silently get an identity `L2G`; `finalise` makes that fatal.
 - **`virt = true`** means no alignable entry in the geometry (envelopes, TPC sectors, the mean
   vertex). Such a volume must define `L2G` itself, or leave it at the identity deliberately.
-- **`setRigidBodyAllowed(false)`** marks volumes that cannot be shifted (the root, the detector
-  envelopes w/o geometry): a matching `rigidBody` rule is ignored and no constraint over their
-  children is generated. Calibration DOFs are unaffected.
+- **`setRigidBodyAllowed(false)`** marks volumes that cannot be shifted (the root, the TPC envelope, the mean
+  vertex): a matching `rigidBody` rule is ignored and no constraint over their
+  children is generated. Calibration DOFs are unaffected. The TRD/TOF envelopes are allowed: with their
+  identity `L2G` their DOFs are a global lab-frame motion of the detector, transported to the supermodules on output.
 - **Millepede labels** ([Label.h](include/O2Align/Label.h)) are bit-packed
   `DOF|CALIB|ID|SENS|DET`. Uniqueness across detectors relies purely on the `DET` field, since every
   detector restarts its own volume counter from 0. `Label::DET_GLOBAL` is reserved for the root.

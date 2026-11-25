@@ -1386,3 +1386,103 @@ Found in a code review of `ea32487`; each one checked on the laptop.
     ±5e-4.
   - Per-sector values are biased by charge-dependent acceptance, which flips with the field like a geometric bias.
 - Conclusion: v2b is preferred over v2, whose smaller shifts come with a fake sagitta.
+
+## 2026-11-25: PbPb HBonly_v3b: HB RX/RY rotate the whole ITS; the `ITS` NoCross pin misses the lab gauge
+- Motivation for v3b. On top of v2b, the per-stave rφ z-slopes on 568664 (relative to pp B+ 562837) show:
+  - a cos φ pattern per layer and HB, i.e. an HB rotation about x: Lr3 −7.4, Lr4 −12.8, Lr5 −6.9, Lr6 +2.2 µrad in
+    HB0, weaker in HB1;
+  - no half-stave signal beyond the noise floor (HS0 − HS1 2–4 µm, floor 0–2).
+  - `ITS_RB_HBonly_v3b.json` = v2b + HB RX, RY (prior 30 µrad), with RX, RY added to the `ITS` `pinChildrenMeanNoCross`.
+- `solPbHBA0v3b`: pede χ² only 9.5k below v2b. The HBs rotate by ≈ −97 µrad about the lab x and ≈ −23 µrad about the
+  lab y in all 14 HBs, with the beam-line slopes following (SlopeY +53 → +156, SlopeX −29 → −62 µrad).
+  - Cause: `ITSUHalfBarrel1` is rotated by π about z w.r.t. `HalfBarrel0`, and `pinChildrenMeanNoCross` sums the local
+    DOFs with +1/14. For TX, TY, RX, RY it pins the layer-averaged top − bottom lab difference and leaves the common lab
+    motion free. With the mean vertex free, an ITS rotation about x/y is a beam-line slope: a gauge held only by the
+    HB priors. The same holds for TX, TY in v2 and v2b (common lab TX ≈ +13 µm in the IB, compensated by MV X).
+  - Without the gauge, the v3b rotations are: top IB vs top OB ≈ −30 µrad in RX, IB vs OB ≈ −17 µrad in RY in both
+    halves, no OB layer-relative rotation.
+- Residuals are blind to the gauge, and v3b changes little else:
+  - stave z-slope cos term: Lr4 HB0 −12.8 → +1.6, Lr5 HB0 −6.9 → −3.3, Lr3 HB0 −7.4 → −4.3, but Lr3 HB1 +2.9 → +6.8;
+  - per-stave dy excess rms unchanged (Lr3 2.0 → 1.9, Lr5 2.6 → 2.5 µm), per-module unchanged (Lr3 4.0, Lr5 4.5 µm);
+  - `getSagitta.C`: −26 ± 3, as v2b.
+  - What is left is at the stave/module level, not at the HB level.
+- Fix:
+  - new DOF-config clause `pinChildrenMeanNoLever`: the children's DOFs rotated into the parent frame without the
+    lever-arm terms, i.e. the common motion in the parent frame (`Volume::addChildrenMeanTerms`, `MeanTerms`);
+  - `pinChildrenMeanNoCross` is unchanged (mean of local DOFs, which is what it means for staves around an HB); its doc
+    now warns about children with differently oriented frames;
+  - `ITS_RB_HBonly_v3c.json` = v3b with the transported `pinChildrenMean` on `ITS`, equivalent to NoLever here
+    (lever-arm coefficients ≤ 0.005 per unit rotation, the HB origins being within ~2.5 mm of the ITS origin).
+- Steering regenerated with the current build: v3b `mp2con.txt` is identical with and without the change. Both differ
+  from the file of the original v3b run in the global-mode constraints (extra small OB HB TZ terms): that run used an
+  older binary.
+
+## 2026-11-25: TRD/TOF envelopes made rigid-body alignable, for the global alignment wrt the TPC
+- Goal: align ITS, TRD and TOF relative to the TPC, the TPC position fixed (only its drift free) and each of the
+  three detectors moving as one rigid body.
+- That was not possible for TRD and TOF: their envelopes were flagged `setRigidBodyAllowed(false)`. Freeing the
+  supermodules instead gives 18 independent rigid bodies, and no clause can tie them into a single one.
+- The flag was not needed: the envelope L2G is the identity, so the derivative chain gives the lab-frame global motion.
+  `collectNewCumulativeDeltas` already transports the correction of a virtual volume to its descendants for the
+  alignment objects.
+- Fix: the flag is dropped for the TRD and TOF envelopes (it is kept for the TPC envelope); new config
+  `doc/ITSTRDTOF_global_vs_TPC.json`.
+
+## 2026-11-25: PbPb HBonly_v3c: gauge removed, residuals as v3b, the HB level is exhausted
+- `solPbHBA0v3c` (`ITS_RB_HBonly_v3c.json`, transported `ITS` pin) behaves as designed:
+  - the common lab TX/TY/RX/RY of the 14 HBs is 0 (v3b: RX −97, RY −23 µrad; v2b: TX +7, TY +4 µm);
+  - mean vertex: slopes −40/+59 µrad (v2b −29/+53, v3b −62/+156); X, Y 4.8, 1.2 µm (v2b 19, 9.5 µm), following the
+    IB common shift (−13.5 µm), so the vertex stays where it was relative to the IB;
+  - remaining lab rotations: IB HB0 RX −10..−29 µrad vs OB +4..+9; RY IB −4..−16 vs OB +4..+10 µrad in both halves.
+- pede χ²: v3c 21077131, v3b 21077207, v2b 21086749. v3c frees the layer-averaged top−bottom TX/TY/RX/RY that the v3b
+  `NoCross` pin held at 0; it moves by ~6 µrad and ~5 µm for −76 in χ², a nearly flat direction.
+- Residuals: v3c = v3b within 0.1 µm per stave and per module.
+  - The Lr3 stave z-slope cos term moves with that flat direction (HB0 −4.3 → −8.2, HB1 +6.8 → +1.9 µm/m), at no
+    χ² cost: it is not determined by the data at the HB level.
+- Per-stave quantities relative to `ibeBp` (dy offset at z=0, dy and dz z-slopes), with a per-HB c0 + cos φ + sin φ
+  removed, i.e. what HB rigid-body motions can produce:
+  - v3c already reaches that floor for Lr4/Lr5 dy slopes (1.5 → −0.6, 2.4 → 1.2 µm/m);
+  - what remains is the same as for the unrefitted `ibePb`: dy offsets 1.5–2.4 µm, Lr3 dy slope 5.5 µm/m, dz slopes
+    3–5 µm/m.
+  - The PbPb-vs-pp change left in the residuals is stave/module-level, beyond the reach of any HB-only configuration.
+
+## 2026-11-25: PbPb HBonly_v3d: the layer-averaged top−bottom motion pinned
+- In v3c the layer-averaged top−bottom TX/TY/RX/RY is almost flat (see the v3c entry): a relative rotation of the two
+  halves about the IP keeps tracks from a point-like vertex consistent, and only the vertex z spread and the HB
+  overlaps see it. Cosmics would measure it, but there are none for the fall 2025 PbPb period.
+- `ITS_RB_HBonly_v3d.json` = v3c plus `pinChildrenMeanNoCross` [TX, TY, RX, RY] on `ITS`: with the π-rotated HB1 frame
+  this pins the layer-averaged top−bottom difference at the starting (IBEdge, pp + cosmics) value. TZ and RZ are left
+  out, their `NoCross` equation being the transported one.
+- Regenerated steering: 16 constraints, rank 16 (smallest/largest singular value 0.022, v3c 0.025).
+
+## 2026-11-26: PbPb v4c: stave TX, RY on top of v3d; ray cells replace the rotation pins; mean-pin guard ignores lever arms
+- Goal: the stave-level residual left by v3d on 568664 (relative to pp B+ 562837, see the v3c entry): per-stave rφ
+  offsets 1.5–2.4 µm and rφ z-slopes (Lr3 5.5 µm/m), with no motion of half-staves or modules on a stave.
+- `ITS_RB_v4c.json`: v3d + stave `TX` (rφ) and `RY` (rotation about the stave's radial axis, i.e. an rφ slope along
+  z) for all 192 staves, priors 20 µm and 50 µrad. The stave local frame (x ≈ rφ, the IB tilted by ~17°; y ≈ −r;
+  z = beam) was checked in the geometry. The dz z-slopes per stave (3–5 µm/m) are a z scale, which no stave rigid
+  body can produce. They are left out.
+- Weak directions added by the staves:
+  - A uniform stave `TX` within an HB is the HB `RZ`. No transported equation exists for it (a translation does not
+    feed a rotation), hence `pinChildrenMeanNoCross` [TX] on the HBs.
+  - Ray modes. A stave `TX` ∝ r and a stave `RY` common to all layers at a given φ rotate every track by g(φ) and
+    θ(φ)·tgλ. The axisymmetric global modes do not cover these.
+  - Fix: `rayModes` `rdphi` over the OB (`rMin` 10 cm), 24 φ × 2 t cells (t < 0 and t > 0). The OB-only cells avoid
+    the IB t smearing by the vertex z. They keep the IB/OB relative rotations, which the tracks measure.
+  - The `ITS` RX, RY, RZ pins and `tangentialHarmonic1` lie in the ray span and are dropped. Together with the cells
+    they would pin the relative IB/OB rotation. The common rotation and the top−bottom relative rotation (v3d's
+    `NoCross` RX, RY) are now held by the cells.
+  - Added as global modes over the staves: `twist` (∝ r², not a ray field) and `tangentialPolar_r0t1`. The latter is
+    the t-odd partner of `tangentialPolar_r0t0`, seen only through the vertex.
+- The first steering of v4c had an equation on HB `TZ` with stave `RY` coefficients of ~0.025 and no stave
+  translation in it.
+  - Cause: the lever arm of a stave rotation about its own origin through the 1–2° stave tilt (`j(TZ, RY)`
+    ~0.5 cm) passed the `MinChildrenCoupling` guard, which compared couplings of mixed units. No sensor moves along
+    z under that rotation.
+  - Fix: `Volume::maxChildrenCoupling` counts only the same-kind (translation/translation, rotation/rotation)
+    couplings; the written equation is unchanged. The regenerated v3d steering is identical.
+- v4c steering: 129 constraints over 468 rigid-body parameters, rank 129. The smallest/largest singular value
+  ratio is 2.5e-3, the weakest combination being in the ray cells at the HB boundaries (φ ≈ 0, π).
+- Running the steering-only workflow (`--output MilleSteer`) from a non-interactive background shell hung the DPL
+  driver at start, with no device spawned and no CPU used. It runs (7 s) with stdin redirected from `/dev/null` and
+  its own `--session`.

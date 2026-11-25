@@ -34,8 +34,8 @@ Volume::Ptr DetectorTOF::buildHierarchy(Volume::SensorMapping& sensorMap)
   const uint32_t det = mDetIdx;
   // the TOF envelope has no alignable entry in the geometry
   auto root = std::make_unique<Volume>("TOF_envelope", gLbl++, det, false, true);
-  // w/o a geometry counterpart the envelope cannot be shifted, but it may own calibration DOFs
-  root->setRigidBodyAllowed(false);
+  // Its L2G is the identity: a rigid-body DOF set on it is a global motion of the whole detector in the lab
+  // frame, written to the alignment objects by transporting it to the supermodules.
   mSensors.assign(o2::tof::Geo::NSECTORS * o2::tof::Geo::NSTRIPXSECTOR, nullptr);
 
   int cnt = 0;

@@ -424,15 +424,20 @@ class Volume
   /// DOF sets described by the rigidBody / calib clauses of a rule of the DOF configuration
   static std::unique_ptr<DOFSet> makeRigidBodyDOFSet(const nlohmann::json& rb, const std::string& pattern);
   static std::unique_ptr<DOFSet> makeCalibDOFSet(const nlohmann::json& cal, const std::string& pattern, const std::string& sym);
-  /// apply the "pinChildrenMean" (noCross = false) or "pinChildrenMeanNoCross" (noCross = true) clause
-  /// of a rule: flags rigid-body DOFs (free or fixed) for which writeRigidBodyConstraints must still
-  /// force the weighted mean of the active children's movement to vanish, mirroring the
-  /// "replace, don't merge" semantics of the rigidBody/calib clauses. The two clauses have independent
-  /// flags and may both be set on the same volume (they are different equations).
-  void applyPinChildrenMeanConfig(const nlohmann::json& pin, const std::string& pattern, bool noCross);
+  /// which terms of the contributors' DOFs a mean-of-children equation sums, see addChildrenMeanTerms
+  enum class MeanTerms : uint8_t { Transported, ///< every free DOF, with the full jacobian (lever arms included)
+                                   NoCross,     ///< only the same-named DOF, weight alone, in the contributor's own frame
+                                   NoLever };   ///< DOFs of the same kind, rotated to this frame, no lever arms
+  /// apply the "pinChildrenMean" (Transported), "pinChildrenMeanNoCross" (NoCross) or
+  /// "pinChildrenMeanNoLever" (NoLever) clause of a rule: flags rigid-body DOFs (free or fixed) for
+  /// which writeRigidBodyConstraints must still force the weighted mean of the active children's
+  /// movement to vanish, mirroring the "replace, don't merge" semantics of the rigidBody/calib
+  /// clauses. The clauses have independent flags and may be set on the same volume (they are
+  /// different equations).
+  void applyPinChildrenMeanConfig(const nlohmann::json& pin, const std::string& pattern, MeanTerms terms);
   /// apply the "weightedMean" clause of a rule: a bool (all DOFs), "all", or an array of DOF names.
   /// Per DOF of this volume, overrides whether its mean-of-children constraint (the automatic one for
-  /// a free DOF, or the one written for pinChildrenMean/pinChildrenMeanNoCross) weights each
+  /// a free DOF, or the one written for pinChildrenMean/pinChildrenMeanNoCross/pinChildrenMeanNoLever) weights each
   /// contributor by its accumulated getDataCounter() instead of splitting the mean equally (1/N) --
   /// see writeChildrenMeanConstraints. A DOF never touched by any matching "weightedMean" rule keeps
   /// falling back to the statWeighted default passed to writeRigidBodyConstraints; once a rule does
@@ -514,17 +519,34 @@ class Volume
   /// is looked through, its own children being taken with its getJP2L() folded in
   void collectMeanContributors(const Matrix66& jToThis, std::vector<MeanContributor>& out) const;
   /// Add to con the contributors' free DOFs feeding the DOF iDOF of this volume, scaled by weight.
-  /// noCross = false: every free DOF jDOF of a contributor enters with the jacobian element
+  /// terms = Transported: every free DOF jDOF of a contributor enters with the jacobian element
   /// jToThis(iDOF, jDOF), i.e. the contributor's *pose* transported into this volume's frame -- the
   /// correct operator when this volume's DOF is a fit parameter, since that is exactly the degeneracy.
-  /// noCross = true: only the contributor's own iDOF enters, with the weight alone. Use this to pin a
+  /// terms = NoCross: only the contributor's own iDOF enters, with the weight alone. Use this to pin a
   /// collective drift: the transported form mixes translations and rotations with lever arms of up to
   /// tens of cm, so it is cheaply satisfied by a weakly-observable rotation (an ITS half-stave RZ of
   /// 7.5 mrad cancelling a 97 um mean TY) instead of by the displacement one meant to constrain.
+  /// The DOF is taken in the contributor's own frame: for children with differently oriented frames
+  /// (an ITS HalfBarrel1 is rotated by pi about z w.r.t. HalfBarrel0) this is a mean of local motions,
+  /// e.g. a top-minus-bottom difference of the lab TX, not the common lab motion.
+  /// terms = NoLever: the contributor's DOFs of the same kind as iDOF (translations for TX..TZ,
+  /// rotations for RX..RZ) enter with the jacobian element, i.e. rotated into this volume's frame, but
+  /// the translation-from-rotation (lever-arm) block is dropped: the mean motion in this frame, which
+  /// a rotation with a large lever arm cannot pay for.
   /// weights has one entry per contributor, in the same order, already normalised (e.g. equal 1/N, or
   /// each contributor's share of the accumulated statistics) -- see writeChildrenMeanConstraints.
-  static void addChildrenMeanTerms(Constraint& con, int iDOF, const std::vector<MeanContributor>& contributors, const std::vector<double>& weights, bool noCross);
-  /// Largest |jacobian element| coupling the DOF iDOF of this volume to a free DOF of any contributor.
+  static void addChildrenMeanTerms(Constraint& con, int iDOF, const std::vector<MeanContributor>& contributors, const std::vector<double>& weights, MeanTerms terms);
+  /// write one mean-of-children equation of the DOF iDOF with the given terms (free: iDOF is a free
+  /// DOF of this volume, otherwise the equation is a pin), skipped with a message if the contributors
+  /// cannot realise it -- see writeChildrenMeanConstraints
+  void writeChildrenMeanEquation(std::ostream& os, int iDOF, const std::vector<MeanContributor>& contributors,
+                                 const std::vector<double>& weights, MeanTerms terms, bool free) const;
+  /// the DOF config clause setting the pin of the given terms, for messages
+  static const char* meanClauseName(MeanTerms terms);
+  /// whether the jacobian element (iDOF, jDOF) enters a mean-of-children equation of the given terms
+  static bool meanTermUsed(int iDOF, int jDOF, MeanTerms terms);
+  /// Largest |jacobian element| coupling the DOF iDOF of this volume to a free DOF of the same kind
+  /// (translation or rotation) of any contributor; the lever-arm block is not counted.
   static double maxChildrenCoupling(int iDOF, const std::vector<MeanContributor>& contributors);
   /// Below this coupling the contributors cannot realise the parent DOF (only frame misrotations
   /// leak into it), so its transported mean equation is a rescaled copy of another one.
@@ -548,6 +570,9 @@ class Volume
   /// as mPinChildrenMean, but the equation sums only the children's *same-named* DOF, without the
   /// jacobian cross-terms. Set by the "pinChildrenMeanNoCross" clause; see addChildrenMeanTerms.
   std::array<bool, RigidBodyDOFSet::NDOF> mPinChildrenMeanNoCross{};
+  /// as mPinChildrenMean, but without the lever-arm (translation-from-rotation) jacobian terms.
+  /// Set by the "pinChildrenMeanNoLever" clause; see addChildrenMeanTerms.
+  std::array<bool, RigidBodyDOFSet::NDOF> mPinChildrenMeanNoLever{};
   /// per rigid-body DOF: whether this volume's mean-of-children constraint is weighted by each
   /// contributor's accumulated statistics instead of an equal split; Unset (the default) falls back to
   /// the statWeighted argument of writeRigidBodyConstraints. Set by the "weightedMean" clause.

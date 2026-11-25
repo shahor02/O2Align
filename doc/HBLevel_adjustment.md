@@ -137,7 +137,12 @@ staves. A stave-level fit therefore cannot absorb an OB HB move such as the one 
 **Stage 1: HB only** ([ITS_RB_HBonly.json](ITS_RB_HBonly.json)).
 - The 14 per-layer HBs get TX, TY, TZ and RZ, with priors of 30 µm and 1 mrad.
 - The mean vertex is free.
-- `ITS` is fixed with `pinChildrenMeanNoCross` [TX, TY, TZ, RZ] over the 14 HBs, which removes the global gauge.
+- `ITS` is fixed with `pinChildrenMeanNoCross` [TX, TY, TZ, RZ] over the 14 HBs. Because HB1's frame is rotated by π
+  about z, this removes the global TZ and RZ gauge but not TX and TY (see
+  [DOFConfig_rules.md](DOFConfig_rules.md#pinchildrenmeannocross-the-same-pin-without-the-jacobian-cross-terms)).
+  [ITS_RB_HBonly_v3c.json](ITS_RB_HBonly_v3c.json) uses `pinChildrenMean`, which pins the common lab motion.
+  [ITS_RB_HBonly_v3d.json](ITS_RB_HBonly_v3d.json) adds `pinChildrenMeanNoCross` [TX, TY, RX, RY], which also pins the
+  layer-averaged top−bottom relative motion, not constrained by collision data.
 - That is about 60 parameters.
 
 How to run it:

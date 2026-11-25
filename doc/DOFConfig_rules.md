@@ -85,15 +85,21 @@ two cases that matter in practice:
    { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-9]", "rigidBody": ["TY"] },
    { "match": "ITS/ITSULayer[0-2]/ITSUHalfBarrel[0-9]/ITSUStave[0-9]", "rigidBody": ["TY"] }
    ```
-   Here the half-barrel's `TY` and the mean `TY` of its staves are tied together automatically; a stave
-   free only in, say, `RZ` instead would still contribute to that same constraint via `j(TY, RZ)`.
+   Here the half-barrel's `TY` and the mean `TY` of its staves are tied together automatically. Once
+   written, the equation includes every free DOF of the staves, e.g. a free `RZ` via the lever arm `j(TY, RZ)`.
 
    The equation is written only if some contributor really realises the parent DOF, i.e. the largest
-   `|j(iDOF, jDOF)|` over the contributors' free DOFs is at least `Volume::MinChildrenCoupling` (1e-2).
+   `|j(iDOF, jDOF)|` over the contributors' free DOFs *of the same kind* (translation for a parent
+   translation, rotation for a parent rotation) is at least `Volume::MinChildrenCoupling` (1e-2).
    Otherwise the parent DOF is not degenerate with the children (case 3 below) and the equation would
-   consist only of the leakage of small frame misrotations. Example: OB chips free only in `TX` under a
-   module free in `TX,TY,TZ`. The module `TY`/`TZ` equations would be its `TX` equation scaled by
-   10⁻⁷–10⁻⁵, and pede stops on the singular constraint matrix. The same cut applies to `pinChildrenMean`.
+   consist only of the leakage of small frame misrotations. Examples:
+   - OB chips free only in `TX` under a module free in `TX,TY,TZ`. The module `TY`/`TZ` equations would
+     be its `TX` equation scaled by 10⁻⁷–10⁻⁵, and pede stops on the singular constraint matrix.
+   - OB staves free only in `TX,RY` under a half-barrel free in `TZ`. `j(TZ, RY)` is the lever arm of the
+     stave rotation about its own origin through the 1–2° stave tilt (~0.5 cm), but the rotation moves no
+     sensor along z; the lever-arm block is therefore not counted.
+
+   The same cut applies to `pinChildrenMean`.
 
 2. **Parent DOF fixed, descendants' DOF free.** There is no parameter at the parent level to be
    degenerate with, so **no constraint is written by default**: the children (and the hierarchy below
@@ -151,8 +157,7 @@ parameter. The flags don't depend on the volume's `rigidBody` clause: they also 
 no rigid-body DOF set at all. A pinned DOF that no free descendant DOF contributes to (nothing free below,
 or none of the free DOFs feeds it through the chained jacobians) is skipped with a warning.
 `pinChildrenMean` is ignored, with a warning, on a volume that is not rigid-body alignable (the root,
-or an envelope without its own geometry such as `TRD_envelope`), so the common mode of the
-supermodules of a detector can't be pinned this way.
+the `TPC_envelope`, the mean vertex).
 
 ### `pinChildrenMeanNoCross`: the same pin without the jacobian cross-terms
 
@@ -191,6 +196,54 @@ Two things it deliberately cannot do, because they are not collective *drifts* o
 
 A pinned DOF that no descendant has free is skipped with a warning, which is the expected message
 when, say, the stave RZ below an OB half-barrel is fixed.
+
+**The DOFs are taken in each child's own frame.** For children whose frames are oriented differently,
+the plain mean is a mean of local motions, not a common motion in the parent frame. The ITS
+half-barrels are the case to watch: `ITSUHalfBarrel1` is rotated by π about z with respect to
+`ITSUHalfBarrel0`, so its local TX, TY, RX, RY are minus the lab ones. Over the 14 HBs of `ITS`, this
+clause therefore pins the layer-averaged top-minus-bottom lab difference of TX, TY, RX, RY (a real
+mode) and leaves their common lab motion free. With the mean vertex free that common motion is a pure
+gauge (an ITS rotation about x or y is the same as a beam-line slope), held only by the HB priors. To
+pin the common motion of such children use `pinChildrenMeanNoLever`, below.
+
+### `pinChildrenMeanNoLever`: the mean motion in the parent frame, without lever arms
+
+The children's DOFs are rotated into the parent frame (translations from translations, rotations from
+rotations, with the jacobian elements), but the translation-from-rotation block, which carries the
+lever arm, is dropped. The equation is then the mean motion of the children in the parent frame: a
+child rotated by π enters with the right sign, and a rotation with a large lever arm still cannot pay
+for a translation.
+
+```json
+{ "match": "ITS", "rigidBody": "fixed", "pinChildrenMeanNoLever": ["TX", "TY", "TZ", "RX", "RY", "RZ"] }
+```
+
+It takes the same values as the other two clauses, its flags are independent of theirs, and the same
+advice applies: one of the three per volume. Like `pinChildrenMean`, a DOF to which no free DOF of the
+same kind of any contributor couples (|jacobian element| < 1e-2) is skipped with a warning, since its
+equation would only be a copy of another one rescaled by the frame misrotations.
+
+Which one to use:
+- children with the same orientation (the IB chips of a stave): `pinChildrenMeanNoCross` and
+  `pinChildrenMeanNoLever` write the same equation;
+- children placed around an axis (the staves of a half-barrel): `pinChildrenMeanNoCross` pins the mean
+  local motion (e.g. a common radial shift), `pinChildrenMeanNoLever` the common motion in the parent
+  frame (a rigid shift or tilt of the whole set);
+- children whose frame origins are close to the parent's (the ITS half-barrels: within ~2.5 mm of the
+  ITS origin): the lever arms are negligible and `pinChildrenMean` is equivalent to
+  `pinChildrenMeanNoLever`.
+
+The clauses can be combined in one rule; each writes its own equation. Combine them only on DOFs where
+the two equations differ, otherwise the constraint matrix is singular. For the ITS half-barrels, whose
+HB1 frame is rotated by π about z, the `NoCross` mean of TX, TY, RX, RY is the layer-averaged top−bottom
+difference, while for TZ and RZ it repeats the transported equation:
+```json
+{ "match": "ITS", "rigidBody": "fixed",
+  "pinChildrenMean": ["TX", "TY", "TZ", "RX", "RY", "RZ"],
+  "pinChildrenMeanNoCross": ["TX", "TY", "RX", "RY"] }
+```
+pins both the common lab motion and the layer-averaged top−bottom relative motion
+([ITS_RB_HBonly_v3d.json](ITS_RB_HBonly_v3d.json)).
 
 ## Weighting the Mean by Statistics
 
@@ -477,8 +530,10 @@ group instead:
 A track from the vertex crosses every layer at the same azimuth φ and the same t = z/r (its tgλ). A
 sensor displacement r·F(φ, t)·**e**, with **e** = φ̂, ẑ or r̂, is therefore absorbed by the track's φ,
 tgλ or (B ≠ 0) curvature *for any function F*: a function space of null directions, not a short list
-of global modes. Rigid-body DOFs at stave level, all centred at z ≈ 0, cannot realise it, but free DOFs
-distributed in z (modules, chips) can.
+of global modes. Stave translations, all centred at z ≈ 0, realise only its t-even part F(φ); free DOFs
+distributed in z (modules, chips) realise all of it. A stave rotation about its radial axis (ITS stave
+`RY`) gives rΔφ = θ·z = θ·r·t, so a pattern θ(φ) common to all layers is the t-odd member F = θ(φ)·t:
+with free stave `RY`, the `rdphi` cells need `nT` ≥ 2 (example: `doc/ITS_RB_v4c.json`).
 
 The `rayModes` clause flags a branch, typically the detector envelope. The sensors under it are
 binned in (φ, t) cells, and per cell and component one equation is written:
@@ -687,4 +742,14 @@ TOF has a dummy `TOF_envelope` (not a geometry alignable), followed by alignable
 | Supermodule | `TOF/sm[0-9]+` |
 | Strip | `TOF/sm[0-9]+/strip[0-9]+` |
 
-The envelopes are not rigid-body alignable; rigid-body clauses on them are ignored. Calibration clauses can be configured on these synthetic volumes.
+The TRD and TOF envelopes are rigid-body alignable, with the identity L2G: their DOFs are a global motion of the
+whole detector in the lab frame (`TX,TY,TZ` along the global axes, `RX,RY,RZ` about them, through the ALICE origin).
+Having no geometry counterpart, their fitted correction is transported to the supermodules when the alignment objects
+are written (with a warning). They can also carry calibration DOFs. The `TPC_envelope` is not rigid-body alignable;
+rigid-body clauses on it are ignored.
+
+## Relative Alignment wrt the TPC
+
+[ITSTRDTOF_global_vs_TPC.json](ITSTRDTOF_global_vs_TPC.json) aligns the ITS, TRD and TOF each as a single rigid body
+wrt the TPC. The TPC position stays fixed and is the reference frame; only its drift calibration (`tpcvdrift`) is free.
+All 6 DOFs of `ITS`, `TRD_envelope` and `TOF_envelope` are free, nothing below them, and the mean vertex is free.

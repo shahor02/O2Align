@@ -1,0 +1,17 @@
+[
+  { "match": ".*", "rigidBody": "fixed" },
+
+  { "match": "PVT/meanVertex", "calib": { "type": "meanvertex", "free": ["X", "Y", "Z", "SlopeX", "SlopeY"] } },
+
+  { "match": "ITS", "rigidBody": "fixed",
+    "pinChildrenMean": ["TX", "TY", "TZ"], "pinChildrenMeanNoCross": ["TX", "TY"],
+    "rayModes": { "nPhi": 24, "nT": 2, "tMax": 4.0, "rMin": 10.0, "components": ["rdphi"] } },
+
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]", "rigidBody": ["TX", "TY", "TZ", "RX", "RY", "RZ"], "pinChildrenMeanNoCross": ["TX"] },
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]", "measurement": { "TX": [0.0, 0.003], "TY": [0.0, 0.003], "TZ": [0.0, 0.003], "RX": [0.0, 3e-5], "RY": [0.0, 3e-5], "RZ": [0.0, 0.0001] } },
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]", "globalModes": ["radialHarmonic1", "tangentialPolar_r0t0", "sagitta"] },
+
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "rigidBody": ["TX", "RY"] },
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "measurement": { "TX": [0.0, 0.002], "RY": [0.0, 5e-5] } },
+  { "match": "ITS/ITSULayer[0-6]/ITSUHalfBarrel[0-1]/ITSUStave[0-9]+", "globalModes": ["tangentialPolar_r0t1", "twist"] }
+]

@@ -229,8 +229,9 @@ void Volume::writeRigidBodyConstraints(std::ostream& os, bool statWeighted, cons
 // own label, also serves a second purpose: for a DOF flagged by mPinChildrenMean (the
 // "pinChildrenMean" DOF config clause) but fixed here, or even w/o a rigid-body DOF set at all, it
 // pins the common mode of the children, there being no parameter of this volume to absorb it.
-// A DOF flagged by mPinChildrenMeanNoCross ("pinChildrenMeanNoCross") gets, in addition, the
-// cross-term-free variant of the same equation -- see addChildrenMeanTerms for why that matters.
+// A DOF flagged by mPinChildrenMeanNoCross ("pinChildrenMeanNoCross") or mPinChildrenMeanNoLever
+// ("pinChildrenMeanNoLever") gets, in addition, the cross-term-free or the lever-arm-free variant of
+// the same equation -- see addChildrenMeanTerms for why that matters.
 void Volume::writeChildrenMeanConstraints(std::ostream& os, bool statWeighted) const
 {
   // the degeneracy is with the nearest free level below, which needs not be the direct children
@@ -265,36 +266,48 @@ void Volume::writeChildrenMeanConstraints(std::ostream& os, bool statWeighted) c
     const std::vector<double>& weights = (wantStat && haveStatWeights) ? statWeights : equalWeights;
     // the transported (cross-term) equation, for a free or pinChildrenMean-flagged DOF
     if (free || mPinChildrenMean[iDOF]) {
-      // w/o a free descendant DOF realising it, a free parent DOF has no degeneracy to break. A merely
-      // nonzero coupling is not enough: e.g. for OB chips with only TX free under a module with TX,TY,TZ
-      // free, the module TY/TZ equations would be the TX one scaled by the chip/module misrotation,
-      // making the constraint matrix singular.
-      if (maxChildrenCoupling(iDOF, contributors) < MinChildrenCoupling) {
-        if (free) {
-          LOGP(debug, "No mean constraint of DOF {} for {}: no free descendant DOF realises it", dofName, mSymName);
-        } else {
-          LOGP(warn, "Ignoring pinChildrenMean of DOF {} for {}: no free descendant DOF realises it", dofName, mSymName);
-        }
-      } else {
-        // a single term is a legitimate constraint as well: e.g. for a parent with a single active
-        // child it removes the degeneracy of their common rotation
-        Constraint con(std::format("DOF {} for {}{}", dofName, mSymName, free ? "" : " (pinned)"), 0.);
-        addChildrenMeanTerms(con, iDOF, contributors, weights, false);
-        con.write(os);
-      }
+      writeChildrenMeanEquation(os, iDOF, contributors, weights, MeanTerms::Transported, free);
     }
-    // the cross-term-free equation, an independent one: the plain mean of the children's own iDOF
+    // the cross-term-free and the lever-arm-free equations, independent ones
     if (mPinChildrenMeanNoCross[iDOF]) {
-      Constraint con(std::format("DOF {} for {} (pinned, no cross-terms)", dofName, mSymName), 0.);
-      if (!contributors.empty()) {
-        addChildrenMeanTerms(con, iDOF, contributors, weights, true);
-      }
-      if (con.getSize() > 0) {
-        con.write(os);
-      } else {
-        LOGP(warn, "Ignoring pinChildrenMeanNoCross of DOF {} for {}: no descendant has that DOF free", dofName, mSymName);
-      }
+      writeChildrenMeanEquation(os, iDOF, contributors, weights, MeanTerms::NoCross, false);
     }
+    if (mPinChildrenMeanNoLever[iDOF]) {
+      writeChildrenMeanEquation(os, iDOF, contributors, weights, MeanTerms::NoLever, false);
+    }
+  }
+}
+
+void Volume::writeChildrenMeanEquation(std::ostream& os, int iDOF, const std::vector<MeanContributor>& contributors,
+                                       const std::vector<double>& weights, MeanTerms terms, bool free) const
+{
+  const char* dofName = RigidBodyDOFSet::RigidBodyDOFNames[iDOF];
+  const char* clause = meanClauseName(terms);
+  const char* tag = terms == MeanTerms::Transported ? (free ? "" : " (pinned)") : (terms == MeanTerms::NoCross ? " (pinned, no cross-terms)" : " (pinned, no lever arms)");
+  // w/o a free descendant DOF realising it, a free parent DOF has no degeneracy to break. A merely
+  // nonzero coupling is not enough: e.g. for OB chips with only TX free under a module with TX,TY,TZ
+  // free, the module TY/TZ equations would be the TX one scaled by the chip/module misrotation,
+  // making the constraint matrix singular. The same holds for a parent translation reached only through
+  // the lever arms of the contributors' rotations about their own origins (e.g. HB TZ from OB stave RY,
+  // through the 1-2 deg stave tilt): the rotation does not move the sensors along it. Hence only the
+  // couplings of the same kind (translation-translation, rotation-rotation) count. The NoCross equation
+  // has no such leak: it uses only the contributors' own iDOF, with unit coupling.
+  if (terms != MeanTerms::NoCross && maxChildrenCoupling(iDOF, contributors) < MinChildrenCoupling) {
+    if (free) {
+      LOGP(debug, "No mean constraint of DOF {} for {}: no free descendant DOF realises it", dofName, mSymName);
+    } else {
+      LOGP(warn, "Ignoring {} of DOF {} for {}: no free descendant DOF realises it", clause, dofName, mSymName);
+    }
+    return;
+  }
+  // a single term is a legitimate constraint as well: e.g. for a parent with a single active
+  // child it removes the degeneracy of their common rotation
+  Constraint con(std::format("DOF {} for {}{}", dofName, mSymName, tag), 0.);
+  addChildrenMeanTerms(con, iDOF, contributors, weights, terms);
+  if (con.getSize() > 0) {
+    con.write(os);
+  } else {
+    LOGP(warn, "Ignoring {} of DOF {} for {}: no descendant has that DOF free", clause, dofName, mSymName);
   }
 }
 
@@ -360,12 +373,38 @@ void Volume::collectMeanContributors(const Matrix66& jToThis, std::vector<MeanCo
   }
 }
 
-void Volume::addChildrenMeanTerms(Constraint& con, int iDOF, const std::vector<MeanContributor>& contributors, const std::vector<double>& weights, bool noCross)
+const char* Volume::meanClauseName(MeanTerms terms)
+{
+  switch (terms) {
+    case MeanTerms::Transported:
+      return "pinChildrenMean";
+    case MeanTerms::NoCross:
+      return "pinChildrenMeanNoCross";
+    case MeanTerms::NoLever:
+      return "pinChildrenMeanNoLever";
+  }
+  return "";
+}
+
+bool Volume::meanTermUsed(int iDOF, int jDOF, MeanTerms terms)
+{
+  switch (terms) {
+    case MeanTerms::Transported:
+      return true;
+    case MeanTerms::NoCross:
+      return jDOF == iDOF;
+    case MeanTerms::NoLever: // translations from translations, rotations from rotations
+      return (iDOF < 3) == (jDOF < 3);
+  }
+  return false;
+}
+
+void Volume::addChildrenMeanTerms(Constraint& con, int iDOF, const std::vector<MeanContributor>& contributors, const std::vector<double>& weights, MeanTerms terms)
 {
   for (size_t ic = 0; ic < contributors.size(); ++ic) {
     const auto& [vol, j] = contributors[ic];
     const double weight = weights[ic];
-    if (noCross) {
+    if (terms == MeanTerms::NoCross) {
       // only the contributor's own iDOF, with no transport: the equation then says that the plain mean
       // of that one DOF vanishes, which no other DOF of the contributor can pay for
       if (iDOF < vol->mRigidBody->nDOFs() && vol->mRigidBody->isFree(iDOF)) {
@@ -374,7 +413,7 @@ void Volume::addChildrenMeanTerms(Constraint& con, int iDOF, const std::vector<M
       continue;
     }
     for (int jDOF = 0; jDOF < vol->mRigidBody->nDOFs(); ++jDOF) {
-      if (!vol->mRigidBody->isFree(jDOF)) {
+      if (!vol->mRigidBody->isFree(jDOF) || !meanTermUsed(iDOF, jDOF, terms)) {
         continue;
       }
       const double coeff = weight * j(iDOF, jDOF);
@@ -390,7 +429,7 @@ double Volume::maxChildrenCoupling(int iDOF, const std::vector<MeanContributor>&
   double maxCoupling = 0.;
   for (const auto& [vol, j] : contributors) {
     for (int jDOF = 0; jDOF < vol->mRigidBody->nDOFs(); ++jDOF) {
-      if (vol->mRigidBody->isFree(jDOF)) {
+      if (vol->mRigidBody->isFree(jDOF) && meanTermUsed(iDOF, jDOF, MeanTerms::NoLever)) {
         maxCoupling = std::max(maxCoupling, std::abs(j(iDOF, jDOF)));
       }
     }
@@ -1564,10 +1603,10 @@ bool isLiteralPattern(const std::string& pattern)
 // Unlike rigidBody/calib this never creates a DOF set, it only flags DOFs of the volume's own
 // (possibly absent or fixed) RigidBodyDOFSet for writeRigidBodyConstraints. A later matching rule
 // replaces the flags of an earlier one, like the rigidBody/calib clauses.
-void Volume::applyPinChildrenMeanConfig(const nlohmann::json& pin, const std::string& pattern, bool noCross)
+void Volume::applyPinChildrenMeanConfig(const nlohmann::json& pin, const std::string& pattern, MeanTerms terms)
 {
-  const char* clause = noCross ? "pinChildrenMeanNoCross" : "pinChildrenMean";
-  auto& flags = noCross ? mPinChildrenMeanNoCross : mPinChildrenMean;
+  const char* clause = meanClauseName(terms);
+  auto& flags = terms == MeanTerms::Transported ? mPinChildrenMean : (terms == MeanTerms::NoCross ? mPinChildrenMeanNoCross : mPinChildrenMeanNoLever);
   if (!isRigidBodyAllowed()) {
     if (isLiteralPattern(pattern)) {
       LOGP(warn, "Ignoring the {} rule '{}': {} is not rigid-body alignable", clause, pattern, mSymName);
@@ -1864,10 +1903,13 @@ void Volume::applyDOFConfig(Volume* root, const std::string& jsonPath)
         }
       }
       if (rule.contains("pinChildrenMean")) {
-        vol->applyPinChildrenMeanConfig(rule["pinChildrenMean"], pattern, false);
+        vol->applyPinChildrenMeanConfig(rule["pinChildrenMean"], pattern, MeanTerms::Transported);
       }
       if (rule.contains("pinChildrenMeanNoCross")) {
-        vol->applyPinChildrenMeanConfig(rule["pinChildrenMeanNoCross"], pattern, true);
+        vol->applyPinChildrenMeanConfig(rule["pinChildrenMeanNoCross"], pattern, MeanTerms::NoCross);
+      }
+      if (rule.contains("pinChildrenMeanNoLever")) {
+        vol->applyPinChildrenMeanConfig(rule["pinChildrenMeanNoLever"], pattern, MeanTerms::NoLever);
       }
       if (rule.contains("weightedMean")) {
         vol->applyWeightedMeanConfig(rule["weightedMean"], pattern);
