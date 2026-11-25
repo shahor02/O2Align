@@ -1,5 +1,7 @@
 #!/bin/bash
 
+: ${MYWDIR:="/data0/devAlg/tests"}
+
 runProc() # args: destDir var=value [var=value ...]
 {
   if [[ $# -lt 2 ]]; then
@@ -20,6 +22,8 @@ runProc() # args: destDir var=value [var=value ...]
   env "$@" /data0/devAlg/tests/sol.sh
   popd
 }
+
+export MVSLOTS=${MVSLOTS:-"$MYWDIR/../data/MV_B0BPBM.json"}
 
 #export EXTRACONF="AlignParams.statInFile=/data0/devAlg/tests/MilleV8/procStat.root"
 #runProc /data0/devAlg/tests/solA2v5bow Config=/home/shahoian/alice/O2Align/doc/ITS_RB_v5bow.json MPSTEER=/data0/devAlg/tests/mpSteer.txt
@@ -44,5 +48,9 @@ runProc() # args: destDir var=value [var=value ...]
 #runProc /data0/devAlg/tests/solA2IBv3 Config=/home/shahoian/alice/O2Align/doc/ITS_RB_IBv3.json MPSTEER=/data0/devAlg/tests/mpSteer.txt
 
 #runProc /data0/devAlg/tests/solA2v19s Config=/home/shahoian/alice/O2Align/doc/ITS_RB_v19s.json MPSTEER=/data0/devAlg/tests/mpSteerAll.txt
-runProc /data0/devAlg/tests/solA2v19rmc Config=/home/shahoian/alice/O2Align/doc/ITS_RB_v19rmc.json MPSTEER=/data0/devAlg/tests/mpSteerV12.txt
+#runProc /data0/devAlg/tests/solA2v19rmc Config=/home/shahoian/alice/O2Align/doc/ITS_RB_v19rmc.json MPSTEER=/data0/devAlg/tests/mpSteerV12.txt
+
+
+export SKIPCHECKRESID=1
+runProc /data0/devAlg/tests/solPbHBA0 Config=/home/shahoian/alice/O2Align/doc/ITS_RB_HBonly.json MPSTEER=/data0/devAlg/tests/mpSteerPbMP2.txt
 

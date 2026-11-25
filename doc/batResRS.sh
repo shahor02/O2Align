@@ -1,5 +1,7 @@
 #!/bin/bash
 
+: ${MYWDIR:="/data0/devAlg/tests"}
+
 procDir()  # args: directory name
 {
   if [[ $# -lt 2 ]]; then
@@ -29,7 +31,7 @@ procDir()  # args: directory name
 }
 
 #EXTRARESOPT="--no-tree --draw-report"
-script="/data0/devAlg/tests/runCheckResid.sh"
+script="${MYWDIR}/runCheckResid.sh"
 
 : ${PVSTAT:="1"}
 
@@ -41,11 +43,11 @@ script="/data0/devAlg/tests/runCheckResid.sh"
 : ${REMAP:="--condition-remap file://$(pwd)=GLO/Config/GeometryAligned"}
 
 : ${PREF:="AlgRS"}
-#REMAP='--condition-remap file:///data0/ALG25/Pede_v10n=GLO/Config/GeometryAligned'
 
 MAXTF=4000
-procDir /data0/devAlg/data/B0 LHC25ab_562862
+procDir ${MYWDIR}/../data/B0 LHC25ab_562862
 MAXTF=12000
-procDir /data0/devAlg/data/BPlus LHC25ab_562837
-procDir /data0/devAlg/data/BMinus LHC25ah_564644
+procDir ${MYWDIR}/../data/BPlus LHC25ab_562837
+MAXTF=8000
+procDir ${MYWDIR}/../data/BMinus LHC25ah_564644
 #procDir /dataHD/OO/LHC25ae_run00564356 LHC25ae

@@ -27,11 +27,10 @@ truncate_log() {
 
 : ${DataList:="/data1/cosm1/list_cosm_mrg.txt"}
 
-
-: ${MYWDIR:="/data0/devAlg/tests"}
-
 : ${PREFDIR:="Mille_IBEdgeS4R"}
 
+: ${MYWDIR:="/data0/devAlg/tests"}
+: ${OUTDIR:="cosmHP4LUT"}
 
 export Lanes=${Lanes:-36}
 export Nthread=${Nthread:-5}
@@ -45,12 +44,12 @@ export REMAP=${REMAP:-"--condition-remap file://${MYWDIR}/best/IBEdge/=GLO/Confi
 
 : ${MAXTF:=-1}
 
-ErrDet=";GPU_rec_trd.minTrackPt=0.3;;GPU_rec_trd.trkltResRPhiIdeal=0.2;GPU_rec_trd.trkltResVsTanPhiMisalign=1.;AlignParams.extraClsErrYTRD=0.1;AlignParams.extraClsErrZTRD=1.;AlignParams.extraClsErrYTOF=0.2;AlignParams.extraClsErrZTOF=0.2;"
+ErrDet=";GPU_rec_trd.minTrackPt=0.3;;GPU_rec_trd.trkltResRPhiIdeal=0.2;GPU_rec_trd.trkltResVsTanPhiMisalign=1.;AlignParams.extraClsErrYTRD=0.05;AlignParams.extraClsErrZTRD=1.5;AlignParams.extraClsErrYTOF=0.5;AlignParams.extraClsErrZTOF=0.5;"
 for ii in $(seq 0 6) ; do
  ErrDet+="AlignParams.extraClsErrYITS[$ii]=0.0003;AlignParams.extraClsErrZITS[$ii]=0.0003;"
 done
 
-export EXTRACONF=${EXTRACONF:-"AlignParams.debugTracksFraction=0.1;AlignParams.maxTracksPerMultiTrackPV=10;AlignParams.minPt=0.8;AlignParams.meanPtB0=0.7;AlignParams.corrType=1;AlignParams.maxChi2Ndf=14.f;$ErrDet;"}
+export EXTRACONF=${EXTRACONF:-"AlignParams.debugTracksFraction=0.1;AlignParams.maxTracksPerMultiTrackPV=4;AlignParams.minPt=0.6;AlignParams.meanPtB0=0.45;AlignParams.meanPtB0Cosm=4;AlignParams.corrType=2;AlignParams.maxChi2Ndf=14.f;$ErrDet;"}
 export EXTRAOPT=${EXTRAOPT:-}
 
 : ${ConfString:="AlignParams.cosmiGoldOnly=false;AlignParams.dofConfigJson=$Config;AlignParams.minITSClsTrack=3;$EXTRACONF;"}
@@ -63,7 +62,7 @@ echo "Basedir=${MYWDIR}, script: $script"
 for inps in $(cat $DataList) ; do
   [[ $inps == "#*" ]] && continue
   outs=`echo $inps | sed "s;alien://;;g" | sed "s;\/;_;g"`
-  outd="${PREFDIR}/cosm/$outs"
+  outd="${PREFDIR}/${OUTDIR}/$outs"
   logFile="proc.log"
   maxLogSize="2M"
   echo "Processing $inps to $outd"

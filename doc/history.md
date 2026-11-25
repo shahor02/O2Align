@@ -1320,3 +1320,69 @@ Found in a code review of `ea32487`; each one checked on the laptop.
 - The `MilleData` run now stores the prior of every slot in its `ProcessingStats` (`mvPriorBySlot`, class version 5).
   `AlignParams.mvPriorStatFile` at `MilleRes` adds `reference` and `absolute` per slot to `result.json` and logs them
   (see the Mean Vertex section of `DOFConfig_rules.md`).
+
+## 2026-11-24: TRD/TOF refits on top of IBEdge and v4tR2 (no B−): the TRD stack-0/4 dY pattern is a layer alternation
+- Fits on the IBEdge recordings without B−: `solB2A4` (ITS = IBEdge) and `solB2v4tR2` (ITS fixed at v4tR2 through
+  `startFromMilleRes`). The reference is `solB1A4` (same data plus B−).
+- The steerings differ. `solB2v4tR2` has the `solB1A4` constraints (`ITSEnvTRDTOFch4_RB.json`: TRD sector RX/RY
+  free, TZ pinned, TOF curl). `solB2A4` has the `ITSEnvTRDTOFB0only_RB.json` constraints: ITS HB RZ + HB curl,
+  TRD sector TZ free, sector RX/RY fixed, radialScaling.
+  - In `solB2A4` the chambers take over the missing sector tilt: chamber TX median over sectors goes from −3…−5 mm in
+    stack 0 to +4…+5 mm in stack 4. The chamber priors are TX, TY 1 mm and RX 1 mrad; the sector RX/RY have no mean
+    constraint in either config.
+  - `solB2A4` is therefore not the IBEdge reference for `solB2v4tR2`.
+- Unbiased residuals, excess rms of the chamber means, sqrt(⟨m² − e²⟩), over chambers with error < 100 µm.
+  `solB1A4` / `solB2A4` / `solB2v4tR2`:
+
+  | | B0 | B+ | B− |
+  |---|---|---|---|
+  | TRD dY (µm) | 206 / 193 / 203 | 157 / 182 / 174 | 215 / 273 / 273 |
+  | TRD dZ (µm) | 2711 / 1623 / 2684 | 3934 / 1489 / 3421 | 3420 / 2404 / 3506 |
+
+  - TOF dY improves with v4tR2 in B0 and B+: z-slice 0 755 → 234 and 700 → 144 µm, slice 4 789 → 696 and
+    923 → 400 µm.
+  - The free sector TZ makes `solB2A4` best in TRD dZ.
+  - The `solB2` check runs have errors about 1.5× those of `solB1A4` (less statistics), so the χ² of the means is not
+    comparable between them.
+- The large L3/stack 4 dY deviations are not specific to L3. Stacks 0 and 4 have a dY component that alternates in
+  sign from layer to layer, A = ⟨(−1)^l dY⟩:
+  - 100–250 µm rms over sectors, ≈ 3–7 mm in z through the ±2° pad tilt (28.6 µm z per µm of A);
+  - it is present in `solB1A4` already;
+  - it depends on the field: the stack-4 mean A is B0 −124, B+ +101, B− +171 µm, and stack 0 has the opposite signs.
+  - The odd layers (L1, L3, L5) show −A. L3 is the one with the most live chambers in stack 4.
+  - `solB2v4tR2` keeps the `solB1A4` amplitude (stack 4 rms 164 / 201 / 328 µm, `solB1A4` 196 / 164 / 247 µm).
+    `solB2A4` changes it by up to 500 µm in sm12–14, where its sector TZ moves by 11–18 mm.
+  - A field-dependent alternation is not a rigid chamber shift. It points to the pad-tilt correction with the track z or
+    to a field-dependent z of the tracklets at large |tgl|. Not yet understood.
+
+## 2026-11-25: PbPb HBonly_v2 vs v2b: the q/pT dip finds the fake sagitta; what is left is stave rφ
+- `solPbHBA0v2` (`ITS_RB_HBonly_v2.json`, per-layer curl groupModes) and `solPbHBA0v2b` (`ITS_RB_HBonly_v2b.json`,
+  tangentialPolar_r0t0 + sagitta) on the `Mille_Pb_MP2` data give the same checkResid residuals, down to per-stave and
+  per-module means.
+  - Their HB solutions differ. v2b − v2 is a translation decreasing with r: ≈ 11 µm in the IB, ≈ 0 at Lr5,
+    −3…−8 µm at Lr6 (`drawHBShift.C`).
+  - The d + a·r part of it is invisible to the residuals.
+- Left over on PbPb 568664 vs pp B+ 562837, as the excess rms of the means, with the B− 564644 − B+ difference as the
+  noise floor:
+  - dz in all projections, and dy vs Z and vs tgl, are already at the B+ level.
+  - dy per stave: Lr0–6 0.8 / 0.7 / 1.5 / 2.0 / 2.0 / 2.6 / 2.1 µm vs floor 0.3 / 0.4 / 0.6 / 1.1 / 2.8 / 1.8 / 0.9.
+  - OB HS0−HS1 rφ offset: 2.4–4.8 vs 1.2–2.7 µm.
+  - OB half-stave rφ z-slope, end to end: 5–8.5 vs 2.6–6.3 µm.
+  - The minimal retune proposed is IB stave TX plus OB half-stave TX, RY on top of v2b, with the HB mean of the
+    half-stave RY pinned.
+- New estimator of the curvature bias of the ITS-only tracks (`macro/getSagitta.C`, `doc/studying_sagitta.md`). The
+  offset δ of the q/pT spectrum is the one that makes the mirrored window counts N(δ+x)/N(δ−x) constant in
+  |q/pT| 0.06–0.85, i.e. the same charge ratio at every pT. Results in 1e-4 (GeV/c)⁻¹:
+  - IBEdge: pp B+ −24 ± 4, B− +30 ± 3. It flips with the field, so it is geometric; the field-even part is +3. This
+    agrees with the known IBEdge sagitta, k ≈ 2 at 13e-4 per unit of k.
+  - PbPb: IBEdge −28, v2b −28, v2 −46, solPbHBA0 +116. The last is k ≈ −11, the value expected from its fitted
+    c = −0.109 µm/cm².
+  - Matched tracks give v2 − v2b = −20 independently of the charge abundances, so v2 adds Δk ≈ +1.4 of fake sagitta.
+  - Track by track, v2b − IBEdge averages +4 but has a ±20 per-HB cos φ modulation with a jump at φ = π. The
+    estimator's per-60° precision, about ±8, cannot confirm or refute it.
+- Charge abundances: the charge ratio is a free parameter, so only its pT dependence inside the window matters. Two
+  checks:
+  - Low-pT and high-pT windows agree, except pp B+ (−45 ± 8 vs −14 ± 5). The absolute δ is therefore good to about
+    ±5e-4.
+  - Per-sector values are biased by charge-dependent acceptance, which flips with the field like a geometric bias.
+- Conclusion: v2b is preferred over v2, whose smaller shifts come with a fake sagitta.
