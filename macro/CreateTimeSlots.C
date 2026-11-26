@@ -88,7 +88,7 @@ TChain* loadTFIDChain(const char* inpData, const char* chName = "tfidTree")
 }
 
 //_________________________________________________________________
-void CreateTimeSlots(const char* o2tfinfolist, const char* outName, int intervalSec, int maxIntervalID = -1)
+void CreateTimeSlots(const char* o2tfinfolist="o2_tfidinfo.root", const char* outName="MVSlots.json", int intervalSec=900, int maxIntervalID = -1)
 {
   const int startID = 0;
   if (intervalSec <= 0) {
