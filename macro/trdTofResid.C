@@ -20,6 +20,9 @@
 // Per TRD layer and stack / TOF Z slice, the mean and sigma vs sector of the whole residual distribution of each chamber / sector
 // slice (gaussian fit with the same validity check, otherwise the mean and the standard deviation) are added as well.
 //
+// Also stored: 1D distributions over the TRD chambers (each entry: the mean residual of one chamber) and over the TOF strips of
+// the mean dY, dZ, IDs 300000 + iDet*100 + iyz*10 (iDet 0: TRD, 1: TOF); drawTRDTOFResid puts them on the first page (4 pads).
+//
 // o2::HistoManager IDs:   Sect*10000 + Lr*1000 + St*100 + iYZ*10  (+1: mean, +2: sigma of the fitted slices)
 //   Sect 0:17, Lr 0:5 = TRD layer, 6 = TOF, St = TRD stack or TOF Z slice, iYZ 0 (Y) or 1 (Z).
 //   per-sector summaries: 200000 + Lr*1000 + St*100 + iYZ*10 (+1: mean, +2: sigma), 18 bins in sector.
@@ -84,6 +87,7 @@ constexpr int NSect = 18, NTRDLr = 6, NTRDSt = 5, LrTOF = 6, DetTRD = 3, DetTOF 
 constexpr int NStripSM = o2::tof::Geo::NSTRIPXSECTOR;
 constexpr int MaxTOFSlices = 10;
 constexpr int SummaryBase = 200000; // IDs of the per-sector summaries, above those of the per-chamber histograms
+constexpr int ChamberDistBase = 300000; // IDs of the distributions of the mean residuals over TRD chambers / TOF strips
 constexpr std::array<const char*, 3> ResTypeName{"Pre", "Unb", "Fit"};
 
 inline int histoID(int sect, int lr, int st, int iyz) { return sect * 10000 + lr * 1000 + st * 100 + iyz * 10; }
@@ -243,8 +247,49 @@ int pointToHistoID(const o2::alignrs::DbgPoint& p, const TOFSlices& ts)
   return -1;
 }
 
-void fillHistos(TChain* chain, o2::HistoManager& hm, const TOFSlices& ts, int resType, bool onlyAccepted, long maxTracks)
+/// ID of the distribution over chambers (iDet 0) / strips (iDet 1) of the mean residual: iyz 0 (Y) or 1 (Z)
+inline int chamberDistID(int iDet, int iyz) { return ChamberDistBase + iDet * 100 + iyz * 10; }
+
+/// per chamber / strip: number of points, sum of dY, sum of dZ
+struct ChamberAcc {
+  std::vector<std::array<double, 3>> trd = std::vector<std::array<double, 3>>(NSect * NTRDLr * NTRDSt, {0., 0., 0.});
+  std::vector<std::array<double, 3>> tof = std::vector<std::array<double, 3>>(NSect * NStripSM, {0., 0., 0.});
+};
+
+/// books the 1D distributions of the per-chamber (TRD) and per-strip (TOF) mean dY, dZ, range +-meanRangeY/Z
+void bookChamberDists(o2::HistoManager& hm, int resType, int nBins, float meanRangeY, float meanRangeZ)
 {
+  for (int idet = 0; idet < 2; ++idet) {
+    for (int iyz = 0; iyz < 2; ++iyz) {
+      const float rng = iyz ? meanRangeZ : meanRangeY;
+      const std::string rname = fmt::format("d{}{}", iyz ? 'Z' : 'Y', ResTypeName[resType]);
+      const std::string nm = fmt::format("{}_mean_{}", idet ? "tofStrips" : "trdChambers", rname);
+      hm.addHisto(new TH1F(nm.c_str(), fmt::format("{} mean {};<{}> (cm);{}", idet ? "TOF strips" : "TRD chambers", rname, iyz ? "#DeltaZ" : "#DeltaY", idet ? "strips" : "chambers").c_str(), nBins, -rng, rng),
+                  chamberDistID(idet, iyz));
+    }
+  }
+}
+
+/// fills the distributions of the mean residuals of the chambers / strips with at least minPts points
+void fillChamberDists(o2::HistoManager& hm, const ChamberAcc& acc, int minPts)
+{
+  for (int idet = 0; idet < 2; ++idet) {
+    for (const auto& a : (idet ? acc.tof : acc.trd)) {
+      if (a[0] < std::max(1, minPts)) {
+        continue;
+      }
+      for (int iyz = 0; iyz < 2; ++iyz) {
+        if (auto* h = hm.getHisto(chamberDistID(idet, iyz))) {
+          h->Fill(a[1 + iyz] / a[0]);
+        }
+      }
+    }
+  }
+}
+
+void fillHistos(TChain* chain, o2::HistoManager& hm, const TOFSlices& ts, int resType, bool onlyAccepted, long maxTracks, int minPtsChamber)
+{
+  ChamberAcc acc;
   auto* dt = new o2::alignrs::DbgTrack;
   chain->SetBranchAddress("t", &dt);
   const long nEnt = maxTracks > 0 ? std::min<long>(maxTracks, chain->GetEntries()) : chain->GetEntries();
@@ -279,10 +324,17 @@ void fillHistos(TChain* chain, o2::HistoManager& hm, const TOFSlices& ts, int re
       if (auto* hz = hm.getHisto2F(id + 10)) {
         hz->Fill(tgl, dz);
       }
+      auto& vacc = p.det == DetTRD ? acc.trd : acc.tof;
+      if (p.sens < (int)vacc.size()) {
+        vacc[p.sens][0] += 1.;
+        vacc[p.sens][1] += dy;
+        vacc[p.sens][2] += dz;
+      }
     }
   }
   delete dt;
   chain->ResetBranchAddresses();
+  fillChamberDists(hm, acc, minPtsChamber);
 }
 
 /// profile of the 2D histogram converted to TH1D: mean (error of the mean) or sigma (spread, error sigma/sqrt(2n)) per bin; empty bins have zero error
@@ -470,11 +522,14 @@ void postProcessHistos(o2::HistoManager& hm, int minSliceStat, int minEntriesFit
 /// nBinRes, resRangeY/Z   : bins and half-ranges (cm) of the residual axes of dY and dZ, also the ranges of the gaussian fits
 /// minEntriesFit         : histograms with fewer entries use the profile (mean and spread) instead of FitSlicesY
 /// minSliceStat          : minimal number of non-empty bins in the slice to be fitted
+/// minPtsChamber         : minimal number of points of a TRD chamber / TOF strip to enter the distribution of the mean residuals
+///                         (range +-resRange/3, 100 bins)
 /// onlyAccepted          : skip the tracks rejected by the chi2 cut of the GBL fit
 /// maxTracks             : process at most that many tracks (<=0: all)
 void trdTofResid(const char* inpName, const char* outName = "trdTofResid_hman.root", const char* geomName = "", int resType = 0,
                  float maxSnp = 0.4, int nSnp = 7, int nTglBins = 5, int nTOFSlices = 5, int nBinRes = 100, float resRangeY = 3,
-                 float resRangeZ = 5, int minSliceStat = 3, int minEntriesFit = 100, bool onlyAccepted = true, long maxTracks = -1)
+                 float resRangeZ = 5, int minSliceStat = 3, int minEntriesFit = 100, bool onlyAccepted = true, long maxTracks = -1,
+                 int minPtsChamber = 10)
 {
   using namespace trdtof;
   if (nTOFSlices < 1 || nTOFSlices > MaxTOFSlices) {
@@ -494,7 +549,8 @@ void trdTofResid(const char* inpName, const char* outName = "trdTofResid_hman.ro
   o2::HistoManager hm("", outName);
   hm.SetName(gSystem->BaseName(outName));
   bookHistos(hm, ts, resType, nSnp, maxSnp, nTglBins, nBinRes, resRangeY, resRangeZ);
-  fillHistos(chain, hm, ts, resType, onlyAccepted, maxTracks);
+  bookChamberDists(hm, resType, 100, resRangeY / 3.f, resRangeZ / 3.f);
+  fillHistos(chain, hm, ts, resType, onlyAccepted, maxTracks, minPtsChamber);
   delete chain;
   postProcessHistos(hm, minSliceStat, minEntriesFit);
   hm.write(outName);
@@ -758,6 +814,51 @@ void drawSummaryPage(TCanvas& canv, const std::vector<std::unique_ptr<o2::HistoM
   canv.cd();
 }
 
+/// one page, 4 pads (TRD dY, TRD dZ, TOF dY, TOF dZ): distributions over chambers / strips of the mean residual, superimposed for
+/// all the managers, the vertical maximum being that of the highest one. Pads without such histograms stay empty.
+void drawChamberDistPage(TCanvas& canv, const std::vector<std::unique_ptr<o2::HistoManager>>& hmv, const std::vector<int>& colors, const std::vector<int>& markers)
+{
+  canv.Clear();
+  canv.Divide(2, 2, 0.001, 0.001);
+  for (int idet = 0; idet < 2; ++idet) {
+    for (int iyz = 0; iyz < 2; ++iyz) {
+      canv.cd(idet * 2 + iyz + 1);
+      gPad->SetLeftMargin(0.15);
+      gPad->SetBottomMargin(0.14);
+      gPad->SetGrid();
+      const int id = chamberDistID(idet, iyz);
+      std::vector<TH1*> clones;
+      double hmax = 0.;
+      for (size_t i = 0; i < hmv.size(); ++i) {
+        auto* h = hmv[i] ? hmv[i]->getHisto(id) : nullptr;
+        if (!h) {
+          continue;
+        }
+        auto* hc = (TH1*)h->Clone(Form("%s_cl%zu", h->GetName(), i));
+        hc->SetDirectory(nullptr);
+        hc->SetStats(false);
+        hc->SetLineColor(colors[i]);
+        hc->SetLineWidth(2);
+        hc->SetMarkerColor(colors[i]);
+        hc->SetMarkerStyle(markers[i]);
+        hmax = std::max(hmax, hc->GetMaximum());
+        clones.push_back(hc);
+      }
+      for (size_t k = 0; k < clones.size(); ++k) {
+        clones[k]->SetMinimum(0.);
+        clones[k]->SetMaximum(hmax > 0. ? 1.15 * hmax : 1.);
+        clones[k]->GetXaxis()->SetTitleSize(0.05);
+        clones[k]->GetYaxis()->SetTitleSize(0.05);
+        clones[k]->Draw(k ? "HIST SAME" : "HIST");
+      }
+      if (idet == 0 && iyz == 0 && !clones.empty()) {
+        makeLegend(hmv, colors, markers, 0.6, 0.7, 0.95, 0.9, 1)->Draw();
+      }
+    }
+  }
+  canv.cd(0);
+}
+
 /// draws, superimposed, the histograms with the given ID of all the managers on the current pad, skipping the bins w/o a successful
 /// fit; yRange (lo < hi) is the vertical range, otherwise it is set from the content.
 /// Returns the graph of each manager actually drawn (the pad owns them).
@@ -946,7 +1047,11 @@ void drawTRDTOFResid(const char* cfgKeyValues = "", const char* pdfName = "trdTo
       sumPages.push_back({ilr, ilr == LrTOF ? nCol : NTRDSt});
     }
   }
-  const int nPages = sumPages.size() + pages.size();
+  bool haveChDist = false;
+  for (const auto& hm : hmv) {
+    haveChDist |= hm && hm->getHisto(chamberDistID(0, 0)) != nullptr;
+  }
+  const int nPages = haveChDist + sumPages.size() + pages.size();
   if (!nPages) {
     printf("No histograms to draw\n");
     return;
@@ -973,6 +1078,10 @@ void drawTRDTOFResid(const char* cfgKeyValues = "", const char* pdfName = "trdTo
         *rng = {isSigma ? 0.f : -1.f, 1.f};
       }
     }
+  }
+  if (haveChDist) {
+    drawChamberDistPage(canv, hmv, hmColor, hmMarker);
+    printPage();
   }
   for (const auto& [ilr, nCol] : sumPages) {
     drawSummaryPage(canv, hmv, ilr, nCol, ilr == LrTOF ? sumRangeTOF : sumRangeTRD, hmColor, hmMarker);

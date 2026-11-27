@@ -10,7 +10,7 @@ merge() # arge: dest_file inp1 [inp2 ...]
   shift
   if [[ "$outf" == *.root ]] ; then
     echo "executing: hadd $outf $@"
-    hadd $outf "$@"
+    hadd -f $outf "$@"
   elif [[ "$outf" == *.bin ]] ; then
     echo "executing: cat $@ > $outf"
     cat "$@" > $outf
@@ -21,7 +21,7 @@ merge() # arge: dest_file inp1 [inp2 ...]
   [[ -f $outf ]] && rm "$@"
 }
 
-: ${DataList:="/data1/cosm/list_cosm2025_mrg.txt"}
+: ${DataList:="/data1/cosm/list_cosm_mrg.txt"}
 
 : ${PREFDIR:="."}
 

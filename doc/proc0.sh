@@ -10,7 +10,7 @@ merge() # arge: dest_file inp1 [inp2 ...]
   shift
   if [[ "$outf" == *.root ]] ; then
     echo "executing: hadd $outf $@"
-    hadd $outf "$@"
+    hadd -f $outf "$@"
   elif [[ "$outf" == *.bin ]] ; then
     echo "executing: cat $@ > $outf"
     cat "$@" > $outf
